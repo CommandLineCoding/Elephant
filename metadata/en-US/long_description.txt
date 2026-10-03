@@ -1,3 +1,13 @@
-Elephant is a privacy-first messaging application made with Go and Flutter.
-It supports secure authentication, user discovery, and real-time chat over WebSocket,
-with all communication TLS-protected between client and server.
+Elephant is a privacy-first, open-source messaging application made with Go and Flutter.
+
+Features:
+- End-to-end encrypted direct messages using the Signal Protocol
+- Contact identity verification
+- Group chats with admin and member roles
+- Real-time delivery over WebSocket, with typing indicators, read receipts and online status
+- Replies and message editing
+- Sign in with a username and password, Google or GitHub
+- Encrypted on-device message storage, with offline message queueing
+- Connect to the public server or to your own self-hosted Elephant server
+
+Note: group messages are not yet end-to-end encrypted.
