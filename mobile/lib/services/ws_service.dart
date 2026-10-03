@@ -1,9 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../core/constants.dart';
 
+/// WebSocket link to `/api/ws`.
+///
+/// Liveness relies on protocol-level pings: the server pings every 54s and
+/// this client pings every 25s. A missed pong closes the stream, and
+/// [ChatConnectionController] reconnects. The server has no application-level
+/// ping/pong event.
 class WebSocketService {
   static final WebSocketService _instance = WebSocketService._internal();
   factory WebSocketService() => _instance;
@@ -11,104 +18,112 @@ class WebSocketService {
 
   WebSocketChannel? _channel;
   bool _isConnected = false;
-  Timer? _heartbeatTimer;
-  Timer? _pongWatchdog;
 
   Stream<dynamic>? _broadcastStream;
   Stream<dynamic>? get stream => _broadcastStream;
   bool get isConnected => _isConnected;
 
-  VoidCallback? onConnectionLost;
-
   Future<bool> connect(String token) async {
     if (_isConnected) return true;
     try {
-      final wsUrl = Uri.parse("${Env.wsBaseUrl}?token=$token");
-      _channel = WebSocketChannel.connect(wsUrl);
+      final wsUrl = Uri.parse(
+        "${Env.wsBaseUrl}?token=${Uri.encodeQueryComponent(token)}",
+      );
+      _channel = IOWebSocketChannel.connect(
+        wsUrl,
+        pingInterval: const Duration(seconds: 25),
+        connectTimeout: const Duration(seconds: 10),
+      );
       await _channel!.ready;
 
       _broadcastStream = _channel!.stream.asBroadcastStream();
       _isConnected = true;
-      debugPrint("WebSocket Pipeline Connected straight to: ${Env.wsBaseUrl}");
-
-      _startHeartbeat();
+      debugPrint("WebSocket connected to ${Env.wsBaseUrl}");
       return true;
     } catch (e) {
       _isConnected = false;
-      debugPrint("WebSocket connection failure (Handshake rejected): $e");
+      _channel = null;
+      debugPrint("WebSocket connection failure: $e");
       return false;
     }
   }
 
-  void _startHeartbeat() {
-    _heartbeatTimer?.cancel();
-    _pongWatchdog?.cancel();
+  /// Sends a frame. Returns false when disconnected or when the frame would
+  /// exceed the server's 4096-byte limit (which would close the socket).
+  bool emit(Map<String, dynamic> payload) {
+    if (!_isConnected || _channel == null) return false;
 
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
-      if (!_isConnected) {
-        timer.cancel();
-        return;
-      }
-
-      emit({"type": "ping"});
-
-      _pongWatchdog?.cancel();
-      _pongWatchdog = Timer(const Duration(seconds: 6), () {
-        debugPrint("🚨 WS: Watchdog timed out. Half-open socket detected.");
-        disconnect();
-        onConnectionLost?.call();
-      });
-    });
-  }
-
-  void registerPong() {
-    _pongWatchdog?.cancel();
-  }
-
-  void emit(Map<String, dynamic> payload) {
-    if (!_isConnected || _channel == null) {
-      debugPrint("⚠️ WS: Attempted to emit frame while disconnected.");
-      return;
+    payload.removeWhere((_, value) => value == null);
+    final encoded = jsonEncode(payload);
+    if (utf8.encode(encoded).length > ServerLimits.maxWsFrameBytes) {
+      debugPrint(
+        "WS: frame of type ${payload['type']} exceeds the server limit",
+      );
+      return false;
     }
+
     try {
-      final encoded = jsonEncode(payload);
-      debugPrint("Sending Payload to WS: $encoded");
-      _channel?.sink.add(encoded);
+      _channel!.sink.add(encoded);
+      return true;
     } catch (e) {
-      debugPrint("🚨 WS: Write error on sink (Socket broken): $e");
+      debugPrint("WS: write error: $e");
       disconnect();
-      onConnectionLost?.call();
+      return false;
     }
   }
 
-  void sendChat({
+  static int frameSize(Map<String, dynamic> payload) {
+    payload.removeWhere((_, value) => value == null);
+    return utf8.encode(jsonEncode(payload)).length;
+  }
+
+  static Map<String, dynamic> chatFrame({
+    required String messageId,
+    String? receiverId,
+    String? groupId,
+    required String content,
+    String? replyToMessageId,
+  }) {
+    return {
+      "type": "chat",
+      "message_id": messageId,
+      "receiver_id": receiverId,
+      "group_id": groupId,
+      "content": content,
+      "reply_to_message_id": replyToMessageId,
+    };
+  }
+
+  bool sendChat({
     required String messageId,
     required String receiverId,
     required String content,
     String? replyToMessageId,
   }) {
-    emit({
-      "type": "chat",
-      "message_id": messageId,
-      "receiver_id": receiverId,
-      "content": content,
-      "reply_to_message_id": replyToMessageId,
-    });
+    return emit(
+      chatFrame(
+        messageId: messageId,
+        receiverId: receiverId,
+        content: content,
+        replyToMessageId: replyToMessageId,
+      ),
+    );
   }
 
-  void sendGroupChat({
+  bool sendGroupChat({
     required String messageId,
     required String groupId,
     required String content,
     String? replyToMessageId,
   }) {
-    emit({
-      "type": "chat",
-      "message_id": messageId,
-      "group_id": groupId,
-      "content": content,
-      "reply_to_message_id": replyToMessageId,
-    });
+    return emit(
+      chatFrame(
+        messageId: messageId,
+        groupId: groupId,
+        content: content,
+        replyToMessageId: replyToMessageId,
+      ),
+    );
   }
 
   void sendTyping({
@@ -118,8 +133,8 @@ class WebSocketService {
   }) {
     emit({
       "type": "typing",
-      if (receiverId != null) "receiver_id": receiverId,
-      if (groupId != null) "group_id": groupId,
+      "receiver_id": receiverId,
+      "group_id": groupId,
       "content": isTyping.toString(),
     });
   }
@@ -127,8 +142,8 @@ class WebSocketService {
   void sendReadReceipt({String? receiverId, String? groupId}) {
     emit({
       "type": "read_receipt",
-      if (receiverId != null) "receiver_id": receiverId,
-      if (groupId != null) "group_id": groupId,
+      "receiver_id": receiverId,
+      "group_id": groupId,
     });
   }
 
@@ -137,13 +152,11 @@ class WebSocketService {
   }
 
   void disconnect() {
-    _heartbeatTimer?.cancel();
-    _pongWatchdog?.cancel();
     try {
       _channel?.sink.close();
     } catch (_) {}
     _isConnected = false;
     _channel = null;
-    debugPrint("WebSocket Pipeline Terminated Cleanly.");
+    _broadcastStream = null;
   }
 }

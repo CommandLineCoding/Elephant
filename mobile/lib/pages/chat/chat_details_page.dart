@@ -1,55 +1,38 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/chat_search_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
+import 'package:mobile/models/group.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
-import 'package:mobile/providers/group_controller_provider.dart';
+import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/signal_service.dart';
+import 'package:mobile/themes/app_themes.dart';
+import 'package:mobile/widgets/ui/avatar.dart';
+import 'package:mobile/widgets/ui/components.dart';
+import 'package:mobile/widgets/ui/feedback.dart';
+import 'package:mobile/widgets/ui/glass.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
-class ChatMember {
-  final String userId;
-  final String username;
-  final String displayName;
-  final String role;
-  final String? avatarUrl;
-
-  ChatMember({
-    required this.userId,
-    required this.username,
-    required this.displayName,
-    required this.role,
-    this.avatarUrl,
-  });
-
-  factory ChatMember.fromJson(Map<String, dynamic> json) {
-    return ChatMember(
-      userId: json['user_id'].toString(),
-      username: json['username'] ?? '',
-      displayName: json['display_name'] ?? json['username'] ?? 'Unknown',
-      role: json['role'] ?? 'member',
-      avatarUrl: json['avatarUrl'],
-    );
-  }
-}
+/// What [ChatDetailsPage] pops with. A rename pops the new name as a String.
+enum ChatDetailsResult { search, left }
 
 class ChatDetailsPage extends StatefulWidget {
   final bool isGroup;
   final String chatName;
-  final String chatImageUrl;
+  final String? username;
   final String chatId;
 
   const ChatDetailsPage({
     super.key,
     required this.isGroup,
     required this.chatName,
-    required this.chatImageUrl,
     required this.chatId,
+    this.username,
   });
 
   @override
@@ -57,703 +40,816 @@ class ChatDetailsPage extends StatefulWidget {
 }
 
 class _ChatDetailsPageState extends State<ChatDetailsPage> {
+  late String _name = widget.chatName;
+  bool? _isVerified;
+  bool _busy = false;
+
   @override
   void initState() {
     super.initState();
-    if (widget.isGroup) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.isGroup) {
         context.read<GroupDetailsController>().fetchGroupMembers(widget.chatId);
-      });
+      } else {
+        _loadVerification();
+      }
+    });
+  }
+
+  Future<void> _loadVerification() async {
+    try {
+      final res = await ApiService().getVerification(widget.chatId);
+      if (mounted) {
+        setState(
+          () =>
+              _isVerified = ApiService.dataMap(res.data)['is_verified'] == true,
+        );
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isVerified = false);
     }
   }
 
+  void _close([Object? result]) {
+    Navigator.pop(context, result ?? (_name != widget.chatName ? _name : null));
+  }
+
+  // --- Direct chat actions ---
+
+  Future<void> _openSafetyNumber() async {
+    final myId = context.read<AuthState>().currentUser?.id;
+    if (myId == null) return;
+
+    setState(() => _busy = true);
+    final info = await SignalService().getVerification(myId, widget.chatId);
+    if (!mounted) return;
+    setState(() => _busy = false);
+
+    if (info == null) {
+      showSnack(
+        context,
+        '$_name hasn\'t set up encryption yet.',
+        isError: true,
+      );
+      return;
+    }
+
+    final verified = await showGlassSheet<bool>(
+      context,
+      title: 'Verify safety number',
+      builder: (_) => _SafetyNumberSheet(
+        name: _name,
+        safetyNumber: info.safetyNumber,
+        initiallyVerified: info.isVerified,
+        contactId: widget.chatId,
+      ),
+    );
+    if (verified != null && mounted) setState(() => _isVerified = verified);
+  }
+
+  Future<void> _resetSession() async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Reset secure session?',
+      message:
+          'Use this if messages from $_name fail to decrypt, for example after they reinstalled the app. '
+          'A new session is created and their current safety number is trusted.',
+      confirmLabel: 'Reset',
+    );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _busy = true);
+    final ok = await SignalService().forceResetSession(widget.chatId);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    showSnack(
+      context,
+      ok
+          ? 'Secure session reset. New messages will use it.'
+          : 'Couldn\'t reach $_name\'s keys. Try again later.',
+      isError: !ok,
+    );
+    _loadVerification();
+  }
+
+  // --- Group actions ---
+
+  Future<void> _rename() async {
+    final newName = await promptText(
+      context,
+      title: 'Rename group',
+      initialValue: _name,
+      hint: 'Group name',
+      maxLength: 100,
+    );
+    if (newName == null || newName.isEmpty || newName == _name || !mounted) {
+      return;
+    }
+
+    final error = await context.read<GroupDetailsController>().renameGroup(
+      widget.chatId,
+      newName,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      showSnack(context, error, isError: true);
+      return;
+    }
+    context.read<InboxController>().renameLocal(widget.chatId, newName);
+    setState(() => _name = newName);
+  }
+
+  Future<void> _leave() async {
+    final confirmed = await confirmAction(
+      context,
+      title: 'Leave $_name?',
+      message:
+          'You\'ll stop receiving messages from this group. An admin can add you back later.',
+      confirmLabel: 'Leave',
+      destructive: true,
+    );
+    if (!confirmed || !mounted) return;
+
+    final groups = context.read<GroupDetailsController>();
+    final inbox = context.read<InboxController>();
+    final error = await groups.leaveGroup(widget.chatId);
+    if (!mounted) return;
+    if (error != null) {
+      showSnack(context, error, isError: true);
+      return;
+    }
+    await inbox.removeChat(widget.chatId);
+    if (mounted) _close(ChatDetailsResult.left);
+  }
+
+  Future<void> _memberActions(GroupMember member, bool iAmAdmin) async {
+    final myId = context.read<AuthState>().currentUser?.id.toLowerCase();
+    final isSelf = member.userId.toLowerCase() == myId;
+    if (isSelf) return;
+
+    final action = await showActionSheet<String>(
+      context,
+      header: ListTile(
+        leading: ElephantAvatar(
+          name: member.displayName,
+          seed: member.userId,
+          size: 40,
+        ),
+        title: Text(member.displayName),
+        subtitle: Text('@${member.username}'),
+      ),
+      actions: [
+        const SheetAction(
+          icon: Icons.chat_bubble_outline_rounded,
+          label: 'Send message',
+          value: 'message',
+        ),
+        if (iAmAdmin)
+          SheetAction(
+            icon: Icons.person_remove_outlined,
+            label: 'Remove from group',
+            value: 'remove',
+            destructive: true,
+          ),
+      ],
+    );
+    if (!mounted || action == null) return;
+
+    if (action == 'message') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatPage(
+            chatUserId: member.userId,
+            displayName: member.displayName,
+            username: member.username,
+          ),
+        ),
+      );
+    } else if (action == 'remove') {
+      final confirmed = await confirmAction(
+        context,
+        title: 'Remove ${member.displayName}?',
+        message: 'They will no longer receive messages from $_name.',
+        confirmLabel: 'Remove',
+        destructive: true,
+      );
+      if (!confirmed || !mounted) return;
+      final error = await context.read<GroupDetailsController>().removeMember(
+        widget.chatId,
+        member.userId,
+      );
+      if (mounted) {
+        showSnack(
+          context,
+          error ?? '${member.displayName} was removed',
+          isError: error != null,
+        );
+      }
+    }
+  }
+
+  // --- Build ---
+
   @override
   Widget build(BuildContext context) {
-    final groupDetailsState = context.watch<GroupDetailsController>();
-
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: CustomScrollView(
-        slivers: [
-          _buildSliverAppBar(),
-          SliverList(
-            delegate: SliverChildListDelegate([
-              const SizedBox(height: 10),
-              _buildCommonActions(),
-              const SizedBox(height: 10),
-              _buildMediaSection(),
-              const SizedBox(height: 10),
-              _buildNotificationSettings(),
-              const SizedBox(height: 10),
-
-              if (widget.isGroup)
-                _buildGroupMembersSection(groupDetailsState)
-              else
-                _buildOneOnOneDetails(),
-
-              const SizedBox(height: 40),
-            ]),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _close();
+      },
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: GlassAppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: _close,
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSliverAppBar() {
-    return SliverAppBar(
-      expandedHeight: 250.0,
-      pinned: true,
-      flexibleSpace: FlexibleSpaceBar(
-        centerTitle: true,
-        title: Text(widget.chatName),
-        background: Hero(
-          tag: 'profile',
-          child: Padding(
-            padding: const EdgeInsets.all(50),
-            child: CircleAvatar(child: Icon(Icons.person, size: 100)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCommonActions() {
-    return _SectionContainer(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _ActionIcon(icon: Icons.call, label: 'Audio'),
-          _ActionIcon(icon: Icons.videocam, label: 'Video'),
-          _ActionIcon(
-            icon: Icons.search,
-            label: 'Search',
-            onTap: () {
-              Navigator.pop(context, 'start_search');
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMediaSection() {
-    return _SectionContainer(
-      child: ListTile(
-        title: const Text('Media, links, and docs'),
-        trailing: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [Text('0'), Icon(Icons.chevron_right)],
-        ),
-        onTap: () {},
-      ),
-    );
-  }
-
-  Widget _buildNotificationSettings() {
-    return _SectionContainer(
-      child: Column(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.notifications_off),
-            title: const Text('Mute notifications'),
-            trailing: Switch(value: false, onChanged: (val) {}),
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.music_note),
-            title: const Text('Custom notifications'),
-            onTap: () {},
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.image),
-            title: const Text('Media visibility'),
-            onTap: () {},
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOneOnOneDetails() {
-    return _SectionContainer(
-      child: Column(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.lock),
-            title: const Text('Encryption'),
-            subtitle: const Text(
-              'Messages and calls are end-to-end encrypted. Tap to verify.',
-            ),
-            onTap: () async {
-              final currentUserId = context.read<AuthState>().currentUser?.id;
-              if (currentUserId == null) return;
-
-              final safetyNumber = await SignalService().getSafetyNumber(
-                currentUserId, 
-                widget.chatId
-              );
-
-              if (!context.mounted) return;
-
-              if (safetyNumber == null) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Send a message first to establish a secure session.')),
-                );
-                return;
-              }
-
-              showModalBottomSheet(
-                context: context,
-                isScrollControlled: true,
-                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-                shape: const RoundedRectangleBorder(
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          title: Text(widget.isGroup ? 'Group info' : 'Contact info'),
+          actions: [
+            if (_busy)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                builder: (context) => Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+              ),
+          ],
+        ),
+        body: AmbientBackground(
+          intensity: 0.7,
+          child: ListView(
+            padding: EdgeInsets.only(
+              top:
+                  MediaQuery.paddingOf(context).top +
+                  kToolbarHeight +
+                  Insets.xl,
+              bottom: Insets.xxl + MediaQuery.paddingOf(context).bottom,
+            ),
+            children: [
+              _buildHeader(),
+              const SizedBox(height: Insets.xl),
+              _buildQuickActions(),
+              if (widget.isGroup)
+                ..._buildGroupSections()
+              else
+                ..._buildDirectSections(),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    final members = context.watch<GroupDetailsController>().currentGroupMembers;
+    return Column(
+      children: [
+        Hero(
+          tag: 'avatar-${widget.chatId}',
+          child: ElephantAvatar(
+            name: _name,
+            seed: widget.chatId,
+            isGroup: widget.isGroup,
+            size: 104,
+          ),
+        ),
+        const SizedBox(height: Insets.lg),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: Insets.xl),
+          child: Text(
+            _name,
+            textAlign: TextAlign.center,
+            style: context.text.headlineMedium?.copyWith(fontSize: 26),
+          ),
+        ),
+        const SizedBox(height: Insets.xs),
+        if (widget.isGroup)
+          Text(
+            members.isEmpty ? 'Group' : 'Group · ${members.length} members',
+            style: context.text.bodyMedium?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          )
+        else if (widget.username != null)
+          GestureDetector(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: widget.username!));
+              showSnack(context, 'Username copied');
+            },
+            child: Text(
+              '@${widget.username}',
+              style: context.text.bodyMedium?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        if (!widget.isGroup && _isVerified == true) ...[
+          const SizedBox(height: Insets.sm),
+          TagPill(
+            'Verified',
+            color: context.glass.success,
+            icon: Icons.verified_rounded,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildQuickActions() {
+    final iAmAdmin =
+        widget.isGroup &&
+        context.watch<GroupDetailsController>().isAdmin(
+          context.read<AuthState>().currentUser?.id,
+        );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+      child: Row(
+        children: [
+          _QuickAction(
+            icon: Icons.chat_bubble_outline_rounded,
+            label: 'Message',
+            onTap: () => _close(),
+          ),
+          const SizedBox(width: Insets.md),
+          _QuickAction(
+            icon: Icons.search_rounded,
+            label: 'Search',
+            onTap: () => _close(ChatDetailsResult.search),
+          ),
+          if (iAmAdmin) ...[
+            const SizedBox(width: Insets.md),
+            _QuickAction(
+              icon: Icons.person_add_alt_rounded,
+              label: 'Add',
+              onTap: _openAddMembers,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildDirectSections() {
+    return [
+      const SectionLabel('Encryption'),
+      GlassSection(
+        children: [
+          ElephantTile(
+            icon: Icons.verified_user_outlined,
+            iconColor: context.glass.success,
+            title: 'Verify safety number',
+            subtitle: _isVerified == true
+                ? 'You verified $_name\'s keys.'
+                : 'Compare numbers with $_name to make sure no one is listening in.',
+            trailing: _isVerified == null
+                ? null
+                : TagPill(
+                    _isVerified! ? 'Verified' : 'Not verified',
+                    color: _isVerified!
+                        ? context.glass.success
+                        : context.colors.onSurfaceVariant,
+                  ),
+            onTap: _openSafetyNumber,
+          ),
+          ElephantTile(
+            icon: Icons.restart_alt_rounded,
+            iconColor: context.glass.warning,
+            title: 'Reset secure session',
+            subtitle: 'Fixes messages that won\'t decrypt.',
+            onTap: _resetSession,
+          ),
+        ],
+      ),
+      const SectionLabel('About encryption'),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Insets.page + 4),
+        child: Text(
+          'Messages with $_name use the Signal Protocol. Your private keys never leave this device, '
+          'so the server only ever sees encrypted text.',
+          style: context.text.bodySmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+            height: 1.5,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildGroupSections() {
+    final groups = context.watch<GroupDetailsController>();
+    final myId = context.read<AuthState>().currentUser?.id.toLowerCase();
+    final iAmAdmin = groups.isAdmin(myId);
+    final members = groups.currentGroupMembers;
+
+    return [
+      if (iAmAdmin) ...[
+        const SectionLabel('Settings'),
+        GlassSection(
+          children: [
+            ElephantTile(
+              icon: Icons.edit_outlined,
+              title: 'Rename group',
+              subtitle: _name,
+              onTap: _rename,
+            ),
+          ],
+        ),
+      ],
+      SectionLabel(
+        'Members',
+        trailing: groups.isLoadingDetails && members.isNotEmpty
+            ? const SizedBox(
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : null,
+      ),
+      if (members.isEmpty && groups.isLoadingDetails)
+        const Padding(
+          padding: EdgeInsets.all(Insets.xl),
+          child: Center(child: CircularProgressIndicator()),
+        )
+      else
+        GlassSection(
+          children: [
+            if (iAmAdmin)
+              ElephantTile(
+                icon: Icons.person_add_alt_rounded,
+                title: 'Add members',
+                onTap: _openAddMembers,
+              ),
+            for (final member in members)
+              InkWell(
+                onTap: () => _memberActions(member, iAmAdmin),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Insets.lg,
+                    vertical: 10,
+                  ),
+                  child: Row(
                     children: [
-                      const Text(
-                        "Verify Security Code",
-                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                      ElephantAvatar(
+                        name: member.displayName,
+                        seed: member.userId,
+                        size: 38,
                       ),
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        color: Colors.white,
-                        child: QrImageView(
-                          data: safetyNumber,
-                          version: QrVersions.auto,
-                          size: 200.0,
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              member.userId.toLowerCase() == myId
+                                  ? '${member.displayName} (you)'
+                                  : member.displayName,
+                              style: context.text.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            Text(
+                              '@${member.username}',
+                              style: context.text.bodySmall?.copyWith(
+                                color: context.colors.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 20),
-                      Text(
-                        safetyNumber,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 16, 
-                          letterSpacing: 2, 
-                          fontWeight: FontWeight.w500
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        "To verify that messages and calls are end-to-end encrypted, scan this code on your contact's phone, or compare the number above.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey),
-                      ),
-                      const SizedBox(height: 40),
+                      if (member.isAdmin) const TagPill('Admin'),
                     ],
                   ),
                 ),
-              );
-            },
+              ),
+          ],
+        ),
+      const SectionLabel('Privacy'),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Insets.page + 4),
+        child: Text(
+          'Group messages are encrypted in transit (TLS) but are not end-to-end encrypted yet, '
+          'so the server can read them. Use a direct chat for sensitive conversations.',
+          style: context.text.bodySmall?.copyWith(
+            color: context.colors.onSurfaceVariant,
+            height: 1.5,
           ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.refresh, color: Colors.orange),
-            title: const Text('Reset Secure Session', style: TextStyle(color: Colors.orange)),
-            subtitle: const Text('Use this if messages are failing to decrypt.'),
-            onTap: () async {
-               await SignalService().forceResetSession(widget.chatId);
-               if (context.mounted) {
-                 ScaffoldMessenger.of(context).showSnackBar(
-                   const SnackBar(content: Text('Secure session reset. Send a new message to reconnect.')),
-                 );
-               }
-            },
-          ),
-          const Divider(height: 1),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('About and phone number'),
-            subtitle: const Text(
-              '+1 234 567 8900\nHey there! I am using this app.',
-            ),
-            onTap: () {},
-          ),
-        ],
+        ),
       ),
-    );
-  }
-
-  Widget _buildGroupMembersSection(GroupDetailsController groupState) {
-    final members = groupState.currentGroupMembers;
-    final isLoading = groupState.isLoadingDetails;
-
-    final currentUserId = context.read<AuthState>().currentUser?.id;
-    final currentUserMember = members
-        .where((m) => m.userId == currentUserId)
-        .firstOrNull;
-    final isCurrentUserAdmin = currentUserMember?.role == 'admin';
-
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      const SizedBox(height: Insets.xl),
+      GlassSection(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Text(
-              '${members.length} participants',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+          ElephantTile(
+            icon: Icons.logout_rounded,
+            title: 'Leave group',
+            destructive: true,
+            showChevron: false,
+            onTap: _leave,
           ),
-
-          if (isCurrentUserAdmin)
-            ListTile(
-              leading: CircleAvatar(
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                child: Icon(
-                  Icons.person_add,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                ),
-              ),
-              title: const Text('Add participants'),
-              onTap: () {
-                showModalBottomSheet(
-                  context: context,
-                  isScrollControlled: true,
-                  backgroundColor: Colors.transparent,
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                  ),
-                  builder: (context) =>
-                      _AddParticipantSheet(chatId: widget.chatId),
-                );
-              },
-            ),
-
-          if (isLoading && members.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(bottom: 32.0),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else
-            ListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              itemCount: members.length,
-              itemBuilder: (context, index) {
-                final member = members[index];
-                final isThisUserAdmin = member.role == 'admin';
-
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundImage: member.avatarUrl != null
-                        ? NetworkImage(member.avatarUrl!)
-                        : null,
-                    child: member.avatarUrl == null
-                        ? const Icon(Icons.person)
-                        : null,
-                  ),
-                  title: Text(member.displayName),
-                  subtitle: isThisUserAdmin
-                      ? Text(
-                          'Admin',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontSize: 12,
-                          ),
-                        )
-                      : null,
-                  onTap: () =>
-                      _showMemberDetailsDialog(member, isCurrentUserAdmin),
-                );
-              },
-            ),
         ],
       ),
-    );
+    ];
   }
 
-  void _showMemberDetailsDialog(ChatMember member, bool isCurrentUserAdmin) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        return ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-            child: SafeArea(
+  void _openAddMembers() {
+    showGlassSheet(
+      context,
+      title: 'Add members',
+      builder: (_) => _AddMembersSheet(groupId: widget.chatId),
+    ).whenComplete(() {
+      if (mounted) context.read<ChatSearchController>().clearSearch();
+    });
+  }
+}
+
+class _QuickAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickAction({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GlassSurface(
+        borderRadius: BorderRadius.circular(Radii.lg),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  ListTile(
-                    title: Text('Message @${member.username}'),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ChatPage(
-                            chatUserId: member.userId,
-                            displayName: member.displayName,
-                            isGroup: false,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  if (isCurrentUserAdmin &&
-                      member.userId !=
-                          context.read<AuthState>().currentUser?.id)
-                    ListTile(
-                      title: const Text(
-                        'Remove from group',
-                        style: TextStyle(color: Colors.red),
-                      ),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: const Text('Remove Participant'),
-                            content: Text(
-                              'Are you sure you want to remove ${member.displayName} from this group?',
-                            ),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Cancel'),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  Navigator.pop(context, true);
-                                },
-                                child: const Text(
-                                  'Remove',
-                                  style: TextStyle(color: Colors.red),
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-
-                        if (confirm == true && mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Removing member...'),
-                              duration: Duration(seconds: 1),
-                            ),
-                          );
-
-                          final success = await context
-                              .read<GroupController>()
-                              .removeMemberFromGroup(
-                                widget.chatId,
-                                member.userId,
-                              );
-
-                          if (success && mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('${member.displayName} removed.'),
-                              ),
-                            );
-                            context
-                                .read<GroupDetailsController>()
-                                .fetchGroupMembers(widget.chatId);
-                          } else if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Failed to remove member.'),
-                              ),
-                            );
-                          }
-                        }
-                      },
-                    ),
+                  Icon(icon, color: context.colors.primary),
+                  const SizedBox(height: 6),
+                  Text(label, style: context.text.labelLarge),
                 ],
               ),
             ),
           ),
-        );
-      },
-    );
-  }
-}
-
-// --- Reusable Helper Widgets ---
-
-class _SectionContainer extends StatelessWidget {
-  final Widget child;
-  const _SectionContainer({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(color: Theme.of(context).colorScheme.surface, child: child);
-  }
-}
-
-class _ActionIcon extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final GestureTapCallback? onTap;
-
-  const _ActionIcon({required this.icon, required this.label, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16.0),
-        child: Column(
-          children: [
-            Icon(icon, size: 28),
-            const SizedBox(height: 8),
-            Text(label),
-          ],
         ),
       ),
     );
   }
 }
 
-class _AddParticipantSheet extends StatefulWidget {
-  final String chatId;
+class _SafetyNumberSheet extends StatefulWidget {
+  final String name;
+  final String safetyNumber;
+  final bool initiallyVerified;
+  final String contactId;
 
-  const _AddParticipantSheet({required this.chatId});
+  const _SafetyNumberSheet({
+    required this.name,
+    required this.safetyNumber,
+    required this.initiallyVerified,
+    required this.contactId,
+  });
 
   @override
-  State<_AddParticipantSheet> createState() => _AddParticipantSheetState();
+  State<_SafetyNumberSheet> createState() => _SafetyNumberSheetState();
 }
 
-class _AddParticipantSheetState extends State<_AddParticipantSheet> {
-  final _searchController = TextEditingController();
-  Timer? _debounceTimer;
+class _SafetyNumberSheetState extends State<_SafetyNumberSheet> {
+  late bool _verified = widget.initiallyVerified;
+  bool _saving = false;
+
+  List<String> get _chunks {
+    final digits = widget.safetyNumber.replaceAll(RegExp(r'\s'), '');
+    return [
+      for (int i = 0; i < digits.length; i += 5)
+        digits.substring(i, (i + 5).clamp(0, digits.length)),
+    ];
+  }
+
+  Future<void> _toggle(bool value) async {
+    setState(() => _saving = true);
+    try {
+      await SignalService().setVerified(widget.contactId, value);
+      if (mounted) setState(() => _verified = value);
+    } catch (e) {
+      if (mounted) {
+        showSnack(
+          context,
+          ApiService.errorMessage(
+            e,
+            fallback: 'Couldn\'t update verification.',
+          ),
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = context.colors.onSurface;
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.xl),
+      child: Column(
+        children: [
+          Text(
+            'If the numbers on your screen and ${widget.name}\'s screen match, your chat is private.',
+            textAlign: TextAlign.center,
+            style: context.text.bodyMedium?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: Insets.xl),
+          GlassSurface(
+            borderRadius: BorderRadius.circular(Radii.lg),
+            padding: const EdgeInsets.all(Insets.lg),
+            child: QrImageView(
+              data: widget.safetyNumber.replaceAll(RegExp(r'\s'), ''),
+              size: 180,
+              eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.circle, color: fg),
+              dataModuleStyle: QrDataModuleStyle(
+                dataModuleShape: QrDataModuleShape.circle,
+                color: fg,
+              ),
+            ),
+          ),
+          const SizedBox(height: Insets.xl),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 14,
+            runSpacing: 8,
+            children: [
+              for (final chunk in _chunks)
+                Text(
+                  chunk,
+                  style: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.5,
+                    color: fg,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: Insets.lg),
+          TextButton.icon(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: widget.safetyNumber));
+              showSnack(context, 'Safety number copied');
+            },
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: const Text('Copy'),
+          ),
+          const SizedBox(height: Insets.sm),
+          GlassSurface(
+            borderRadius: BorderRadius.circular(Radii.md),
+            child: SwitchListTile(
+              value: _verified,
+              onChanged: _saving ? null : _toggle,
+              title: const Text('Mark as verified'),
+              subtitle: const Text(
+                'Resets automatically if their keys change.',
+              ),
+            ),
+          ),
+          const SizedBox(height: Insets.lg),
+          GradientButton(
+            label: 'Done',
+            onPressed: () => Navigator.pop(context, _verified),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AddMembersSheet extends StatefulWidget {
+  final String groupId;
+
+  const _AddMembersSheet({required this.groupId});
+
+  @override
+  State<_AddMembersSheet> createState() => _AddMembersSheetState();
+}
+
+class _AddMembersSheetState extends State<_AddMembersSheet> {
+  final _search = TextEditingController();
+  Timer? _debounce;
+  final Set<String> _adding = {};
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
-    _searchController.dispose();
+    _debounce?.cancel();
+    _search.dispose();
     super.dispose();
   }
 
-  void _onSearchChanged(String value, ChatSearchController searchState) {
-    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (value.length >= 3) {
-        searchState.queryUsers(value);
-      }
+  void _onChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      if (mounted) context.read<ChatSearchController>().queryUsers(value);
     });
-    setState(() {});
   }
 
-  Future<void> _addMember(String userId, String displayName) async {
-    FocusScope.of(context).unfocus();
-
-    final groupCtrl = context.read<GroupController>();
-    final groupDetailsCtrl = context.read<GroupDetailsController>();
-
-    final success = await groupCtrl.addMemberToGroup(widget.chatId, userId);
-
-    if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$displayName added to the group!')),
-      );
-      groupDetailsCtrl.fetchGroupMembers(widget.chatId);
-      Navigator.pop(context);
-    } else if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to add $displayName.')));
-    }
+  Future<void> _add(String userId, String name) async {
+    setState(() => _adding.add(userId));
+    final error = await context.read<GroupDetailsController>().addMember(
+      widget.groupId,
+      userId,
+    );
+    if (!mounted) return;
+    setState(() => _adding.remove(userId));
+    showSnack(context, error ?? '$name was added', isError: error != null);
   }
 
   @override
   Widget build(BuildContext context) {
-    final groupDetailsState = context.watch<GroupDetailsController>();
-    final searchState = context.watch<ChatSearchController>();
-    final inboxState = context.watch<InboxController>();
-    final groupState = context.watch<GroupController>();
-
-    final String searchInput = _searchController.text.trim();
-    final bool isSearching = searchInput.isNotEmpty;
-    final bool hasValidQueryLength = searchInput.length >= 3;
-
-    final currentMemberIds = groupDetailsState.currentGroupMembers
-        .map((m) => m.userId)
+    final search = context.watch<ChatSearchController>();
+    final memberIds = context
+        .watch<GroupDetailsController>()
+        .currentGroupMembers
+        .map((m) => m.userId.toLowerCase())
         .toSet();
+    final inbox = context.watch<InboxController>();
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
+    final typed =
+        _search.text.trim().length >= ChatSearchController.minQueryLength;
+    final candidates = typed
+        ? search.results.map((u) => (u.id, u.displayName, u.username)).toList()
+        : inbox.inbox
+              .where((item) => !item.isGroup)
+              .map((item) => (item.id, item.title, item.username ?? ''))
+              .toList();
+
+    return SizedBox(
+      height: MediaQuery.sizeOf(context).height * 0.7,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Insets.xl,
+              0,
+              Insets.xl,
+              Insets.sm,
+            ),
+            child: GlassSearchField(
+              controller: _search,
+              hint: 'Search by name or username',
+              onChanged: (value) {
+                setState(() {});
+                _onChanged(value);
+              },
+            ),
           ),
-          child: Container(
-            height: MediaQuery.of(context).size.height * 0.7,
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(
-              children: [
-                const Text(
-                  'Add Participants',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 16),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: (val) => _onSearchChanged(val, searchState),
-                    decoration: InputDecoration(
-                      hintText: "Search name or username",
-                      prefixIcon: const Icon(Icons.search),
-                      suffixIcon: isSearching
-                          ? IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _searchController.clear();
-                                searchState.queryUsers("");
-                                setState(() {});
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide.none,
-                      ),
+          if (search.isSearchLoading)
+            const LinearProgressIndicator(minHeight: 2),
+          if (!typed) const SectionLabel('Recent chats'),
+          Expanded(
+            child: candidates.isEmpty
+                ? Center(
+                    child: Text(
+                      search.error ??
+                          (typed
+                              ? 'No users found'
+                              : 'Search for people to add'),
+                      style: TextStyle(color: context.colors.onSurfaceVariant),
                     ),
+                  )
+                : ListView.builder(
+                    itemCount: candidates.length,
+                    itemBuilder: (context, index) {
+                      final (id, name, username) = candidates[index];
+                      final isMember = memberIds.contains(id.toLowerCase());
+                      return ListTile(
+                        leading: ElephantAvatar(name: name, seed: id, size: 40),
+                        title: Text(name),
+                        subtitle: Text('@$username'),
+                        trailing: isMember
+                            ? const TagPill('Member')
+                            : _adding.contains(id)
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : IconButton.filledTonal(
+                                icon: const Icon(Icons.add_rounded),
+                                onPressed: () => _add(id, name),
+                              ),
+                      );
+                    },
                   ),
-                ),
-                const SizedBox(height: 10),
-
-                if (groupState.isLoading)
-                  const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: LinearProgressIndicator(),
-                  ),
-
-                Expanded(
-                  child: isSearching
-                      ? _buildSearchResults(
-                          searchState,
-                          currentMemberIds,
-                          hasValidQueryLength,
-                        )
-                      : _buildRecentContacts(inboxState, currentMemberIds),
-                ),
-              ],
-            ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchResults(
-    ChatSearchController searchState,
-    Set<String> currentMemberIds,
-    bool hasValidQueryLength,
-  ) {
-    if (!hasValidQueryLength) {
-      return const Center(
-        child: Text("Type at least 3 characters to search..."),
-      );
-    }
-    if (searchState.isSearchLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    final results = searchState.contactSearchResults
-        .where((user) => !currentMemberIds.contains(user['id']))
-        .toList();
-
-    if (results.isEmpty) {
-      return const Center(child: Text("No new users found."));
-    }
-
-    return ListView.builder(
-      itemCount: results.length,
-      itemBuilder: (context, index) {
-        final user = results[index];
-        final String displayName = user['display_name'] ?? 'User';
-        final String username = user['username'] ?? '';
-        final String uid = user['id'];
-
-        return ListTile(
-          leading: const CircleAvatar(child: Icon(Icons.person)),
-          title: Text(displayName),
-          subtitle: Text("@$username"),
-          trailing: IconButton(
-            icon: Icon(
-              Icons.add_circle,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            onPressed: () => _addMember(uid, displayName),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildRecentContacts(
-    InboxController inboxState,
-    Set<String> currentMemberIds,
-  ) {
-    final recents = inboxState.inbox
-        .where(
-          (thread) => !thread.isGroup && !currentMemberIds.contains(thread.id),
-        )
-        .toList();
-
-    if (recents.isEmpty) {
-      return const Center(child: Text("No recent contacts to add."));
-    }
-
-    return ListView.builder(
-      itemCount: recents.length,
-      itemBuilder: (context, index) {
-        final thread = recents[index];
-        if (index == 0) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(left: 16, top: 8, bottom: 8),
-                child: Text(
-                  "Recent Contacts",
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-              _buildRecentListTile(thread),
-            ],
-          );
-        }
-        return _buildRecentListTile(thread);
-      },
-    );
-  }
-
-  Widget _buildRecentListTile(dynamic thread) {
-    return ListTile(
-      leading: const CircleAvatar(child: Icon(Icons.person)),
-      title: Text(thread.title),
-      subtitle: Text("@${thread.username}"),
-      trailing: IconButton(
-        icon: Icon(
-          Icons.add_circle,
-          color: Theme.of(context).colorScheme.primary,
-        ),
-        onPressed: () => _addMember(thread.id, thread.title),
+        ],
       ),
     );
   }
