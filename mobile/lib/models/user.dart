@@ -1,25 +1,31 @@
+/// A user as returned by `/api/users/*` and the auth endpoints.
 class UserModel {
   final String id;
   final String username;
   final String displayName;
   final String? email;
-  final String? avatarUrl;
+  final DateTime? createdAt;
 
   UserModel({
     required this.id,
     required this.username,
     required this.displayName,
     this.email,
-    this.avatarUrl,
+    this.createdAt,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
+    final username = json['username']?.toString() ?? '';
+    final displayName = json['display_name']?.toString() ?? '';
+    final email = json['email']?.toString();
     return UserModel(
       id: json['id']?.toString() ?? '',
-      username: json['username'] ?? '',
-      displayName: json['display_name'] ?? json['displayName'] ?? 'User',
-      email: json['email'],
-      avatarUrl: json['avatar_url'] ?? json['avatarUrl'],
+      username: username,
+      displayName: displayName.isNotEmpty ? displayName : username,
+      email: (email == null || email.isEmpty) ? null : email,
+      createdAt: DateTime.tryParse(
+        json['created_at']?.toString() ?? '',
+      )?.toLocal(),
     );
   }
 }

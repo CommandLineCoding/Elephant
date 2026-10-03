@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:mobile/services/chat/chat_event_handler.dart';
 import 'package:mobile/services/chat/chat_sync_service.dart';
 import '../../services/ws_service.dart';
 import '../../services/auth_service.dart';
+
+enum ConnectionStatus { connected, connecting, offline }
 
 class ChatConnectionController extends ChangeNotifier
     with WidgetsBindingObserver {
@@ -15,7 +18,11 @@ class ChatConnectionController extends ChangeNotifier
   final ChatEventHandler eventHandler;
 
   bool isOffline = false;
+  ConnectionStatus status = ConnectionStatus.connecting;
+
   bool _isWsConnecting = false;
+  bool _isPaused = false;
+  int _failedAttempts = 0;
   Timer? _reconnectTimer;
   StreamSubscription? _connectivitySubscription;
   StreamSubscription? _wsSubscription;
@@ -27,62 +34,63 @@ class ChatConnectionController extends ChangeNotifier
       result,
     ) {
       final bool currentlyOffline = result.contains(ConnectivityResult.none);
+      if (isOffline == currentlyOffline) return;
 
-      if (isOffline != currentlyOffline) {
-        isOffline = currentlyOffline;
-        notifyListeners();
-
-        if (!isOffline) {
-          connectWebSocket();
-          eventHandler.inboxController.loadInbox();
-        } else {
-          eventHandler.activeChatController.isPeerOnline = false;
-          eventHandler.activeChatController.isPeerTyping = false;
-          eventHandler.activeChatController.refreshUI();
-
-          _ws.disconnect();
-        }
+      isOffline = currentlyOffline;
+      if (isOffline) {
+        _markPeerOffline();
+        _wsSubscription?.cancel();
+        _ws.disconnect();
+        _setStatus(ConnectionStatus.offline);
+      } else {
+        _failedAttempts = 0;
+        connectWebSocket();
+        eventHandler.inboxController.loadInbox();
       }
     });
   }
 
+  void _setStatus(ConnectionStatus next) {
+    if (status != next) {
+      status = next;
+      notifyListeners();
+    }
+  }
+
+  void _markPeerOffline() {
+    final chat = eventHandler.activeChatController;
+    if (chat.isPeerOnline || chat.isPeerTyping) {
+      chat.isPeerOnline = false;
+      chat.isPeerTyping = false;
+      chat.refreshUI();
+    }
+  }
+
   Future<void> connectWebSocket() async {
-    if (_ws.isConnected || _isWsConnecting) return;
+    if (_ws.isConnected || _isWsConnecting || isOffline || _isPaused) return;
     _isWsConnecting = true;
+    _reconnectTimer?.cancel();
+    _setStatus(ConnectionStatus.connecting);
 
     try {
-      _reconnectTimer?.cancel();
-
-      final token = await _auth.getToken();
-      if (token == null) {
-        _isWsConnecting = false;
-        return;
-      }
+      // Access tokens live 15 minutes, so refresh before every handshake.
+      final token = await _auth.getValidAccessToken();
+      if (token == null) return;
 
       await _wsSubscription?.cancel();
       _ws.disconnect();
 
-      final connected = await _ws.connect(token);
-      if (!connected) {
-        _triggerReconnectLoop();
+      if (!await _ws.connect(token)) {
+        _scheduleReconnect();
         return;
       }
 
-      _syncService.processOfflineQueue(
-        eventHandler.currentUserId,
-        activeChatController: eventHandler.activeChatController,
-      );
-
-      final currentChatId = eventHandler.activeChatController.currentChatUserId;
-      if (currentChatId != null &&
-          !eventHandler.activeChatController.isCurrentChatGroup) {
-        _ws.sendRequestStatus(targetId: currentChatId);
-      }
+      _failedAttempts = 0;
+      _setStatus(ConnectionStatus.connected);
 
       _wsSubscription = _ws.stream?.listen(
         (rawFrame) {
           try {
-            debugPrint("📥 WS Received: $rawFrame");
             final decoded = jsonDecode(rawFrame);
             if (decoded is Map<String, dynamic>) {
               eventHandler.handleIncomingEvent(decoded);
@@ -92,68 +100,71 @@ class ChatConnectionController extends ChangeNotifier
           }
         },
         onError: (err) {
-          debugPrint("WS Pipeline Error: $err");
-          _triggerReconnectLoop();
+          debugPrint("WS error: $err");
+          _scheduleReconnect();
         },
         onDone: () {
-          debugPrint("WS Pipeline Closed by Server.");
-          _triggerReconnectLoop();
+          debugPrint("WS closed");
+          _scheduleReconnect();
         },
+        cancelOnError: true,
       );
+
+      _syncService.processOfflineQueue(
+        eventHandler.currentUserId,
+        activeChatController: eventHandler.activeChatController,
+      );
+
+      final chat = eventHandler.activeChatController;
+      if (chat.currentChatUserId != null && !chat.isCurrentChatGroup) {
+        _ws.sendRequestStatus(targetId: chat.currentChatUserId!);
+      }
     } catch (e) {
-      debugPrint("WS Setup Error: $e");
-      _triggerReconnectLoop();
+      debugPrint("WS setup error: $e");
+      _scheduleReconnect();
     } finally {
       _isWsConnecting = false;
     }
-    _ws.onConnectionLost = () {
-      debugPrint(
-        "ConnectionController: Caught immediate socket loss from watchdog.",
-      );
-      _triggerReconnectLoop();
-    };
   }
 
-  void _triggerReconnectLoop() {
+  void _scheduleReconnect() {
     _ws.disconnect();
     _isWsConnecting = false;
+    _markPeerOffline();
+    if (isOffline || _isPaused) return;
 
-    if (eventHandler.activeChatController.isPeerOnline) {
-      eventHandler.activeChatController.isPeerOnline = false;
-      eventHandler.activeChatController.refreshUI();
-    }
+    _setStatus(ConnectionStatus.connecting);
+    _failedAttempts++;
+    final seconds = min(30, 2 * pow(2, min(_failedAttempts - 1, 4)).toInt());
 
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(const Duration(seconds: 4), () {
-      if (!isOffline) {
-        connectWebSocket();
-      }
-    });
+    _reconnectTimer = Timer(Duration(seconds: seconds), connectWebSocket);
+  }
+
+  /// Reconnect immediately, e.g. from a "Retry" button.
+  void retryNow() {
+    _failedAttempts = 0;
+    connectWebSocket();
   }
 
   void disconnectWebSocket() {
     _reconnectTimer?.cancel();
+    _wsSubscription?.cancel();
     _ws.disconnect();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _syncService.processOfflineQueue(
-        eventHandler.currentUserId,
-        activeChatController: eventHandler.activeChatController,
-      );
-
+      _isPaused = false;
       connectWebSocket();
-
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!isOffline) {
-          eventHandler.inboxController.loadInbox();
-        }
-      });
+      if (!isOffline) {
+        eventHandler.inboxController.loadInbox();
+        eventHandler.activeChatController.syncActiveChatSilently();
+      }
     } else if (state == AppLifecycleState.paused) {
-      _reconnectTimer?.cancel();
-      _ws.disconnect();
+      _isPaused = true;
+      disconnectWebSocket();
     }
   }
 
@@ -161,9 +172,7 @@ class ChatConnectionController extends ChangeNotifier
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySubscription?.cancel();
-    _wsSubscription?.cancel();
-    _reconnectTimer?.cancel();
-    _ws.disconnect();
+    disconnectWebSocket();
     super.dispose();
   }
 }

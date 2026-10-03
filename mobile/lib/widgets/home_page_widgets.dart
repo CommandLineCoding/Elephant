@@ -1,50 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
+import 'package:mobile/themes/app_themes.dart';
+import 'package:mobile/widgets/ui/avatar.dart';
+import 'package:mobile/widgets/ui/components.dart';
 import 'package:provider/provider.dart';
 import '../models/inbox_item.dart';
-import '../pages/chat/chat_page.dart';
 
-class CustomChatCard extends StatelessWidget {
+String formatInboxTime(DateTime time) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final day = DateTime(time.year, time.month, time.day);
+  final diff = today.difference(day).inDays;
+
+  if (diff == 0) return DateFormat.jm().format(time);
+  if (diff == 1) return 'Yesterday';
+  if (diff < 7) return DateFormat.E().format(time);
+  if (time.year == now.year) return DateFormat.MMMd().format(time);
+  return DateFormat.yMMMd().format(time);
+}
+
+/// One row of the inbox: avatar, name, preview with delivery state, time and
+/// unread badge.
+class ConversationTile extends StatelessWidget {
   final InboxItem conversation;
-  final bool isSelected;
-  final bool isSelectionMode;
-  final GestureLongPressCallback? onLongPress;
-  final Function onTapInSelection;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
-  const CustomChatCard({
+  const ConversationTile({
     super.key,
     required this.conversation,
-    required this.isSelected,
+    required this.onTap,
     this.onLongPress,
-    required this.onTapInSelection,
-    required this.isSelectionMode,
   });
-
-  String _formatTimestamp(DateTime time) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final messageDate = DateTime(time.year, time.month, time.day);
-
-    if (messageDate == today) {
-      return "${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}";
-    } else if (messageDate == yesterday) {
-      return "Yesterday";
-    } else {
-      return "${time.day}/${time.month}/${time.year}";
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final String timeLabel = _formatTimestamp(conversation.timestamp);
-    final bool hasUnread = conversation.unreadCount > 0;
+    final hasUnread = conversation.unreadCount > 0;
+    final members = context.watch<GroupDetailsController>();
 
-    final groupDetailsState = context.watch<GroupDetailsController>();
-
-    if (conversation.isGroup &&
-        !groupDetailsState.hasFetchedGroup(conversation.id)) {
+    if (conversation.isGroup && !members.hasFetchedGroup(conversation.id)) {
       Future.microtask(() {
         if (context.mounted) {
           context.read<GroupDetailsController>().preloadGroupMembers(
@@ -54,203 +50,167 @@ class CustomChatCard extends StatelessWidget {
       });
     }
 
-    final currentUserId = context.read<AuthState>().currentUser?.id;
+    final myId = context.read<AuthState>().currentUser?.id.toLowerCase();
+    final sender = conversation.lastMessageSender?.trim().toLowerCase();
+    final isMe = sender == 'me' || (myId != null && sender == myId);
+    final hasMessage = conversation.lastMessage.isNotEmpty;
 
-    final String? safeSenderId = conversation.lastMessageSender
-        ?.trim()
-        .toLowerCase();
-    final String? safeMyId = currentUserId?.trim().toLowerCase();
-
-    final bool isMe =
-        safeSenderId == 'me' || (safeMyId != null && safeSenderId == safeMyId);
-
-    String? senderName;
-    if (conversation.isGroup && conversation.lastMessageSender != null) {
-      if (isMe) {
-        senderName = "You";
-      } else {
-        senderName =
-            groupDetailsState.userCache[conversation.lastMessageSender!] ??
-            "Member";
-      }
+    String? prefix;
+    if (hasMessage &&
+        conversation.isGroup &&
+        sender != null &&
+        sender.isNotEmpty) {
+      prefix = isMe ? 'You' : members.nameFor(sender).split(' ').first;
     }
 
-    final String syncStatus = conversation.lastMessageSyncStatus ?? 'synced';
-    final bool isRead = conversation.lastMessageIsRead ?? false;
+    final preview = hasMessage
+        ? conversation.lastMessage.replaceAll('\n', ' ')
+        : (conversation.isGroup
+              ? 'Group created. Say hello!'
+              : 'No messages yet');
 
-    return Material(
-      color: isSelected
-          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
-          : Colors.transparent,
-      child: InkWell(
-        onLongPress: onLongPress,
-        onTap: () async {
-          if (isSelectionMode) {
-            onTapInSelection();
-          } else {
-            if (context.mounted) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ChatPage(
-                    chatUserId: conversation.id,
-                    displayName: conversation.title,
-                    isGroup: conversation.isGroup,
-                  ),
-                ),
-              );
-            }
-          }
-        },
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 52,
-                height: 52,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CircleAvatar(
-                      radius: 26,
-                      backgroundColor: Theme.of(
-                        context,
-                      ).colorScheme.primaryContainer,
-                      child: Icon(
-                        conversation.isGroup ? Icons.group : Icons.person,
-                        color: Theme.of(context).colorScheme.onPrimaryContainer,
-                      ),
-                    ),
-                    Positioned(
-                      right: -2,
-                      bottom: -2,
-                      child: AnimatedScale(
-                        scale: isSelected ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeOutBack,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).scaffoldBackgroundColor,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.check_circle,
-                            color: Theme.of(context).colorScheme.primary,
-                            size: 22,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      conversation.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        if (isMe) ...[
-                          Icon(
-                            syncStatus == 'pending'
-                                ? Icons.access_time
-                                : (isRead ? Icons.done_all : Icons.done),
-                            size: 16,
-                            color: syncStatus == 'pending'
-                                ? Theme.of(context).colorScheme.onSurfaceVariant
-                                      .withValues(alpha: 0.5)
-                                : isRead
-                                ? Colors.lightBlueAccent
-                                : Theme.of(context).colorScheme.onSurfaceVariant
-                                      .withValues(alpha: 0.7),
-                          ),
-                          const SizedBox(width: 4),
-                        ],
-                        Expanded(
-                          child: Text(
-                            senderName != null
-                                ? "*$senderName:* ${conversation.lastMessage.replaceAll('\n', ' ')}"
-                                : conversation.lastMessage.replaceAll(
-                                    '\n',
-                                    ' ',
-                                  ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: hasUnread
-                                  ? Theme.of(context).colorScheme.onSurface
-                                  : Theme.of(
-                                      context,
-                                    ).colorScheme.onSurfaceVariant,
-                              fontSize: 15,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+    final mutedColor = context.colors.onSurfaceVariant;
+
+    return InkWell(
+      onTap: onTap,
+      onLongPress: onLongPress,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: Insets.page,
+          vertical: 11,
+        ),
+        child: Row(
+          children: [
+            ElephantAvatar(
+              name: conversation.title,
+              seed: conversation.id,
+              isGroup: conversation.isGroup,
+              size: 54,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    timeLabel,
-                    style: TextStyle(
-                      color: hasUnread
-                          ? Theme.of(context).colorScheme.primary
-                          : Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontSize: 12,
-                      fontWeight: hasUnread
-                          ? FontWeight.w600
-                          : FontWeight.normal,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  if (hasUnread)
-                    Container(
-                      constraints: const BoxConstraints(
-                        minWidth: 20,
-                        minHeight: 20,
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primary,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        conversation.unreadCount > 99
-                            ? "99+"
-                            : "${conversation.unreadCount}",
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          conversation.title.isEmpty
+                              ? (conversation.username ?? 'Unknown')
+                              : conversation.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.titleMedium?.copyWith(
+                            fontWeight: hasUnread
+                                ? FontWeight.w800
+                                : FontWeight.w700,
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(width: 8),
+                      Text(
+                        formatInboxTime(conversation.timestamp),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: hasUnread
+                              ? context.colors.primary
+                              : mutedColor,
+                          fontWeight: hasUnread
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      if (isMe && hasMessage && !conversation.isGroup) ...[
+                        DeliveryTick(
+                          isPending:
+                              conversation.lastMessageSyncStatus == 'pending',
+                          isRead: conversation.lastMessageIsRead ?? false,
+                          color: mutedColor,
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              if (prefix != null)
+                                TextSpan(
+                                  text: '$prefix: ',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    color: hasUnread
+                                        ? context.colors.onSurface
+                                        : mutedColor,
+                                  ),
+                                ),
+                              TextSpan(text: preview),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 14.5,
+                            color: hasUnread
+                                ? context.colors.onSurface
+                                : mutedColor,
+                            fontStyle: hasMessage
+                                ? FontStyle.normal
+                                : FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                      if (hasUnread) ...[
+                        const SizedBox(width: 8),
+                        UnreadBadge(conversation.unreadCount),
+                      ],
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+}
+
+/// Clock while queued, one tick when sent, two coloured ticks when read.
+class DeliveryTick extends StatelessWidget {
+  final bool isPending;
+  final bool isRead;
+  final Color color;
+  final Color? readColor;
+  final double size;
+
+  const DeliveryTick({
+    super.key,
+    required this.isPending,
+    required this.isRead,
+    required this.color,
+    this.readColor,
+    this.size = 16,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isPending) {
+      return Icon(
+        Icons.schedule_rounded,
+        size: size - 2,
+        color: color.withValues(alpha: 0.7),
+      );
+    }
+    return Icon(
+      isRead ? Icons.done_all_rounded : Icons.done_rounded,
+      size: size,
+      color: isRead ? (readColor ?? context.glass.readTick) : color,
     );
   }
 }

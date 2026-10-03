@@ -1,4 +1,3 @@
-import 'package:mobile/models/conversation.dart';
 import 'package:mobile/models/group.dart';
 
 class InboxItem {
@@ -51,37 +50,50 @@ class InboxItem {
       isRead: isRead ?? this.isRead,
       unreadCount: unreadCount ?? this.unreadCount,
       lastMessageSender: lastMessageSender ?? this.lastMessageSender,
-      lastMessageSyncStatus: lastMessageSyncStatus ?? this.lastMessageSyncStatus,
+      lastMessageSyncStatus:
+          lastMessageSyncStatus ?? this.lastMessageSyncStatus,
       lastMessageIsRead: lastMessageIsRead ?? this.lastMessageIsRead,
     );
   }
 
-  factory InboxItem.fromConversation(Conversation conv) {
+  /// Builds an item from one entry of `GET /api/messages/conversations`.
+  /// [lastMessage] is the already-decoded preview text.
+  factory InboxItem.fromConversationJson(
+    Map<String, dynamic> json, {
+    required String lastMessage,
+  }) {
+    final bool isGroup = json['type'] == 'group';
+    final String name = json['name']?.toString() ?? '';
+    final String displayName = json['display_name']?.toString() ?? '';
+    final bool isRead = json['is_read'] == true;
+
     return InboxItem(
-      id: conv.chatUserId,
-      username: conv.username,
-      title: conv.displayName,
-      lastMessage: conv.lastMessage,
-      timestamp: conv.lastMessageTime,
-      isGroup: false,
-      isRead: conv.isRead,
-      unreadCount: conv.unreadCount,
-      lastMessageSender: conv.lastMessageSenderId, 
+      id: json['id']?.toString() ?? '',
+      title: isGroup ? name : (displayName.isNotEmpty ? displayName : name),
+      username: isGroup ? null : name,
+      lastMessage: lastMessage,
+      timestamp:
+          DateTime.tryParse(
+            json['last_message_time']?.toString() ?? '',
+          )?.toLocal() ??
+          DateTime.now(),
+      isGroup: isGroup,
+      isRead: isRead,
+      unreadCount: (json['unread_count'] as num?)?.toInt() ?? 0,
+      lastMessageSender: json['sender_id']?.toString(),
       lastMessageSyncStatus: 'synced',
-      lastMessageIsRead: conv.isRead, 
+      lastMessageIsRead: isRead,
     );
   }
 
+  /// A group that has no messages yet (absent from the conversations list).
   factory InboxItem.fromGroup(Group group) {
     return InboxItem(
       id: group.id,
       title: group.name,
-      timestamp: group.lastMessageAt,
+      lastMessage: '',
+      timestamp: group.createdAt,
       isGroup: true,
-      isRead: true,
-      unreadCount: 0,
-      lastMessageSender: group.lastMessageSender,
-      lastMessage: group.lastMessage,
       lastMessageSyncStatus: 'synced',
       lastMessageIsRead: true,
     );
@@ -114,9 +126,10 @@ class InboxItem {
       isRead: (map['is_read'] as int) == 1,
       unreadCount: (map['unread_count'] as int?) ?? 0,
       lastMessageSender: map['last_message_sender'] as String?,
-      lastMessageSyncStatus: map['last_message_sync_status'] as String? ?? 'synced',
-      lastMessageIsRead: map['last_message_is_read'] != null 
-          ? (map['last_message_is_read'] as int) == 1 
+      lastMessageSyncStatus:
+          map['last_message_sync_status'] as String? ?? 'synced',
+      lastMessageIsRead: map['last_message_is_read'] != null
+          ? (map['last_message_is_read'] as int) == 1
           : false,
     );
   }

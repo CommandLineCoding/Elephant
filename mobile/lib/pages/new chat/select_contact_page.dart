@@ -1,12 +1,17 @@
 import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:mobile/controllers/chat/chat_search_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
+import 'package:mobile/themes/app_themes.dart';
+import 'package:mobile/widgets/ui/avatar.dart';
+import 'package:mobile/widgets/ui/components.dart';
+import 'package:mobile/widgets/ui/feedback.dart';
+import 'package:mobile/widgets/ui/glass.dart';
 import 'package:provider/provider.dart';
 
+/// Step 1 of creating a group: pick members, then name the group.
 class SelectContactPage extends StatefulWidget {
   const SelectContactPage({super.key});
 
@@ -14,553 +19,299 @@ class SelectContactPage extends StatefulWidget {
   State<SelectContactPage> createState() => _SelectContactPageState();
 }
 
+typedef _Contact = ({String name, String username});
+
 class _SelectContactPageState extends State<SelectContactPage> {
-  final Map<String, Map<String, String>> _selectedContacts = {};
-
-  Timer? _debounceTimer;
-  bool _isSearchOpen = false;
-
+  final Map<String, _Contact> _selected = {};
   final _searchController = TextEditingController();
-  final _groupNameController = TextEditingController();
+  Timer? _debounce;
+  late final ChatSearchController _search = context.read<ChatSearchController>();
 
-  void _onSearchChanged(String value) {
-    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
-
-    _debounceTimer = Timer(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        context.read<ChatSearchController>().queryUsers(value);
-      }
-    });
-  }
-
-  void _toggleSelection(String id, String displayName, String username) {
-    setState(() {
-      if (_selectedContacts.containsKey(id)) {
-        _selectedContacts.remove(id);
-      } else {
-        _selectedContacts[id] = {
-          'displayName': displayName,
-          'username': username,
-        };
-      }
-    });
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _search.clearSearch());
   }
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
+    _debounce?.cancel();
     _searchController.dispose();
-    _groupNameController.dispose();
+    Future.microtask(_search.clearSearch);
     super.dispose();
   }
 
-  Widget _buildContactTile({
-    required String id,
-    required String displayName,
-    required String username,
-  }) {
-    final bool isSelected = _selectedContacts.containsKey(id);
+  void _onChanged(String value) {
+    setState(() {});
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 350), () => _search.queryUsers(value));
+  }
 
-    return ListTile(
-      selected: isSelected,
-      selectedTileColor: Theme.of(
-        context,
-      ).colorScheme.primary.withValues(alpha: 0.12),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: Stack(
-        children: [
-          CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: Icon(
-              Icons.person,
-              color: Theme.of(context).colorScheme.onPrimaryContainer,
-            ),
-          ),
-          if (isSelected)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).scaffoldBackgroundColor,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.check_circle,
-                  color: Theme.of(context).colorScheme.primary,
-                  size: 18,
-                ),
-              ),
-            ),
-        ],
-      ),
-      title: Text(
-        displayName,
-        style: TextStyle(
-          color: Theme.of(context).colorScheme.onSurface,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text(
-        username.startsWith('@') ? username : "@$username",
-        style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-      ),
-      onTap: () => _toggleSelection(id, displayName, username),
+  void _toggle(String id, String name, String username) {
+    setState(() {
+      if (_selected.remove(id) == null) {
+        _selected[id] = (name: name, username: username);
+      }
+    });
+  }
+
+  void _next() {
+    showGlassSheet<bool>(
+      context,
+      title: 'Name your group',
+      builder: (_) => _CreateGroupSheet(members: Map.of(_selected)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final searchState = context.watch<ChatSearchController>();
-    final inboxState = context.watch<InboxController>();
-    final bool isSearching = _searchController.text.trim().isNotEmpty;
+    final search = context.watch<ChatSearchController>();
+    final inbox = context.watch<InboxController>();
+    final query = _searchController.text.trim();
+    final typed = query.length >= ChatSearchController.minQueryLength;
+
+    final List<(String, String, String)> people = typed
+        ? search.results.map((u) => (u.id, u.displayName, u.username)).toList()
+        : inbox.inbox
+            .where((t) => !t.isGroup)
+            .map((t) => (t.id, t.title, t.username ?? ''))
+            .toList();
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-        scrolledUnderElevation: 0,
-        title: AnimatedSwitcher(
-          switchInCurve: Curves.decelerate,
-          switchOutCurve: Curves.decelerate,
-          duration: const Duration(milliseconds: 300),
-          transitionBuilder: (child, animation) {
-            final tween = Tween<Offset>(
-              begin: const Offset(0.5, 0.0),
-              end: Offset.zero,
-            );
-            return SlideTransition(
-              position: tween.animate(animation),
-              child: child,
-            );
-          },
-          child: _isSearchOpen
-              ? SizedBox(
-                  height: 40,
-                  child: TextField(
-                    controller: _searchController,
-                    onChanged: _onSearchChanged,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurface,
-                    ),
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: "Name, username or number",
-                      hintStyle: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 15,
-                      ),
-                      suffixIcon: isSearching
-                          ? IconButton(
-                              icon: Icon(
-                                Icons.clear,
-                                color: Theme.of(context).colorScheme.onSurface,
-                              ),
-                              onPressed: () {
-                                _searchController.clear();
-                                context.read<ChatSearchController>().queryUsers(
-                                  "",
-                                );
-                              },
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: Theme.of(
-                        context,
-                      ).colorScheme.surfaceContainerHighest,
-                      contentPadding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 16,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(28),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
-                  ),
-                )
-              : Text(
-                  'Select Contacts',
-                  style: TextStyle(
-                    letterSpacing: 0.5,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                  key: const ValueKey('title'),
-                ),
+      extendBodyBehindAppBar: true,
+      appBar: GlassAppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('New group'),
+            Text(
+              _selected.isEmpty ? 'Add members' : '${_selected.length} selected',
+              style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            onPressed: () {
-              setState(() {
-                _isSearchOpen = !_isSearchOpen;
-                if (!_isSearchOpen) {
-                  _searchController.clear();
-                  context.read<ChatSearchController>().queryUsers("");
-                }
-              });
-            },
-            icon: Icon(
-              _isSearchOpen ? Icons.close : Icons.search,
-              color: Theme.of(context).colorScheme.onSurface,
+      ),
+      floatingActionButton: AnimatedScale(
+        scale: _selected.isEmpty ? 0 : 1,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutBack,
+        child: FloatingActionButton.extended(
+          onPressed: _selected.isEmpty ? null : _next,
+          icon: const Icon(Icons.arrow_forward_rounded),
+          label: const Text('Next'),
+        ),
+      ),
+      body: AmbientBackground(
+        intensity: 0.5,
+        child: Column(
+          children: [
+            SizedBox(height: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.md),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              child: _selected.isEmpty
+                  ? const SizedBox(width: double.infinity)
+                  : SizedBox(
+                      height: 92,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+                        children: [
+                          for (final entry in _selected.entries)
+                            Padding(
+                              padding: const EdgeInsets.only(right: Insets.md),
+                              child: GestureDetector(
+                                onTap: () => _toggle(entry.key, entry.value.name, entry.value.username),
+                                child: SizedBox(
+                                  width: 62,
+                                  child: Column(
+                                    children: [
+                                      Stack(
+                                        clipBehavior: Clip.none,
+                                        children: [
+                                          ElephantAvatar(name: entry.value.name, seed: entry.key, size: 52),
+                                          Positioned(
+                                            right: -4,
+                                            top: -4,
+                                            child: CircleAvatar(
+                                              radius: 10,
+                                              backgroundColor: context.colors.onSurface,
+                                              child: Icon(Icons.close_rounded, size: 13, color: context.colors.surface),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        entry.value.name.split(' ').first,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: context.text.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+              child: GlassSearchField(
+                controller: _searchController,
+                hint: 'Search name or username',
+                onChanged: _onChanged,
+              ),
+            ),
+            if (search.isSearchLoading)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: Insets.page, vertical: Insets.sm),
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (!typed && people.isNotEmpty) const SectionLabel('Recent chats'),
+            Expanded(
+              child: people.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(Insets.xxl),
+                      child: Text(
+                        search.error ??
+                            (typed
+                                ? 'No one found.'
+                                : 'Search for people by name or username to add them.'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: context.colors.onSurfaceVariant),
+                      ),
+                    )
+                  : ListView.builder(
+                      padding: EdgeInsets.only(bottom: 100 + MediaQuery.paddingOf(context).bottom),
+                      itemCount: people.length,
+                      itemBuilder: (context, index) {
+                        final (id, name, username) = people[index];
+                        final selected = _selected.containsKey(id);
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: Insets.page, vertical: 2),
+                          leading: ElephantAvatar(name: name, seed: id, size: 46, showSelected: selected),
+                          title: Text(name),
+                          subtitle: Text('@$username'),
+                          trailing: Checkbox(
+                            value: selected,
+                            shape: const CircleBorder(),
+                            onChanged: (_) => _toggle(id, name, username),
+                          ),
+                          onTap: () => _toggle(id, name, username),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateGroupSheet extends StatefulWidget {
+  final Map<String, _Contact> members;
+
+  const _CreateGroupSheet({required this.members});
+
+  @override
+  State<_CreateGroupSheet> createState() => _CreateGroupSheetState();
+}
+
+class _CreateGroupSheetState extends State<_CreateGroupSheet> {
+  final _name = TextEditingController();
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _create() async {
+    final name = _name.text.trim();
+    if (name.isEmpty) return;
+
+    final groups = context.read<GroupController>();
+    final inbox = context.read<InboxController>();
+    final navigator = Navigator.of(context);
+
+    final group = await groups.createGroup(groupName: name, memberIds: widget.members.keys.toList());
+    if (!mounted) return;
+
+    if (group == null) {
+      showSnack(context, groups.lastError ?? 'Couldn\'t create the group.', isError: true);
+      return;
+    }
+
+    unawaited(inbox.loadInbox());
+    navigator.pop(true);
+    navigator.pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => ChatPage(chatUserId: group.id, displayName: group.name, isGroup: true),
+      ),
+    );
+    if (groups.failedMemberIds.isNotEmpty) {
+      showSnack(
+        navigator.context,
+        '${groups.failedMemberIds.length} member(s) couldn\'t be added. Try again from group info.',
+        isError: true,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLoading = context.watch<GroupController>().isLoading;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.xl, Insets.sm, Insets.xl, Insets.xl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              ValueListenableBuilder(
+                valueListenable: _name,
+                builder: (_, value, _) => ElephantAvatar(
+                  name: value.text,
+                  seed: value.text.isEmpty ? 'new-group' : value.text,
+                  isGroup: true,
+                  size: 56,
+                ),
+              ),
+              const SizedBox(width: Insets.lg),
+              Expanded(
+                child: TextField(
+                  controller: _name,
+                  autofocus: true,
+                  maxLength: 100,
+                  textCapitalization: TextCapitalization.sentences,
+                  onSubmitted: (_) => _create(),
+                  decoration: const InputDecoration(hintText: 'Group name', counterText: ''),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Insets.lg),
+          Text(
+            '${widget.members.length + 1} members including you. Group messages are not end-to-end encrypted yet.',
+            style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+          ),
+          const SizedBox(height: Insets.xl),
+          ValueListenableBuilder(
+            valueListenable: _name,
+            builder: (_, value, _) => GradientButton(
+              label: 'Create group',
+              icon: Icons.check_rounded,
+              isLoading: isLoading,
+              onPressed: value.text.trim().isEmpty ? null : _create,
             ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOut,
-            child: _selectedContacts.isNotEmpty
-                ? Container(
-                    width: double.infinity,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.primary.withValues(alpha: 0.12),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Text(
-                      '${_selectedContacts.length} selected',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink(),
-          ),
-          Expanded(
-            child: isSearching
-                ? (searchState.isSearchLoading
-                      ? Center(
-                          child: CircularProgressIndicator(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                        )
-                      : searchState.contactSearchResults.isEmpty
-                      ? Center(
-                          child: Text(
-                            "No users found (try entering at least 3 characters to search)",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              fontSize: 15,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: searchState.contactSearchResults.length,
-                          itemBuilder: (context, index) {
-                            final user =
-                                searchState.contactSearchResults[index];
-                            final String id =
-                                (user['id'] ?? user['user_id'] ?? '')
-                                    .toString();
-                            final String displayName =
-                                user['display_name'] ?? 'User';
-                            final String username = user['username'] ?? '';
-
-                            if (id.isEmpty) return const SizedBox.shrink();
-
-                            return _buildContactTile(
-                              id: id,
-                              displayName: displayName,
-                              username: username,
-                            );
-                          },
-                        ))
-                : ListView(
-                    children: [
-                      if (_selectedContacts.isNotEmpty) ...[
-                        Padding(
-                          padding: const EdgeInsets.only(
-                            left: 16,
-                            top: 20,
-                            bottom: 8,
-                          ),
-                          child: Text(
-                            "Selected Contacts",
-                            style: TextStyle(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                        ..._selectedContacts.entries.map(
-                          (entry) => _buildContactTile(
-                            id: entry.key,
-                            displayName: entry.value['displayName']!,
-                            username: entry.value['username']!,
-                          ),
-                        ),
-                      ],
-                      Padding(
-                        padding: const EdgeInsets.only(
-                          left: 16,
-                          top: 20,
-                          bottom: 8,
-                        ),
-                        child: Text(
-                          "Recent Contacts",
-                          style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      if (inboxState.inbox.isNotEmpty)
-                        ...inboxState.inbox
-                            .where(
-                              (thread) =>
-                                  !thread.isGroup &&
-                                  !_selectedContacts.containsKey(thread.id),
-                            )
-                            .map(
-                              (thread) => _buildContactTile(
-                                id: thread.id,
-                                displayName: thread.title,
-                                username: thread.username ?? "",
-                              ),
-                            ),
-                    ],
-                  ),
-          ),
-        ],
-      ),
-      floatingActionButton: _selectedContacts.isNotEmpty
-          ? FloatingActionButton(
-              backgroundColor: Theme.of(context).colorScheme.primary,
-              foregroundColor: Theme.of(context).colorScheme.onPrimary,
-              elevation: 4,
-              child: Icon(
-                Icons.arrow_forward,
-                color: Theme.of(context).colorScheme.onPrimary,
-              ),
-              onPressed: () {
-                context.read<GroupController>().setContacts(_selectedContacts);
-
-                showModalBottomSheet(
-                  backgroundColor: Colors.transparent,
-                  context: context,
-                  isScrollControlled: true,
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                  ),
-                  builder: (BuildContext bottomSheetContext) {
-                    return Consumer<GroupController>(
-                      builder: (modalContext, groupState, child) {
-                        return ClipRect(
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.surface.withValues(alpha: 0.85),
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(16),
-                                ),
-                                border: Border(
-                                  top: BorderSide(
-                                    color: Theme.of(context).colorScheme.surface
-                                        .withValues(alpha: 0.5),
-                                    width: 1,
-                                  ),
-                                ),
-                              ),
-                              child: Padding(
-                                padding: EdgeInsets.only(
-                                  bottom: MediaQuery.of(
-                                    bottomSheetContext,
-                                  ).viewInsets.bottom,
-                                  left: 16,
-                                  right: 16,
-                                  top: 24,
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      'New Group',
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    TextField(
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(
-                                          context,
-                                        ).colorScheme.onSurface,
-                                      ),
-                                      controller: _groupNameController,
-                                      autofocus: true,
-                                      decoration: InputDecoration(
-                                        hintText: 'Enter group name',
-                                        hintStyle: TextStyle(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.onSurfaceVariant,
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderSide: BorderSide(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.outlineVariant,
-                                          ),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderSide: BorderSide(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Row(
-                                      mainAxisAlignment: MainAxisAlignment.end,
-                                      children: [
-                                        FilledButton(
-                                          onPressed: groupState.isLoading
-                                              ? null
-                                              : () async {
-                                                  final groupName =
-                                                      _groupNameController.text
-                                                          .trim();
-                                                  if (groupName.isEmpty) return;
-
-                                                  final memberIds =
-                                                      _selectedContacts.keys
-                                                          .toList();
-
-                                                  final rootNavigator =
-                                                      Navigator.of(context);
-
-                                                  final newGroup =
-                                                      await modalContext
-                                                          .read<
-                                                            GroupController
-                                                          >()
-                                                          .createGroup(
-                                                            groupName:
-                                                                groupName,
-                                                            memberIds:
-                                                                memberIds,
-                                                          );
-
-                                                  if (newGroup != null) {
-                                                    if (!context.mounted)
-                                                      return;
-
-                                                    context
-                                                        .read<InboxController>()
-                                                        .loadInbox();
-
-                                                    Navigator.of(
-                                                      bottomSheetContext,
-                                                    ).pop();
-
-                                                    _groupNameController
-                                                        .clear();
-
-                                                    rootNavigator
-                                                        .pushReplacement(
-                                                          MaterialPageRoute(
-                                                            builder:
-                                                                (
-                                                                  context,
-                                                                ) => ChatPage(
-                                                                  isNew: true,
-                                                                  chatUserId:
-                                                                      newGroup
-                                                                          .id,
-                                                                  displayName:
-                                                                      newGroup
-                                                                          .name,
-                                                                  isGroup: true,
-                                                                ),
-                                                          ),
-                                                        );
-                                                  } else {
-                                                    if (!context.mounted)
-                                                      return;
-                                                    ScaffoldMessenger.of(
-                                                      context,
-                                                    ).showSnackBar(
-                                                      SnackBar(
-                                                        content: Text(
-                                                          'Failed to create group',
-                                                          style: TextStyle(
-                                                            color:
-                                                                Theme.of(
-                                                                      context,
-                                                                    )
-                                                                    .colorScheme
-                                                                    .onSurface,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    );
-                                                  }
-                                                },
-                                          child: groupState.isLoading
-                                              ? const SizedBox(
-                                                  height: 20,
-                                                  width: 20,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                        color: Colors.white,
-                                                        strokeWidth: 2,
-                                                      ),
-                                                )
-                                              : Text(
-                                                  'Create',
-                                                  style: TextStyle(
-                                                    color: Theme.of(
-                                                      context,
-                                                    ).colorScheme.onSurface,
-                                                  ),
-                                                ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                );
-              },
-            )
-          : null,
     );
   }
 }

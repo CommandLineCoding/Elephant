@@ -1,39 +1,47 @@
 import 'package:flutter/material.dart';
-import 'package:mobile/pages/chat/chat_details_page.dart';
+import '../../models/group.dart';
 import '../../services/api_services.dart';
 
+/// Member lists, roles and admin actions for groups.
 class GroupDetailsController extends ChangeNotifier {
   final ApiService _api = ApiService();
 
-  List<ChatMember> currentGroupMembers = [];
-  Map<String, String> groupMemberNames = {};
-  Map<String, String> userCache = {};
+  String? _currentGroupId;
+  List<GroupMember> currentGroupMembers = [];
   bool isLoadingDetails = false;
+
+  /// user ID → display name, across every group loaded this session.
+  final Map<String, String> userCache = {};
   final Set<String> _fetchedGroups = {};
+
   bool hasFetchedGroup(String groupId) => _fetchedGroups.contains(groupId);
 
+  String nameFor(String userId, {String fallback = 'Member'}) {
+    return userCache[userId.trim().toLowerCase()] ?? fallback;
+  }
+
+  bool isAdmin(String? userId) {
+    if (userId == null) return false;
+    return currentGroupMembers.any(
+      (m) => m.userId.toLowerCase() == userId.toLowerCase() && m.isAdmin,
+    );
+  }
+
   Future<void> fetchGroupMembers(String groupId) async {
+    if (_currentGroupId != groupId) {
+      currentGroupMembers = [];
+      _currentGroupId = groupId;
+    }
+    isLoadingDetails = true;
+    notifyListeners();
+
     try {
-      isLoadingDetails = true;
-      notifyListeners();
-
-      final response = await _api.getGroupMembers(groupId);
-      if (response.statusCode == 200) {
-        final List<dynamic> memberList = _extractDataList(response.data, [
-          'members',
-          'data',
-        ]);
-
-        currentGroupMembers = memberList
-            .map((json) => ChatMember.fromJson(json))
-            .toList();
-
-        for (var member in memberList) {
-          final uid = member['user_id'].toString();
-          userCache[uid] = member['display_name'] ?? 'Member';
-          groupMemberNames[uid] = member['display_name'] ?? 'Unknown';
-        }
-      }
+      final res = await _api.getGroupMembers(groupId);
+      currentGroupMembers = ApiService.dataList(res.data)
+          .map((json) => GroupMember.fromJson(Map<String, dynamic>.from(json)))
+          .toList();
+      _remember(currentGroupMembers);
+      _fetchedGroups.add(groupId);
     } catch (e) {
       debugPrint("Error fetching members: $e");
     } finally {
@@ -42,51 +50,84 @@ class GroupDetailsController extends ChangeNotifier {
     }
   }
 
+  /// Warms [userCache] so inbox previews can show sender names.
   Future<void> preloadGroupMembers(String groupId) async {
     if (_fetchedGroups.contains(groupId)) return;
-
     _fetchedGroups.add(groupId);
 
     try {
       final res = await _api.getGroupMembers(groupId);
-      final members = _extractDataList(res.data, ['members', 'data']);
-
-      bool updatedCache = false;
-      for (var m in members) {
-        final uid = m['user_id'].toString();
-        final name = m['display_name'] ?? 'Member';
-
-        if (userCache[uid] != name) {
-          userCache[uid] = name;
-          updatedCache = true;
-        }
-      }
-
-      if (updatedCache) notifyListeners();
+      _remember(
+        ApiService.dataList(
+          res.data,
+        ).map((json) => GroupMember.fromJson(Map<String, dynamic>.from(json))),
+      );
+      notifyListeners();
     } catch (e) {
       _fetchedGroups.remove(groupId);
-      debugPrint("Failed to preload group members for $groupId: $e");
+      debugPrint("Failed to preload members for $groupId: $e");
+    }
+  }
+
+  void _remember(Iterable<GroupMember> members) {
+    for (final m in members) {
+      userCache[m.userId.toLowerCase()] = m.displayName;
+    }
+  }
+
+  /// The admin actions below return an error message, or null on success.
+
+  Future<String?> addMember(String groupId, String userId) async {
+    try {
+      await _api.addGroupMember(groupId, userId);
+      await fetchGroupMembers(groupId);
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(e, fallback: "Couldn't add this member.");
+    }
+  }
+
+  Future<String?> removeMember(String groupId, String userId) async {
+    try {
+      await _api.removeGroupMember(groupId, userId);
+      currentGroupMembers.removeWhere((m) => m.userId == userId);
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't remove this member.",
+      );
+    }
+  }
+
+  Future<String?> renameGroup(String groupId, String newName) async {
+    try {
+      await _api.renameGroup(groupId, newName.trim());
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(e, fallback: "Couldn't rename the group.");
+    }
+  }
+
+  Future<String?> leaveGroup(String groupId) async {
+    try {
+      await _api.leaveGroup(groupId);
+      _fetchedGroups.remove(groupId);
+      if (_currentGroupId == groupId) currentGroupMembers = [];
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(e, fallback: "Couldn't leave the group.");
     }
   }
 
   void clearCache() {
-    currentGroupMembers.clear();
-    groupMemberNames.clear();
+    currentGroupMembers = [];
+    _currentGroupId = null;
     userCache.clear();
     _fetchedGroups.clear();
     isLoadingDetails = false;
     notifyListeners();
-  }
-
-  List<dynamic> _extractDataList(dynamic data, List<String> fallbackKeys) {
-    if (data == null) return [];
-    if (data is List) return data;
-    if (data is Map) {
-      if (data['data'] is List) return data['data'];
-      for (final key in fallbackKeys) {
-        if (data[key] is List) return data[key];
-      }
-    }
-    return [];
   }
 }

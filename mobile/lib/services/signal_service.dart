@@ -1,12 +1,27 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:libsignal_protocol_dart/libsignal_protocol_dart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/services/sqlite_signal_store.dart';
 import 'package:mobile/services/db_services.dart';
 import 'api_services.dart';
 
+/// Result of a contact-verification lookup.
+class VerificationInfo {
+  final String safetyNumber;
+  final bool isVerified;
+
+  const VerificationInfo({
+    required this.safetyNumber,
+    required this.isVerified,
+  });
+}
+
+/// Client side of the Signal Protocol. The server (`/api/e2ee/*`) only stores
+/// public keys; every private key stays in the local encrypted database.
 class SignalService {
   static final SignalService _instance = SignalService._internal();
   factory SignalService() => _instance;
@@ -15,6 +30,26 @@ class SignalService {
 
   late SQLiteSignalStore _store;
   bool _isInitialized = false;
+
+  /// Bundle fetches consume a one-time prekey on the server, so concurrent
+  /// session setups for the same contact share one request.
+  final Map<String, Future<bool>> _pendingSessions = {};
+
+  static const String deviceId = 'main';
+  static const int _initialPreKeyCount = 100;
+  static const int _refillPreKeyCount = 50;
+  static const int _signedPreKeyId = 0;
+  static const String _nextPreKeyIdPref = 'signal_next_prekey_id';
+
+  /// Signal state is a ratchet: every encrypt/decrypt mutates it, so all
+  /// operations run one at a time.
+  Future<void> _queue = Future.value();
+
+  Future<T> _serial<T>(Future<T> Function() task) {
+    final result = _queue.then((_) => task());
+    _queue = result.then((_) {}, onError: (_) {});
+    return result;
+  }
 
   SignalService._internal();
 
@@ -27,211 +62,211 @@ class SignalService {
   SignalProtocolAddress _getAddress(String userId) =>
       SignalProtocolAddress(userId, 1);
 
-  Future<void> initializeAndUploadKeys(String currentUserId) async {
-    await initStore();
+  // --- Key lifecycle ---
 
+  /// Makes sure this device has an identity and that the server holds its
+  /// public keys, topping up one-time prekeys when the server reports < 10.
+  Future<void> ensureKeysPublished() async {
+    await initStore();
+    try {
+      final generated = await _ensureIdentity();
+      final requiresRefill = await _upload(includeLocalPreKeys: generated);
+      if (requiresRefill) {
+        await _refillPreKeys();
+      }
+    } catch (e) {
+      debugPrint("E2EE: failed to publish keys: $e");
+    }
+  }
+
+  /// Generates a fresh identity if none exists. Returns true when it did.
+  Future<bool> _ensureIdentity() async {
     final db = await DatabaseHelper.instance.database;
     final existingKeys = await db.query('signal_local_keys', where: 'id = 1');
+    if (existingKeys.isNotEmpty) return false;
 
-    if (existingKeys.isNotEmpty) {
-      debugPrint("E2EE: Keys already exist locally. Skipping generation.");
-      return;
-    }
-
-    debugPrint("E2EE: Generating new local identity keys...");
-
+    debugPrint("E2EE: generating a new identity");
     final identityKeyPair = generateIdentityKeyPair();
     final registrationId = generateRegistrationId(false);
-
     await _store.storeLocalData(identityKeyPair, registrationId);
 
-    final preKeys = generatePreKeys(0, 100);
-    final signedPreKey = generateSignedPreKey(identityKeyPair, 0);
-
-    for (var preKey in preKeys) {
-      await _store.storePreKey(preKey.id, preKey);
-    }
+    final signedPreKey = generateSignedPreKey(identityKeyPair, _signedPreKeyId);
     await _store.storeSignedPreKey(signedPreKey.id, signedPreKey);
 
-    final publicPreKeys = preKeys
-        .map(
-          (k) => {
-            'id': k.id,
-            'content': base64Encode(k.getKeyPair().publicKey.serialize()),
-          },
-        )
-        .toList();
+    for (final preKey in generatePreKeys(0, _initialPreKeyCount)) {
+      await _store.storePreKey(preKey.id, preKey);
+    }
 
-    final payload = {
-      'device_id': 'main',
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_nextPreKeyIdPref, _initialPreKeyCount);
+    return true;
+  }
+
+  /// Uploads identity and signed prekey. One-time prekeys are only sent when
+  /// [includeLocalPreKeys] or [preKeys] is given, because the server appends
+  /// them and re-sending would create duplicates.
+  Future<bool> _upload({
+    bool includeLocalPreKeys = false,
+    List<PreKeyRecord>? preKeys,
+  }) async {
+    final identityKeyPair = await _store.getIdentityKeyPair();
+    final signedPreKey = await _store.loadSignedPreKey(_signedPreKeyId);
+
+    List<PreKeyRecord> oneTime = preKeys ?? [];
+    if (includeLocalPreKeys) {
+      final db = await DatabaseHelper.instance.database;
+      final rows = await db.query('signal_prekeys');
+      oneTime = rows
+          .map(
+            (row) =>
+                PreKeyRecord.fromBuffer(base64Decode(row['record'] as String)),
+          )
+          .toList();
+    }
+
+    final res = await _api.uploadPrekeys({
+      'device_id': deviceId,
       'identity_key': base64Encode(identityKeyPair.getPublicKey().serialize()),
       'signed_prekey': base64Encode(
         signedPreKey.getKeyPair().publicKey.serialize(),
       ),
       'signature': base64Encode(signedPreKey.signature),
-      'one_time_prekeys': publicPreKeys,
-    };
+      'one_time_prekeys': oneTime
+          .map(
+            (k) => {
+              'id': k.id,
+              'content': base64Encode(k.getKeyPair().publicKey.serialize()),
+            },
+          )
+          .toList(),
+    });
 
-    try {
-      await _api.post("/e2ee/keys", data: payload);
-      debugPrint("E2EE Keys uploaded successfully");
-    } catch (e) {
-      debugPrint("Failed to upload E2EE keys: $e");
-    }
+    return ApiService.dataMap(res.data)['requires_refill'] == true;
   }
 
-  Future<bool> establishSessionIfNeeded(String remoteUserId) async {
+  Future<void> _refillPreKeys() async {
+    final prefs = await SharedPreferences.getInstance();
+    int nextId = prefs.getInt(_nextPreKeyIdPref) ?? 0;
+
+    // Installs from before the counter existed: start past every used id.
+    if (nextId < _initialPreKeyCount) {
+      final db = await DatabaseHelper.instance.database;
+      final maxRow = await db.rawQuery(
+        'SELECT MAX(key_id) AS max_id FROM signal_prekeys',
+      );
+      final maxLocal = (maxRow.first['max_id'] as int?) ?? 0;
+      nextId = maxLocal + 1 > _initialPreKeyCount
+          ? maxLocal + 1
+          : _initialPreKeyCount;
+    }
+
+    final batch = generatePreKeys(nextId, _refillPreKeyCount);
+    for (final preKey in batch) {
+      await _store.storePreKey(preKey.id, preKey);
+    }
+    await prefs.setInt(_nextPreKeyIdPref, nextId + _refillPreKeyCount);
+    await _upload(preKeys: batch);
+    debugPrint("E2EE: uploaded ${batch.length} new one-time prekeys");
+  }
+
+  /// Wipes this account's keys on the server (password re-auth), then
+  /// generates and publishes a fresh identity. Existing sessions end.
+  Future<void> resetAllKeys(String password) async {
+    await initStore();
+    await _api.resetEncryptionKeys(password);
+    await DatabaseHelper.instance.wipeSignalState();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_nextPreKeyIdPref);
+    await ensureKeysPublished();
+  }
+
+  /// Deletes local keys, e.g. when a different account signs in on this device.
+  Future<void> wipeLocalKeys() async {
+    await DatabaseHelper.instance.wipeSignalState();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_nextPreKeyIdPref);
+  }
+
+  // --- Sessions ---
+
+  Future<bool> establishSessionIfNeeded(String remoteUserId) {
+    return _pendingSessions[remoteUserId] ??= _establishSession(remoteUserId)
+        .whenComplete(() {
+          _pendingSessions.remove(remoteUserId);
+        });
+  }
+
+  Future<bool> _establishSession(String remoteUserId) async {
     await initStore();
     final address = _getAddress(remoteUserId);
-
     if (await _store.containsSession(address)) return true;
 
     try {
-      final response = await _api.get(
-        "/e2ee/bundle/$remoteUserId?device_id=main",
+      final response = await _api.getPrekeyBundle(
+        remoteUserId,
+        deviceId: deviceId,
       );
-      final data = response.data['data'] ?? response.data;
+      final data = ApiService.dataMap(response.data);
 
       final identityKeyStr = data['identity_key'];
       final signedPreKeyStr = data['signed_prekey'];
       final signatureStr = data['signature'];
-      final otpBodyStr = data['one_time_prekey_body'];
-      final otpId = data['one_time_prekey_id'];
-
       if (identityKeyStr == null ||
           signedPreKeyStr == null ||
-          signatureStr == null ||
-          otpBodyStr == null) {
-        debugPrint("Receiver bundle is missing required cryptographic keys.");
+          signatureStr == null) {
+        debugPrint("E2EE: bundle for $remoteUserId is incomplete");
         return false;
       }
 
-      final identityKey = IdentityKey(
-        Curve.decodePoint(base64Decode(identityKeyStr), 0),
-      );
-      final signedPreKey = Curve.decodePoint(base64Decode(signedPreKeyStr), 0);
-      final signature = base64Decode(signatureStr);
-      final preKey = Curve.decodePoint(base64Decode(otpBodyStr), 0);
+      // One-time prekeys run out; X3DH still works with the signed prekey.
+      final otpBody = data['one_time_prekey_body'] as String?;
+      final otpId = data['one_time_prekey_id'] as int?;
 
       final bundle = PreKeyBundle(
         0,
         1,
-        (otpId as int?) ?? 1,
-        preKey,
-        0,
-        signedPreKey,
-        signature,
-        identityKey,
+        otpBody != null ? otpId : null,
+        otpBody != null ? Curve.decodePoint(base64Decode(otpBody), 0) : null,
+        _signedPreKeyId,
+        Curve.decodePoint(base64Decode(signedPreKeyStr), 0),
+        base64Decode(signatureStr),
+        IdentityKey(Curve.decodePoint(base64Decode(identityKeyStr), 0)),
       );
 
-      final sessionBuilder = SessionBuilder(
+      await SessionBuilder(
         _store,
         _store,
         _store,
         _store,
         address,
-      );
-
-      await sessionBuilder.processPreKeyBundle(bundle);
-      debugPrint("E2EE Session established perfectly with $remoteUserId!");
+      ).processPreKeyBundle(bundle);
       return true;
     } on DioException catch (e) {
-      if (e.response?.statusCode == 404) {
-        debugPrint("Receiver $remoteUserId has not registered E2EE keys yet.");
-      } else {
-        debugPrint(
-          "Network error fetching bundle for $remoteUserId: ${e.message}",
-        );
-      }
+      debugPrint(
+        e.response?.statusCode == 404
+            ? "E2EE: $remoteUserId has not published keys yet"
+            : "E2EE: bundle fetch failed for $remoteUserId: ${e.message}",
+      );
       return false;
     } catch (e) {
-      debugPrint("Failed to establish E2EE session with $remoteUserId: $e");
+      debugPrint("E2EE: session setup with $remoteUserId failed: $e");
       return false;
     }
   }
 
-  Future<Map<String, dynamic>> encryptMessage(
-    String remoteUserId,
-    String plaintext,
-  ) async {
-    debugPrint("SignalService: Encrypting message for $remoteUserId...");
-    final address = _getAddress(remoteUserId);
-    final sessionCipher = SessionCipher(
-      _store,
-      _store,
-      _store,
-      _store,
-      address,
-    );
-
-    final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
-    final ciphertextMessage = await sessionCipher.encrypt(plaintextBytes);
-
-    debugPrint(
-      "SignalService: Encryption successful (Type ${ciphertextMessage.getType()}).",
-    );
-    return {
-      'type': ciphertextMessage.getType(),
-      'ciphertext': base64Encode(ciphertextMessage.serialize()),
-    };
-  }
-
-  Future<String> decryptMessage(
-    String remoteUserId,
-    String base64Ciphertext,
-    int type,
-  ) async {
-    debugPrint("SignalService: Decrypting message from $remoteUserId...");
-    final address = _getAddress(remoteUserId);
-    final sessionCipher = SessionCipher(
-      _store,
-      _store,
-      _store,
-      _store,
-      address,
-    );
-    final bytes = base64Decode(base64Ciphertext);
-
-    Uint8List plaintextBytes;
-
-    if (type == CiphertextMessage.prekeyType) {
-      plaintextBytes = await sessionCipher.decrypt(PreKeySignalMessage(bytes));
-    } else {
-      final signalMsg = SignalMessage.fromSerialized(bytes);
-      plaintextBytes = await sessionCipher.decryptFromSignal(signalMsg);
-    }
-
-    debugPrint("SignalService: Decryption successful!");
-    return utf8.decode(plaintextBytes);
-  }
-
-  Future<String?> getSafetyNumber(
-    String localUserId,
-    String remoteUserId,
-  ) async {
-    final localKeyPair = await _store.getIdentityKeyPair();
-    final remoteAddress = _getAddress(remoteUserId);
-    final remoteIdentity = await _store.getIdentity(remoteAddress);
-
-    if (remoteIdentity == null) return null;
-
-    final generator = NumericFingerprintGenerator(5200);
-
-    final fingerprint = generator.createFor(
-      1,
-      Uint8List.fromList(utf8.encode(localUserId)),
-      localKeyPair.getPublicKey(),
-      Uint8List.fromList(utf8.encode(remoteUserId)),
-      remoteIdentity,
-    );
-
-    return fingerprint.displayableFingerprint.localFingerprintNumbers;
-  }
-
-  Future<void> forceResetSession(String remoteUserId) async {
+  /// Starts over with a contact: forgets the session and the pinned identity
+  /// key (so a reinstalled contact is trusted again), then builds a new one.
+  Future<bool> forceResetSession(String remoteUserId) async {
+    await initStore();
     final address = _getAddress(remoteUserId);
     await _store.deleteSession(address);
-    await establishSessionIfNeeded(remoteUserId);
+    final db = await DatabaseHelper.instance.database;
+    await db.delete(
+      'signal_identities',
+      where: 'address = ?',
+      whereArgs: [address.getName()],
+    );
+    return establishSessionIfNeeded(remoteUserId);
   }
 
   Future<void> clearAllSessions() async {
@@ -239,140 +274,123 @@ class SignalService {
     await db.delete('signal_sessions');
   }
 
-  Future<void> ensureIdentityInitialized() async {
-    await initStore();
-    final db = await DatabaseHelper.instance.database;
-    final existingKeys = await db.query('signal_local_keys', where: 'id = 1');
+  // --- Encryption ---
 
-    if (existingKeys.isNotEmpty) {
-      debugPrint("E2EE: Keys already exist. Skipping generation.");
-      return;
-    }
-
-    debugPrint("E2EE: Generating new local identity keys...");
-    final identityKeyPair = generateIdentityKeyPair();
-    final registrationId = generateRegistrationId(false);
-    await _store.storeLocalData(identityKeyPair, registrationId);
-
-    final preKeys = generatePreKeys(0, 100);
-    final signedPreKey = generateSignedPreKey(identityKeyPair, 0);
-
-    for (var preKey in preKeys) {
-      await _store.storePreKey(preKey.id, preKey);
-    }
-    await _store.storeSignedPreKey(signedPreKey.id, signedPreKey);
+  /// Encrypts [plaintext] for a contact and returns the wire envelope.
+  Future<String> encryptDirect(String remoteUserId, String plaintext) {
+    return _serial(() => _encrypt(remoteUserId, plaintext));
   }
 
-  Future<void> uploadPublicKeys() async {
+  Future<String> _encrypt(String remoteUserId, String plaintext) async {
     await initStore();
+    final cipher = SessionCipher(
+      _store,
+      _store,
+      _store,
+      _store,
+      _getAddress(remoteUserId),
+    );
+    final message = await cipher.encrypt(
+      Uint8List.fromList(utf8.encode(plaintext)),
+    );
+    return MessageEnvelope(
+      message.getType(),
+      base64Encode(message.serialize()),
+    ).encode();
+  }
+
+  /// Turns wire content into readable text. Plaintext envelopes (groups) are
+  /// unwrapped, Signal envelopes are decrypted, and failures become a
+  /// [MessageEnvelope.locked] placeholder instead of throwing.
+  Future<String> decodeIncoming(String senderId, String content) async {
+    final envelope = MessageEnvelope.tryParse(content);
+    if (envelope == null) return content;
+    if (envelope.isPlaintext) return envelope.body;
 
     try {
-      final identityKeyPair = await _store.getIdentityKeyPair();
-
-      final signedPreKey = await _store.loadSignedPreKey(0);
-
-      final db = await DatabaseHelper.instance.database;
-      final preKeyRows = await db.query('signal_prekeys');
-
-      final publicPreKeys = preKeyRows.map((row) {
-        final preKeyId = row['key_id'] as int;
-        final recordBytes = base64Decode(row['record'] as String);
-        final preKeyRecord = PreKeyRecord.fromBuffer(recordBytes);
-
-        return {
-          'id': preKeyId,
-          'content': base64Encode(
-            preKeyRecord.getKeyPair().publicKey.serialize(),
-          ),
-        };
-      }).toList();
-
-      final payload = {
-        'device_id': 'main',
-        'identity_key': base64Encode(
-          identityKeyPair.getPublicKey().serialize(),
-        ),
-        'signed_prekey': base64Encode(
-          signedPreKey.getKeyPair().publicKey.serialize(),
-        ),
-        'signature': base64Encode(signedPreKey.signature),
-        'one_time_prekeys': publicPreKeys,
-      };
-
-      await _api.post("/e2ee/keys", data: payload);
-      debugPrint("E2EE: Keys successfully synced to server for this session.");
+      return await _serial(() => _decrypt(senderId, envelope));
     } catch (e) {
-      debugPrint("Failed to sync E2EE keys: $e");
+      debugPrint("E2EE: decrypt failed from $senderId: $e");
+      final error = e.toString();
+      if (error.contains('UntrustedIdentity')) {
+        return MessageEnvelope.locked(
+          'Safety number changed. Reset the secure session to read new messages.',
+        );
+      }
+      if (error.contains('DuplicateMessage')) {
+        return MessageEnvelope.locked(
+          'Message already decrypted on this device',
+        );
+      }
+      if (error.contains('NoSession') ||
+          error.contains('InvalidKeyId') ||
+          error.contains('Bad Mac')) {
+        return MessageEnvelope.locked('Encrypted for a previous session');
+      }
+      return MessageEnvelope.locked('Unable to decrypt this message');
     }
   }
 
-  Future<Map<String, dynamic>> encryptGroupMessage(
-    String groupId,
-    String currentUserId,
-    String plaintext,
+  Future<String> _decrypt(String senderId, MessageEnvelope envelope) async {
+    await initStore();
+    final cipher = SessionCipher(
+      _store,
+      _store,
+      _store,
+      _store,
+      _getAddress(senderId),
+    );
+    final bytes = base64Decode(envelope.body);
+
+    final Uint8List plaintext;
+    if (envelope.type == CiphertextMessage.prekeyType) {
+      plaintext = await cipher.decrypt(PreKeySignalMessage(bytes));
+    } else {
+      plaintext = await cipher.decryptFromSignal(
+        SignalMessage.fromSerialized(bytes),
+      );
+    }
+    return utf8.decode(plaintext);
+  }
+
+  // --- Verification ---
+
+  /// Safety number for this pair of users plus the server-side verified flag.
+  /// Returns null when no secure session can be established.
+  Future<VerificationInfo?> getVerification(
+    String localUserId,
+    String remoteUserId,
   ) async {
     await initStore();
-    final senderKeyName = SenderKeyName(groupId, _getAddress(currentUserId));
+    if (!await establishSessionIfNeeded(remoteUserId)) return null;
 
-    final record = await _store.loadSenderKey(senderKeyName);
-    bool needsDistribution = false;
+    final remoteIdentity = await _store.getIdentity(_getAddress(remoteUserId));
+    if (remoteIdentity == null) return null;
 
-    String? distMessageBase64;
+    final localKeyPair = await _store.getIdentityKeyPair();
+    final fingerprint = NumericFingerprintGenerator(5200).createFor(
+      1,
+      Uint8List.fromList(utf8.encode(localUserId)),
+      localKeyPair.getPublicKey(),
+      Uint8List.fromList(utf8.encode(remoteUserId)),
+      remoteIdentity,
+    );
 
-    if (record.isEmpty) {
-      final builder = GroupSessionBuilder(_store);
-
-      final distMessage = await builder.create(senderKeyName);
-
-      needsDistribution = true;
-      distMessageBase64 = base64Encode(distMessage.serialize());
+    bool isVerified = false;
+    try {
+      final res = await _api.getVerification(remoteUserId);
+      isVerified = ApiService.dataMap(res.data)['is_verified'] == true;
+    } catch (e) {
+      debugPrint("E2EE: verification lookup failed: $e");
     }
 
-    final groupCipher = GroupCipher(_store, senderKeyName);
-    final plaintextBytes = Uint8List.fromList(utf8.encode(plaintext));
-    final ciphertextBytes = await groupCipher.encrypt(plaintextBytes);
-
-    return {
-      'type': 3,
-      'ciphertext': base64Encode(ciphertextBytes),
-      'needs_distribution': needsDistribution,
-      'distribution_message': distMessageBase64,
-    };
+    return VerificationInfo(
+      safetyNumber: fingerprint.displayableFingerprint.getDisplayText(),
+      isVerified: isVerified,
+    );
   }
 
-  Future<String> decryptGroupMessage(
-    String groupId,
-    String senderUserId,
-    String base64Ciphertext,
-  ) async {
-    await initStore();
-    final senderKeyName = SenderKeyName(groupId, _getAddress(senderUserId));
-    final groupCipher = GroupCipher(_store, senderKeyName);
-
-    final ciphertextBytes = base64Decode(base64Ciphertext);
-    final plaintextBytes = await groupCipher.decrypt(ciphertextBytes);
-
-    return utf8.decode(plaintextBytes);
-  }
-
-  Future<void> processSenderKeyDistribution(
-    String groupId,
-    String senderUserId,
-    String base64DistributionMessage,
-  ) async {
-    await initStore();
-    final senderKeyName = SenderKeyName(groupId, _getAddress(senderUserId));
-    final builder = GroupSessionBuilder(_store);
-
-    final messageBytes = base64Decode(base64DistributionMessage);
-
-    final distMessage = SenderKeyDistributionMessageWrapper.fromSerialized(
-      messageBytes,
-    );
-
-    await builder.process(senderKeyName, distMessage);
-    debugPrint(
-      "E2EE: Processed new SenderKey for Group: $groupId from User: $senderUserId",
-    );
+  Future<void> setVerified(String remoteUserId, bool isVerified) async {
+    await _api.setVerification(remoteUserId, isVerified);
   }
 }

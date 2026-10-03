@@ -1,31 +1,37 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
+import '../../core/message_envelope.dart';
 import '../../models/group.dart';
 import '../../models/inbox_item.dart';
-import '../../models/conversation.dart';
-import '../../models/message.dart';
 import '../../services/api_services.dart';
 import '../../services/db_services.dart';
+import '../../services/ws_service.dart';
 
 class InboxController extends ChangeNotifier {
   final ApiService _api = ApiService();
   List<InboxItem> inbox = [];
+  bool isLoading = false;
+  bool hasLoadedOnce = false;
+
+  List<InboxItem> get groups => inbox.where((item) => item.isGroup).toList();
+  int get unreadChats => inbox.where((item) => item.unreadCount > 0).length;
 
   void clearInbox() {
     inbox = [];
+    hasLoadedOnce = false;
+    notifyListeners();
   }
 
   Future<void> loadInbox({
     bool isOffline = false,
     String? currentChatId,
   }) async {
-    // 1. Load from Local Cache
     try {
       final db = await DatabaseHelper.instance.database;
       final localData = await db.query('inbox', orderBy: 'timestamp DESC');
-      if (localData.isNotEmpty) {
-        inbox = localData.map((map) => InboxItem.fromMap(map)).toList();
+      if (localData.isNotEmpty && inbox.isEmpty) {
+        inbox = localData.map(InboxItem.fromMap).toList();
         notifyListeners();
       }
     } catch (e) {
@@ -34,89 +40,89 @@ class InboxController extends ChangeNotifier {
 
     if (isOffline) return;
 
-    // 2. Fetch from Network
+    isLoading = true;
+    notifyListeners();
+
     try {
-      final response = await _api.getConversations();
-      final rawData = _parseResponse(response.data, ['conversations']);
-      final db = await DatabaseHelper.instance.database;
-      final allChatIds = rawData.map((j) {
-        return j['is_group'] == true || j['type'] == 'group' 
-            ? j['id'] 
-            : (j['chat_user_id'] ?? j['user_id'] ?? j['id'] ?? j['partner_id']);
-      }).where((id) => id != null).toList();
+      final results = await Future.wait([
+        _api.getConversations(),
+        _api.getGroups(),
+      ]);
+      final conversations = ApiService.dataList(results[0].data);
+      final myGroups = ApiService.dataList(
+        results[1].data,
+      ).map((json) => Group.fromJson(Map<String, dynamic>.from(json))).toList();
 
-      Map<String, String> localDecryptedMsgs = {};
-      if (allChatIds.isNotEmpty) {
-        final placeholders = List.filled(allChatIds.length, '?').join(',');
-        final localMsgs = await db.rawQuery('''
-          SELECT chat_id, content 
-          FROM messages 
-          WHERE chat_id IN ($placeholders) 
-            AND content NOT LIKE '%ciphertext%' 
-            AND content NOT LIKE '%🔒%'
-          GROUP BY chat_id HAVING MAX(created_at)
-        ''', allChatIds);
-        
-        for (var row in localMsgs) {
-          localDecryptedMsgs[row['chat_id'].toString()] = row['content'].toString();
+      final latestLocal = await _latestReadableMessages();
+
+      final List<InboxItem> combined = [];
+      for (final raw in conversations) {
+        final json = Map<String, dynamic>.from(raw);
+        final id = json['id']?.toString() ?? '';
+        if (id.isEmpty) continue;
+
+        final serverPreview = json['last_message']?.toString() ?? '';
+        String preview = MessageEnvelope.preview(serverPreview, fallback: '');
+        if (preview.isEmpty) {
+          preview = latestLocal[id] ?? '🔒 Encrypted message';
+        }
+        combined.add(
+          InboxItem.fromConversationJson(json, lastMessage: preview),
+        );
+      }
+
+      // Groups without messages are missing from the conversations list.
+      final knownIds = combined.map((item) => item.id).toSet();
+      for (final group in myGroups) {
+        if (!knownIds.contains(group.id)) {
+          combined.add(InboxItem.fromGroup(group));
         }
       }
 
-      List<InboxItem> combinedInbox = [];
-      for (var json in rawData) {
-        try {
-          final bool isGroup =
-              json['is_group'] == true || json['type'] == 'group';
+      combined.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-          InboxItem item;
-          if (isGroup) {
-            item = InboxItem.fromGroup(Group.fromJson(json));
-          } else {
-            item = InboxItem.fromConversation(Conversation.fromJson(json));
-          }
+      final chatsToCatchUp = combined.where((fresh) {
+        final old = inbox.where((c) => c.id == fresh.id).firstOrNull;
+        return old == null || old.timestamp.isBefore(fresh.timestamp);
+      }).toList();
 
-          if (item.lastMessage.contains('ciphertext') ||
-              item.lastMessage.contains('🔒')) {
-            if (localDecryptedMsgs.containsKey(item.id)) {
-              item.lastMessage = localDecryptedMsgs[item.id]!;
-            } else {
-              item.lastMessage = "🔒 Encrypted Message";
-            }
-          }
+      inbox = combined;
+      hasLoadedOnce = true;
+      await _replaceInboxInDb(inbox);
 
-          combinedInbox.add(item);
-        } catch (e) {
-          debugPrint("BAD JSON OBJECT: $json");
-        }
-      }
-
-      combinedInbox.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-
-      List<InboxItem> chatsToCatchUp = [];
-      for (var newConv in combinedInbox) {
-        final oldConvIndex = inbox.indexWhere((c) => c.id == newConv.id);
-        if (oldConvIndex == -1 ||
-            inbox[oldConvIndex].timestamp.isBefore(newConv.timestamp)) {
-          chatsToCatchUp.add(newConv);
-        }
-      }
-
-      if (_hasInboxChanged(inbox, combinedInbox)) {
-        inbox = combinedInbox;
-        notifyListeners();
-        _saveInboxToDb(inbox);
-      }
-
-      for (var missedChat in chatsToCatchUp) {
-        if (missedChat.id != currentChatId) {
-          unawaited(
-            _backgroundSyncChatHistoryToDb(missedChat.id, missedChat.isGroup),
-          );
+      for (final chat in chatsToCatchUp) {
+        if (chat.id != currentChatId && chat.lastMessage.isNotEmpty) {
+          unawaited(_backgroundSyncChatHistoryToDb(chat.id, chat.isGroup));
         }
       }
     } catch (e) {
-      debugPrint("Network Inbox Read Error: $e");
+      debugPrint("Inbox fetch failed: $e");
+    } finally {
+      isLoading = false;
+      notifyListeners();
     }
+  }
+
+  /// Latest cached plaintext per chat, used when the server preview is ciphertext.
+  Future<Map<String, String>> _latestReadableMessages() async {
+    final db = await DatabaseHelper.instance.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT m.chat_id, m.content
+      FROM messages m
+      JOIN (
+        SELECT chat_id, MAX(created_at) AS latest
+        FROM messages
+        WHERE content NOT LIKE '%"ciphertext"%' AND content NOT LIKE ?
+        GROUP BY chat_id
+      ) l ON l.chat_id = m.chat_id AND l.latest = m.created_at
+    ''',
+      ['${MessageEnvelope.lockedPrefix}%'],
+    );
+    return {
+      for (final row in rows)
+        row['chat_id'].toString(): row['content'].toString(),
+    };
   }
 
   void updateLocalInboxState(
@@ -129,87 +135,118 @@ class InboxController extends ChangeNotifier {
     bool isRead = false,
   }) {
     final int index = inbox.indexWhere((item) => item.id == chatId);
-
-    if (index != -1) {
-      final existingItem = inbox[index];
-      existingItem.lastMessage = lastMessage;
-      existingItem.timestamp = timestamp;
-      existingItem.lastMessageSender = senderId;
-      existingItem.lastMessageSyncStatus = syncStatus;
-      existingItem.lastMessageIsRead = isRead;
-
-      if (incrementUnread) {
-        existingItem.unreadCount += 1;
-      }
-
-      inbox.removeAt(index);
-      inbox.insert(0, existingItem);
-
-      DatabaseHelper.instance.database.then((db) {
-        db.insert(
-          'inbox',
-          existingItem.toMap(),
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      });
-    } else {
+    if (index == -1) {
       unawaited(loadInbox());
+      return;
     }
+
+    final item = inbox.removeAt(index);
+    item.lastMessage = lastMessage;
+    item.timestamp = timestamp;
+    item.lastMessageSender = senderId;
+    item.lastMessageSyncStatus = syncStatus;
+    item.lastMessageIsRead = isRead;
+    if (incrementUnread) item.unreadCount += 1;
+    inbox.insert(0, item);
     notifyListeners();
+
+    _saveItem(item);
   }
 
-  Future<void> markInboxItemAsRead(String dbTargetChatId) async {
-    final int inboxIndex = inbox.indexWhere(
-      (item) => item.id == dbTargetChatId,
-    );
-    if (inboxIndex != -1) {
-      inbox[inboxIndex].lastMessageIsRead = true;
-      notifyListeners();
+  /// Our last message in [chatId] was read by the other side.
+  void markInboxItemAsRead(String chatId) {
+    final index = inbox.indexWhere((item) => item.id == chatId);
+    if (index == -1) return;
+    inbox[index].lastMessageIsRead = true;
+    notifyListeners();
+    _saveItem(inbox[index]);
+  }
 
-      try {
-        final db = await DatabaseHelper.instance.database;
-        await db.update(
-          'inbox',
-          {'last_message_is_read': 1},
-          where: 'id = ?',
-          whereArgs: [dbTargetChatId],
-        );
-      } catch (e) {
-        debugPrint("Failed to update inbox read status: $e");
+  /// We opened [chatId], so its unread badge goes away.
+  void clearUnread(String chatId) {
+    final index = inbox.indexWhere((item) => item.id == chatId);
+    if (index == -1 || inbox[index].unreadCount == 0) return;
+    inbox[index].unreadCount = 0;
+    notifyListeners();
+    _saveItem(inbox[index]);
+  }
+
+  /// Marks one conversation read on the server and locally.
+  Future<void> markReadFor(InboxItem item) async {
+    final ws = WebSocketService();
+    try {
+      if (item.isGroup) {
+        ws.sendReadReceipt(groupId: item.id);
+      } else {
+        await _api.markDirectRead(item.id);
+        ws.sendReadReceipt(receiverId: item.id);
       }
+      clearUnread(item.id);
+    } catch (e) {
+      debugPrint("Failed to mark ${item.id} read: $e");
     }
+  }
+
+  Future<void> markAllRead() async {
+    final unread = inbox.where((item) => item.unreadCount > 0).toList();
+    await Future.wait(unread.map(markReadFor));
+  }
+
+  void renameLocal(String chatId, String newTitle) {
+    final index = inbox.indexWhere((item) => item.id == chatId);
+    if (index == -1) return;
+    inbox[index] = inbox[index].copyWith(title: newTitle);
+    notifyListeners();
+    _saveItem(inbox[index]);
+  }
+
+  Future<void> removeChat(String chatId) async {
+    inbox.removeWhere((item) => item.id == chatId);
+    notifyListeners();
+    await DatabaseHelper.instance.deleteChat(chatId);
+  }
+
+  void _saveItem(InboxItem item) {
+    DatabaseHelper.instance.database.then((db) {
+      db.insert(
+        'inbox',
+        item.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    });
   }
 
   Future<void> _backgroundSyncChatHistoryToDb(
     String chatId,
     bool isGroup,
   ) async {
+    // Only plaintext (group) content can be cached without touching the
+    // Signal ratchet; direct messages are decrypted when the chat is opened.
+    if (!isGroup) return;
     try {
-      final res = await _api.getChatHistory(chatId, isGroup: isGroup);
-      final targetList = _parseResponse(res.data, ['messages']);
-      final loadedMessages = targetList.reversed
-          .map((json) => Message.fromJson(json))
-          .toList();
-
-      if (loadedMessages.isEmpty) return;
-
+      final res = await _api.getChatHistory(chatId, isGroup: true);
       final db = await DatabaseHelper.instance.database;
-      Batch batch = db.batch();
-      for (var msg in loadedMessages) {
-        if (msg.content.contains('ciphertext') || msg.content.contains('🔒')) {
-          continue;
-        }
+      final batch = db.batch();
+      for (final raw in ApiService.dataList(res.data)) {
+        final json = Map<String, dynamic>.from(raw);
+        final envelope = MessageEnvelope.tryParse(json['content']?.toString());
+        if (envelope != null && !envelope.isPlaintext) continue;
 
         batch.insert('messages', {
-          'id': msg.id,
+          'id': json['id'],
           'chat_id': chatId,
-          'sender_id': msg.senderId,
-          'content': msg.content,
-          'created_at': msg.createdAt.millisecondsSinceEpoch,
-          'is_read': msg.isRead ? 1 : 0,
-          'reply_to_id': msg.replyToMessageId,
+          'sender_id': json['sender_id'],
+          'content': envelope?.body ?? json['content'],
+          'created_at': DateTime.parse(
+            json['created_at'],
+          ).millisecondsSinceEpoch,
+          'is_read': 0,
+          'reply_to_id': json['reply_to_message_id'],
           'sync_status': 'synced',
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
+          'edited_at': json['edited_at'] != null
+              ? DateTime.parse(json['edited_at']).millisecondsSinceEpoch
+              : null,
+        }, conflictAlgorithm: ConflictAlgorithm.ignore);
       }
       await batch.commit(noResult: true);
     } catch (e) {
@@ -217,11 +254,12 @@ class InboxController extends ChangeNotifier {
     }
   }
 
-  Future<void> _saveInboxToDb(List<InboxItem> items) async {
+  Future<void> _replaceInboxInDb(List<InboxItem> items) async {
     try {
       final db = await DatabaseHelper.instance.database;
-      Batch batch = db.batch();
-      for (var item in items) {
+      final batch = db.batch();
+      batch.delete('inbox');
+      for (final item in items) {
         batch.insert(
           'inbox',
           item.toMap(),
@@ -229,35 +267,8 @@ class InboxController extends ChangeNotifier {
         );
       }
       await batch.commit(noResult: true);
-    } catch (dbError) {
-      debugPrint("Failed to save fresh inbox to DB: $dbError");
+    } catch (e) {
+      debugPrint("Failed to save inbox to DB: $e");
     }
-  }
-
-  bool _hasInboxChanged(List<InboxItem> oldList, List<InboxItem> newList) {
-    if (oldList.length != newList.length) return true;
-    for (int i = 0; i < oldList.length; i++) {
-      final old = oldList[i];
-      final current = newList[i];
-      if (old.id != current.id ||
-          old.lastMessage != current.lastMessage ||
-          old.timestamp != current.timestamp ||
-          old.unreadCount != current.unreadCount ||
-          old.lastMessageSyncStatus != current.lastMessageSyncStatus) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  List<dynamic> _parseResponse(dynamic data, List<String> primaryKeys) {
-    if (data is List) return data;
-    if (data is Map) {
-      for (var key in primaryKeys) {
-        if (data.containsKey(key) && data[key] is List) return data[key];
-      }
-      if (data.containsKey('data') && data['data'] is List) return data['data'];
-    }
-    return [];
   }
 }

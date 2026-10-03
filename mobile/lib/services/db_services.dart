@@ -1,15 +1,17 @@
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
+import '../core/message_envelope.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
-  
+
   static const String _dbName = 'secure_chat.db';
 
   DatabaseHelper._init();
@@ -27,14 +29,17 @@ class DatabaseHelper {
     try {
       key = await _secureStorage.read(key: keyName);
     } on PlatformException catch (e) {
-      if (e.message?.contains('BAD_DECRYPT') == true || e.code == 'Exception encountered') {
-        print('CRITICAL: Keystore corrupted. Wiping secure storage and resetting DB.');
-        
+      if (e.message?.contains('BAD_DECRYPT') == true ||
+          e.code == 'Exception encountered') {
+        debugPrint(
+          'CRITICAL: Keystore corrupted. Wiping secure storage and resetting DB.',
+        );
+
         await _secureStorage.deleteAll();
-        
-        final dbPath = join(await getDatabasesPath(), _dbName); 
+
+        final dbPath = join(await getDatabasesPath(), _dbName);
         await deleteDatabase(dbPath);
-        
+
         key = null;
       } else {
         rethrow;
@@ -45,11 +50,11 @@ class DatabaseHelper {
       final random = Random.secure();
       final secureBytes = List<int>.generate(32, (_) => random.nextInt(256));
       final secureKey = base64Url.encode(secureBytes);
-      
+
       await _secureStorage.write(key: keyName, value: secureKey);
       key = secureKey;
     }
-    
+
     return key;
   }
 
@@ -60,10 +65,17 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       password: password,
       onCreate: _createDB,
+      onUpgrade: _upgradeDB,
     );
+  }
+
+  Future _upgradeDB(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE messages ADD COLUMN edited_at INTEGER');
+    }
   }
 
   Future _createDB(Database db, int version) async {
@@ -76,7 +88,8 @@ class DatabaseHelper {
         created_at INTEGER NOT NULL,
         is_read INTEGER NOT NULL,
         reply_to_id TEXT,
-        sync_status TEXT NOT NULL -- 'synced' or 'pending'
+        sync_status TEXT NOT NULL, -- 'synced' or 'pending'
+        edited_at INTEGER
       )
     ''');
 
@@ -159,35 +172,66 @@ class DatabaseHelper {
     ''');
   }
 
+  /// Inserts or replaces a message, never overwriting cached plaintext with
+  /// ciphertext or a "can't decrypt" placeholder.
   Future<int> insertMessage(Map<String, dynamic> row) async {
-    Database db = await instance.database;
+    final db = await instance.database;
 
-    if (row['content'] != null) {
-      String newContent = row['content'].toString();
-      
-      if (newContent.contains('ciphertext') || newContent.contains('🔒')) {
-        List<Map<String, dynamic>> existing = await db.query(
-          'messages', 
-          where: 'id = ?', 
-          whereArgs: [row['id']],
-        );
-
-        if (existing.isNotEmpty) {
-          String oldContent = existing.first['content'].toString();
-          if (!oldContent.contains('ciphertext') && !oldContent.contains('🔒')) {
-            row['content'] = oldContent; 
-          }
+    final newContent = row['content']?.toString();
+    if (newContent != null && MessageEnvelope.isUnreadable(newContent)) {
+      final existing = await db.query(
+        'messages',
+        columns: ['content'],
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+      if (existing.isNotEmpty) {
+        final oldContent = existing.first['content'].toString();
+        if (!MessageEnvelope.isUnreadable(oldContent)) {
+          row['content'] = oldContent;
         }
       }
     }
 
     return await db.insert(
-      'messages', 
-      row, 
+      'messages',
+      row,
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
-  
+
+  /// Removes a conversation and its cached messages, e.g. after leaving a group.
+  Future<void> deleteChat(String chatId) async {
+    final db = await instance.database;
+    await db.delete('messages', where: 'chat_id = ?', whereArgs: [chatId]);
+    await db.delete('inbox', where: 'id = ?', whereArgs: [chatId]);
+    await db.delete(
+      'group_members',
+      where: 'group_id = ?',
+      whereArgs: [chatId],
+    );
+  }
+
+  /// Deletes every cached conversation, message and queued send.
+  Future<void> wipeChatData() async {
+    final db = await instance.database;
+    await db.delete('messages');
+    await db.delete('inbox');
+    await db.delete('action_queue');
+    await db.delete('group_members');
+  }
+
+  /// Deletes every local Signal key, session and identity.
+  Future<void> wipeSignalState() async {
+    final db = await instance.database;
+    await db.delete('signal_local_keys');
+    await db.delete('signal_identities');
+    await db.delete('signal_sessions');
+    await db.delete('signal_prekeys');
+    await db.delete('signal_signed_prekeys');
+    await db.delete('signal_sender_keys');
+  }
+
   Future<void> queueAction(
     String id,
     String type,
