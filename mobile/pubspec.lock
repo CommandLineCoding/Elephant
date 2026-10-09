@@ -231,7 +231,7 @@ packages:
     source: hosted
     version: "4.5.2"
   flutter_launcher_icons:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: flutter_launcher_icons
       sha256: "10f13781741a2e3972126fae08393d3c4e01fa4cd7473326b94b72cf594195e7"
@@ -401,7 +401,7 @@ packages:
     source: hosted
     version: "4.12.0"
   launcher_name:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: launcher_name
       sha256: "5fc9a8b8de9e255d5f21effc33632b5620771c9b2310d459a7710b725353b305"

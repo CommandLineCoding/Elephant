@@ -59,7 +59,7 @@ class HelpAboutPage extends StatelessWidget {
           ),
           Center(
             child: Text(
-              'Version 0.3.0 - Secure Messaging',
+              'Version 0.3.1 - Secure Messaging',
               style: TextStyle(
                 fontSize: 14,
                 color: theme.colorScheme.onSurfaceVariant,
@@ -103,7 +103,7 @@ class HelpAboutPage extends StatelessWidget {
           // --- KNOWN BUGS SECTION ---
           _buildSectionHeader(
             context,
-            'Known Bugs & V0.3.0 Limitations',
+            'Known Bugs & V0.3.1 Limitations',
             Icons.bug_report,
           ),
           Card(

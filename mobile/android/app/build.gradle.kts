@@ -1,9 +1,25 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Release signing comes from android/key.properties (never committed) or the
+// equivalent ELEPHANT_* environment variables in CI. Without either, release
+// builds are unsigned, which is what F-Droid expects: it signs with its own key.
+val keystoreProperties = Properties().apply {
+    val file = rootProject.file("key.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun signingValue(key: String, env: String): String? =
+    keystoreProperties.getProperty(key) ?: System.getenv(env)
+
+val releaseStoreFile = signingValue("storeFile", "ELEPHANT_KEYSTORE_PATH")
+
+// Keep Google Play libraries out of the dependency graph (F-Droid inclusion policy).
 configurations.all {
     exclude(group = "com.google.android.play", module = "core")
     exclude(group = "com.google.android.play", module = "core-common")
@@ -23,6 +39,24 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        if (releaseStoreFile != null) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = signingValue("storePassword", "ELEPHANT_KEYSTORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "ELEPHANT_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "ELEPHANT_KEY_PASSWORD")
+            }
+        }
+    }
+
+    // AGP otherwise embeds a dependency report encrypted with Google's key,
+    // which F-Droid's scanner rejects and which breaks reproducible builds.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     defaultConfig {
         applicationId = "in.commandlinecoding.elephant"
         minSdk = flutter.minSdkVersion
@@ -33,7 +67,8 @@ android {
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("debug")
+            // Kept on one line: F-Droid's build strips `signingConfig` lines.
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug").takeIf { System.getenv("ELEPHANT_ALLOW_DEBUG_SIGNING") == "true" }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -54,49 +89,8 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     }
 }
 
-val abiCodes = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86_64" to 3)
-
-androidComponents {
-    onVariants { variant ->
-        variant.outputs.forEach { output ->
-            val abi = output.filters.find { 
-                it.filterType == com.android.build.api.variant.FilterConfiguration.FilterType.ABI 
-            }?.identifier
-            
-            val baseAbiCode = abiCodes[abi]
-            if (baseAbiCode != null) {
-                val baseVersionCode = flutter.versionCode
-                output.versionCode.set(baseVersionCode * 10 + baseAbiCode)
-            }
-        }
-    }
-}
-
-project.afterEvaluate {
-    tasks.configureEach {
-        if (name.contains("minifyReleaseWithR8") || name.contains("minifyReleaseWithProguard") || name.contains("dexBuilderRelease")) {
-            doFirst {
-                logger.lifecycle("FOSS SANITIZER: Active. Sweeping intermediate files for non-free binaries...")
-                
-                val searchDirs = listOf(
-                    File(project.layout.buildDirectory.asFile.get(), "intermediates/classes/release"),
-                    File(project.layout.buildDirectory.asFile.get(), "intermediates/javac/release")
-                )
-                
-                for (dir in searchDirs) {
-                    if (dir.exists()) {
-                        dir.walkBottomUp().forEach { file -> 
-                            val normalizedPath = file.absolutePath.replace('\\', '/')
-                            if (file.isDirectory && normalizedPath.endsWith("com/google/android/play/core")) {
-                                file.deleteRecursively()
-                                logger.lifecycle("Successfully removed vendor-shaded tracking package: $normalizedPath")
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// Per-ABI versionCodes come from Flutter itself with --split-per-abi:
+// 1000 + base (armeabi-v7a), 2000 + base (arm64-v8a), 4000 + base (x86_64).
+// fdroid/in.commandlinecoding.elephant.yml depends on this scheme.
 
 dependencies {}
