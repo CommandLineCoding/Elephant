@@ -1,7 +1,7 @@
 First release on F-Droid.
-- End-to-end encrypted direct messages (Signal Protocol)
-- Group chats, replies, typing indicators and read receipts
-- Encrypted on-device message storage and offline sending
+- End-to-end encrypted direct messages (Signal Protocol) with safety-number verification
+- Group chats with admin roles, replies, message editing, typing indicators and read receipts
+- New frosted-glass design with four themes
+- Encrypted on-device storage and offline sending
 - Username/password, Google or GitHub sign-in
 - Connect to Elephant Cloud or your own server
-- Four themes

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:mobile/core/constants.dart';
+import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -14,6 +16,10 @@ class ActiveChatController extends ChangeNotifier {
   final WebSocketService _ws = WebSocketService();
   final Uuid _uuid = const Uuid();
 
+  /// Resolves the signed-in user's ID (set from main.dart).
+  String Function() currentUserIdProvider = () => '';
+  String get _myId => currentUserIdProvider();
+
   bool isLoadingMore = false;
   bool hasMoreMessages = true;
   int _currentRequestId = 0;
@@ -25,76 +31,23 @@ class ActiveChatController extends ChangeNotifier {
   bool isCurrentChatGroup = false;
   int chatOpenCount = 0;
 
-  void refreshUI() {
-    notifyListeners();
-  }
+  void refreshUI() => notifyListeners();
 
-  Future<void> loadMoreMessages() async {
-    if (isLoadingMore || !hasMoreMessages || currentChatUserId == null || activeChat.isEmpty) return;
-    
-    isLoadingMore = true;
-    notifyListeners();
+  bool _isMine(Message msg) => msg.isFrom(_myId);
 
-    try {
-      final targetUid = currentChatUserId!;
-      final oldestMessageTime = activeChat.first.createdAt.toIso8601String();
+  /// Plaintext byte budget for the open chat.
+  int get messageByteLimit => isCurrentChatGroup
+      ? ServerLimits.maxGroupMessageBytes
+      : ServerLimits.maxDirectMessageBytes;
 
-      final res = await _api.getChatHistory(
-        targetUid, 
-        isGroup: isCurrentChatGroup, 
-        before: oldestMessageTime
-      );
-      
-      if (currentChatUserId != targetUid) return;
-
-      final targetList = _extractDataList(res.data, ['messages']);
-      
-      if (targetList.isEmpty) {
-        hasMoreMessages = false;
-        return;
-      }
-
-      List<Message> loadedOldMessages = [];
-      for (var json in targetList.reversed) {
-        Message parsedMsg = Message.fromJson(json);
-        Message decryptedMsg = await _decryptMessageIfNeeded(parsedMsg);
-        loadedOldMessages.add(decryptedMsg);
-      }
-
-      activeChat = [...loadedOldMessages, ...activeChat];
-      
-      final db = await DatabaseHelper.instance.database;
-      Batch batch = db.batch();
-      for (var msg in loadedOldMessages) {
-        if (!msg.content.contains('ciphertext') && !msg.content.contains('🔒')) {
-          batch.insert('messages', {
-            'id': msg.id,
-            'chat_id': targetUid,
-            'sender_id': msg.senderId,
-            'content': msg.content,
-            'created_at': msg.createdAt.millisecondsSinceEpoch,
-            'is_read': msg.isRead ? 1 : 0,
-            'reply_to_id': msg.replyToMessageId,
-            'sync_status': 'synced',
-          }, conflictAlgorithm: ConflictAlgorithm.ignore);
-        }
-      }
-      await batch.commit(noResult: true);
-
-    } catch (e) {
-      debugPrint("Failed to load older messages: $e");
-    } finally {
-      isLoadingMore = false;
-      notifyListeners();
-    }
-  }
+  // --- Loading ---
 
   Future<void> openChat(String targetUid, {bool isGroup = false}) async {
     if (targetUid.isEmpty || targetUid == 'null') return;
     final int requestId = ++_currentRequestId;
 
     if (currentChatUserId != targetUid) {
-      activeChat.clear();
+      activeChat = [];
       isChatHistoryLoading = true;
       hasMoreMessages = true;
       chatOpenCount = 0;
@@ -114,29 +67,13 @@ class ActiveChatController extends ChangeNotifier {
         where: 'chat_id = ?',
         whereArgs: [targetUid],
         orderBy: 'created_at DESC',
-        limit: 50,
+        limit: ServerLimits.historyPageSize,
       );
 
       if (localData.isNotEmpty && currentChatUserId == targetUid) {
-        activeChat = localData
-            .map(
-              (row) => Message(
-                id: row['id'] as String,
-                senderId: row['sender_id'] as String,
-                receiverId: targetUid,
-                content: row['content'] as String,
-                createdAt: DateTime.fromMillisecondsSinceEpoch(
-                  row['created_at'] as int,
-                ),
-                isRead: (row['is_read'] as int) == 1,
-                replyToMessageId: row['reply_to_id'] as String?,
-                syncStatus: row['sync_status'] as String? ?? 'synced',
-              ),
-            )
-            .toList()
-            .reversed
-            .toList();
-
+        activeChat = _withResolvedQuotes(
+          localData.map(Message.fromRow).toList().reversed.toList(),
+        );
         isChatHistoryLoading = false;
         notifyListeners();
       }
@@ -146,97 +83,83 @@ class ActiveChatController extends ChangeNotifier {
 
     try {
       final res = await _api.getChatHistory(targetUid, isGroup: isGroup);
-
-      if (requestId != _currentRequestId || currentChatUserId != targetUid)
+      if (requestId != _currentRequestId || currentChatUserId != targetUid) {
         return;
+      }
 
-      final targetList = _extractDataList(res.data, ['messages']);
-
-      final db = await DatabaseHelper.instance.database;
-      final localData = await db.query(
-        'messages',
-        where: 'chat_id = ?',
-        whereArgs: [targetUid],
+      final page = await _decodeServerPage(
+        targetUid,
+        ApiService.dataList(res.data),
       );
-
-      final Map<String, String> localDecryptedContents = {};
-      for (var row in localData) {
-        final content = row['content'] as String;
-        if (!content.contains('ciphertext') && !content.contains('🔒')) {
-          localDecryptedContents[row['id'] as String] = content;
-        }
-      }
-
-      List<Message> loadedMessages = [];
-      for (var json in targetList.reversed) {
-        Message parsedMsg = Message.fromJson(json);
-
-        if (localDecryptedContents.containsKey(parsedMsg.id)) {
-          loadedMessages.add(
-            parsedMsg.copyWith(content: localDecryptedContents[parsedMsg.id]),
-          );
-        } else {
-          Message decryptedMsg = await _decryptMessageIfNeeded(parsedMsg);
-          loadedMessages.add(decryptedMsg);
-        }
-      }
-
       if (currentChatUserId != targetUid) return;
 
-      if (loadedMessages.isNotEmpty) {
-        final pendingMessages = activeChat
-            .where((m) => m.syncStatus == 'pending')
-            .toList();
-
-        pendingMessages.removeWhere(
-          (pending) => loadedMessages.any(
-            (loaded) =>
-                loaded.id == pending.id ||
-                loaded.content.trim() == pending.content.trim(),
-          ),
-        );
-
-        activeChat = [...loadedMessages, ...pendingMessages];
-
-        final db = await DatabaseHelper.instance.database;
-        Batch batch = db.batch();
-        for (var msg in loadedMessages) {
-          if (msg.content.contains('ciphertext') ||
-              msg.content.contains('🔒')) {
-            continue;
-          }
-
-          batch.insert('messages', {
-            'id': msg.id,
-            'chat_id': targetUid,
-            'sender_id': msg.senderId,
-            'content': msg.content,
-            'created_at': msg.createdAt.millisecondsSinceEpoch,
-            'is_read': msg.isRead ? 1 : 0,
-            'reply_to_id': msg.replyToMessageId,
-            'sync_status': 'synced',
-          }, conflictAlgorithm: ConflictAlgorithm.replace);
-        }
-        await batch.commit(noResult: true);
-      }
+      hasMoreMessages = page.length >= ServerLimits.historyPageSize;
+      _mergeLatestPage(page);
+      await _cache(targetUid, page);
 
       _ws.sendReadReceipt(
         receiverId: isGroup ? null : targetUid,
         groupId: isGroup ? targetUid : null,
       );
-
-      _ws.sendRequestStatus(targetId: targetUid);
+      if (!isGroup) _ws.sendRequestStatus(targetId: targetUid);
     } catch (e) {
-      debugPrint("API Timeline tracking fail: $e");
+      debugPrint("Chat history fetch failed: $e");
     } finally {
-      isChatHistoryLoading = false;
+      if (currentChatUserId == targetUid) {
+        isChatHistoryLoading = false;
+        notifyListeners();
+      }
+    }
+  }
+
+  Future<void> loadMoreMessages() async {
+    if (isLoadingMore ||
+        isChatHistoryLoading ||
+        !hasMoreMessages ||
+        currentChatUserId == null ||
+        activeChat.isEmpty) {
+      return;
+    }
+
+    isLoadingMore = true;
+    notifyListeners();
+
+    final targetUid = currentChatUserId!;
+    try {
+      final oldest = activeChat.firstWhere(
+        (m) => !m.isPending,
+        orElse: () => activeChat.first,
+      );
+      final res = await _api.getChatHistory(
+        targetUid,
+        isGroup: isCurrentChatGroup,
+        before: oldest.createdAt.toUtc().toIso8601String(),
+      );
+      if (currentChatUserId != targetUid) return;
+
+      final page = await _decodeServerPage(
+        targetUid,
+        ApiService.dataList(res.data),
+      );
+      if (currentChatUserId != targetUid) return;
+
+      hasMoreMessages = page.length >= ServerLimits.historyPageSize;
+      final knownIds = activeChat.map((m) => m.id).toSet();
+      final older = page.where((m) => !knownIds.contains(m.id)).toList();
+      activeChat = _withResolvedQuotes([...older, ...activeChat]);
+      await _cache(targetUid, older);
+    } catch (e) {
+      debugPrint("Failed to load older messages: $e");
+    } finally {
+      isLoadingMore = false;
       notifyListeners();
     }
   }
 
+  /// Refetches the newest page, e.g. after resuming the app.
   Future<void> syncActiveChatSilently() async {
-    if (currentChatUserId == null) return;
-    final String targetUid = currentChatUserId!;
+    final targetUid = currentChatUserId;
+    if (targetUid == null) return;
 
     try {
       final res = await _api.getChatHistory(
@@ -245,155 +168,179 @@ class ActiveChatController extends ChangeNotifier {
       );
       if (currentChatUserId != targetUid) return;
 
-      final targetList = _extractDataList(res.data, ['messages']);
-
-      final db = await DatabaseHelper.instance.database;
-      final localData = await db.query(
-        'messages',
-        where: 'chat_id = ?',
-        whereArgs: [targetUid],
+      final page = await _decodeServerPage(
+        targetUid,
+        ApiService.dataList(res.data),
       );
-
-      final Map<String, String> localDecryptedContents = {};
-      for (var row in localData) {
-        final content = row['content'] as String;
-        if (!content.contains('ciphertext') && !content.contains('🔒')) {
-          localDecryptedContents[row['id'] as String] = content;
-        }
-      }
-
-      List<Message> loadedMessages = [];
-      for (var json in targetList.reversed) {
-        Message parsedMsg = Message.fromJson(json);
-
-        if (localDecryptedContents.containsKey(parsedMsg.id)) {
-          loadedMessages.add(
-            parsedMsg.copyWith(content: localDecryptedContents[parsedMsg.id]),
-          );
-        } else {
-          Message decryptedMsg = await _decryptMessageIfNeeded(parsedMsg);
-          loadedMessages.add(decryptedMsg);
-        }
-      }
-
       if (currentChatUserId != targetUid) return;
 
-      if (loadedMessages.isNotEmpty) {
-        for (int i = 0; i < loadedMessages.length; i++) {
-          final existingMsg = activeChat.firstWhere(
-            (m) => m.id == loadedMessages[i].id,
-            orElse: () => loadedMessages[i],
-          );
-
-          if (existingMsg.quotedMessage != null &&
-              loadedMessages[i].quotedMessage != null) {
-            if (loadedMessages[i].quotedMessage!.senderDisplayName.isEmpty) {
-              loadedMessages[i] = Message(
-                id: loadedMessages[i].id,
-                senderId: loadedMessages[i].senderId,
-                receiverId: loadedMessages[i].receiverId,
-                content: loadedMessages[i].content,
-                createdAt: loadedMessages[i].createdAt,
-                isRead: loadedMessages[i].isRead,
-                replyToMessageId: loadedMessages[i].replyToMessageId,
-                quotedMessage: existingMsg.quotedMessage,
-              );
-            }
-          }
-        }
-
-        final pendingMessages = activeChat
-            .where((m) => m.syncStatus == 'pending')
-            .toList();
-
-        pendingMessages.removeWhere(
-          (pending) => loadedMessages.any(
-            (loaded) =>
-                loaded.id == pending.id ||
-                loaded.content.trim() == pending.content.trim(),
-          ),
-        );
-
-        final mergedMessages = [...loadedMessages, ...pendingMessages];
-
-        try {
-          final db = await DatabaseHelper.instance.database;
-          Batch batch = db.batch();
-          for (var msg in loadedMessages) {
-            if (msg.content.contains('ciphertext') ||
-                msg.content.contains('🔒')) {
-              continue;
-            }
-
-            batch.insert('messages', {
-              'id': msg.id,
-              'chat_id': targetUid,
-              'sender_id': msg.senderId,
-              'content': msg.content,
-              'created_at': msg.createdAt.millisecondsSinceEpoch,
-              'is_read': msg.isRead ? 1 : 0,
-              'reply_to_id': msg.replyToMessageId,
-              'sync_status': 'synced',
-            }, conflictAlgorithm: ConflictAlgorithm.replace);
-          }
-          await batch.commit(noResult: true);
-        } catch (dbError) {
-          debugPrint("Silent Sync DB save failed: $dbError");
-        }
-
-        bool hasChanges = activeChat.length != mergedMessages.length;
-        if (!hasChanges && activeChat.isNotEmpty && mergedMessages.isNotEmpty) {
-          hasChanges =
-              activeChat.last.id != mergedMessages.last.id ||
-              activeChat.first.id != mergedMessages.first.id ||
-              activeChat.any((m) => m.syncStatus == 'pending');
-        }
-
-        if (hasChanges) {
-          activeChat = mergedMessages;
-          notifyListeners();
-          _ws.sendReadReceipt(
-            receiverId: isCurrentChatGroup ? null : targetUid,
-            groupId: isCurrentChatGroup ? targetUid : null,
-          );
-        }
-      }
+      _mergeLatestPage(page);
+      await _cache(targetUid, page);
+      notifyListeners();
     } catch (e) {
-      debugPrint("Silent chat sync fail: $e");
+      debugPrint("Silent chat sync failed: $e");
     }
   }
 
-  Future<void> sendTextMessage(
-    String text, {
-    Message? replyingTo,
-    String? replyingToName,
-    String? senderId,
-  }) async {
+  /// Converts server rows to readable messages, reusing cached plaintext and
+  /// only decrypting what is new or was edited since it was cached.
+  Future<List<Message>> _decodeServerPage(
+    String chatId,
+    List<dynamic> rows,
+  ) async {
+    final db = await DatabaseHelper.instance.database;
+    final cached = await db.query(
+      'messages',
+      where: 'chat_id = ?',
+      whereArgs: [chatId],
+    );
+    final Map<String, Message> cachedById = {
+      for (final row in cached) row['id'] as String: Message.fromRow(row),
+    };
+
+    final List<Message> result = [];
+    // Server pages are newest-first; decrypt oldest-first to follow the ratchet.
+    for (final json in rows.reversed) {
+      final msg = Message.fromJson(Map<String, dynamic>.from(json));
+      final local = cachedById[msg.id];
+      final localIsReadable =
+          local != null && !MessageEnvelope.isUnreadable(local.content);
+      final editedSinceCache =
+          msg.editedAt != null &&
+          (local?.editedAt == null || msg.editedAt!.isAfter(local!.editedAt!));
+
+      String content;
+      if (localIsReadable && !editedSinceCache) {
+        content = local.content;
+      } else if (_isMine(msg) &&
+          !(MessageEnvelope.tryParse(msg.content)?.isPlaintext ?? true)) {
+        // Our own DMs are encrypted for the recipient and can't be read back.
+        content = localIsReadable
+            ? local.content
+            : MessageEnvelope.locked('Sent from another device');
+      } else {
+        content = await SignalService().decodeIncoming(
+          msg.senderId,
+          msg.content,
+        );
+      }
+
+      result.add(msg.copyWith(content: content));
+    }
+    return result;
+  }
+
+  /// Replaces the newest window with [page] while keeping older loaded
+  /// messages and unsent ones.
+  void _mergeLatestPage(List<Message> page) {
+    if (page.isEmpty) return;
+    final pageIds = page.map((m) => m.id).toSet();
+    final oldestInPage = page.first.createdAt;
+    final newestInPage = page.last.createdAt;
+    final outside = activeChat.where((m) => !pageIds.contains(m.id));
+
+    final older = outside.where(
+      (m) => !m.isPending && m.createdAt.isBefore(oldestInPage),
+    );
+    // Realtime messages the server hasn't persisted yet, plus unsent ones.
+    final newer = outside.where(
+      (m) => m.isPending || m.createdAt.isAfter(newestInPage),
+    );
+
+    activeChat = _withResolvedQuotes([...older, ...page, ...newer]);
+  }
+
+  Future<void> _cache(String chatId, List<Message> messages) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final batch = db.batch();
+      for (final msg in messages) {
+        if (MessageEnvelope.isUnreadable(msg.content)) continue;
+        batch.insert(
+          'messages',
+          msg.toRow(chatId),
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      }
+      await batch.commit(noResult: true);
+    } catch (e) {
+      debugPrint("Failed to cache messages: $e");
+    }
+  }
+
+  /// Fills reply previews with readable text from the loaded conversation,
+  /// since the server quotes the raw (possibly encrypted) content.
+  List<Message> _withResolvedQuotes(List<Message> messages) {
+    final byId = {for (final m in messages) m.id: m};
+    return messages.map((msg) {
+      final replyId = msg.replyToMessageId;
+      if (replyId == null) return msg;
+
+      final original = byId[replyId];
+      if (original != null) {
+        return msg.copyWith(
+          quotedMessage: QuotedMessage(
+            id: replyId,
+            senderId: original.senderId,
+            senderDisplayName: msg.quotedMessage?.senderDisplayName ?? '',
+            content: original.content,
+          ),
+        );
+      }
+      final quoted = msg.quotedMessage;
+      if (quoted == null) return msg;
+      return msg.copyWith(
+        quotedMessage: quoted.copyWith(
+          content: MessageEnvelope.preview(quoted.content),
+        ),
+      );
+    }).toList();
+  }
+
+  // --- Sending ---
+
+  /// Sends a message. Returns an error to show the user, or null on success.
+  Future<String?> sendTextMessage(String text, {Message? replyingTo}) async {
     final cleanContent = text.trim();
-    if (currentChatUserId == null || cleanContent.isEmpty) return;
+    final targetId = currentChatUserId;
+    if (targetId == null || cleanContent.isEmpty) return null;
 
-    final targetId = currentChatUserId!;
+    if (utf8.encode(cleanContent).length > messageByteLimit) {
+      return 'Message is too long.';
+    }
 
-    if (!isCurrentChatGroup) {
+    final isGroup = isCurrentChatGroup;
+    String securePayload;
+    if (isGroup) {
+      securePayload = MessageEnvelope.plain(cleanContent);
+    } else {
       final sessionReady = await SignalService().establishSessionIfNeeded(
         targetId,
       );
       if (!sessionReady) {
-        debugPrint("Send aborted: Target user has no E2EE keys on server.");
-        return;
+        return "This contact hasn't set up encryption yet. Try again once they've opened Elephant.";
+      }
+      try {
+        securePayload = await SignalService().encryptDirect(
+          targetId,
+          cleanContent,
+        );
+      } catch (e) {
+        debugPrint("Encryption failed: $e");
+        return "Couldn't encrypt this message. Try resetting the secure session.";
       }
     }
 
     final clientMessageId = _uuid.v4();
-
-    QuotedMessage? quoted;
-    if (replyingTo != null) {
-      quoted = QuotedMessage(
-        id: replyingTo.id,
-        senderId: replyingTo.senderId,
-        senderDisplayName: replyingToName ?? 'Unknown',
-        content: replyingTo.content,
-      );
+    final frame = WebSocketService.chatFrame(
+      messageId: clientMessageId,
+      receiverId: isGroup ? null : targetId,
+      groupId: isGroup ? targetId : null,
+      content: securePayload,
+      replyToMessageId: replyingTo?.id,
+    );
+    if (WebSocketService.frameSize(frame) > ServerLimits.maxWsFrameBytes) {
+      return 'Message is too long.';
     }
 
     final optimisticMsg = Message(
@@ -404,7 +351,14 @@ class ActiveChatController extends ChangeNotifier {
       createdAt: DateTime.now(),
       isRead: false,
       replyToMessageId: replyingTo?.id,
-      quotedMessage: quoted,
+      quotedMessage: replyingTo == null
+          ? null
+          : QuotedMessage(
+              id: replyingTo.id,
+              senderId: replyingTo.senderId,
+              senderDisplayName: '',
+              content: replyingTo.content,
+            ),
       syncStatus: 'pending',
     );
 
@@ -412,306 +366,164 @@ class ActiveChatController extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await DatabaseHelper.instance.insertMessage({
-        'id': clientMessageId,
-        'chat_id': targetId,
-        'sender_id': 'me',
-        'content': cleanContent,
-        'created_at': DateTime.now().millisecondsSinceEpoch,
-        'is_read': 0,
-        'reply_to_id': replyingTo?.id,
-        'sync_status': 'pending',
-      });
-
-      String securePayload;
-      if (isCurrentChatGroup) {
-        securePayload = jsonEncode({'type': 0, 'ciphertext': cleanContent});
-      } else {
-        final encryptedData = await SignalService().encryptMessage(
-          targetId,
-          cleanContent,
-        );
-        securePayload = jsonEncode({
-          'type': encryptedData['type'],
-          'ciphertext': encryptedData['ciphertext'],
-        });
-      }
-
-      final payload = {
-        'messageId': clientMessageId,
-        'receiverId': isCurrentChatGroup ? null : targetId,
-        'groupId': isCurrentChatGroup ? targetId : null,
-        'content': securePayload,
-        'replyToMessageId': replyingTo?.id,
-      };
-
+      await DatabaseHelper.instance.insertMessage(
+        optimisticMsg.toRow(targetId),
+      );
       await DatabaseHelper.instance.queueAction(
         clientMessageId,
-        isCurrentChatGroup ? 'send_group_chat' : 'send_chat',
-        payload,
+        isGroup ? 'send_group_chat' : 'send_chat',
+        {
+          'messageId': clientMessageId,
+          'receiverId': isGroup ? null : targetId,
+          'groupId': isGroup ? targetId : null,
+          'content': securePayload,
+          'replyToMessageId': replyingTo?.id,
+        },
       );
 
-      if (isCurrentChatGroup) {
-        _ws.sendGroupChat(
-          messageId: clientMessageId,
-          groupId: targetId,
-          content: securePayload,
-          replyToMessageId: replyingTo?.id,
-        );
-      } else {
-        _ws.sendChat(
-          messageId: clientMessageId,
-          receiverId: targetId,
-          content: securePayload,
-          replyToMessageId: replyingTo?.id,
-        );
-      }
-
-      if (_ws.isConnected) {
-        markMessageAsSynced(clientMessageId);
+      if (_ws.emit(frame)) {
+        await markMessageAsSynced(clientMessageId);
       }
     } catch (e) {
-      debugPrint("Immediate send failed, message queued: $e");
+      debugPrint("Immediate send failed, message stays queued: $e");
+    }
+    return null;
+  }
+
+  /// Edits one of our messages via `PUT /api/messages/{id}`. Returns an error
+  /// to show, or null on success. The other side sees the edit on next sync.
+  Future<String?> editMessage(Message msg, String newText) async {
+    final targetId = currentChatUserId;
+    final text = newText.trim();
+    if (targetId == null || text.isEmpty) return null;
+    if (text == msg.content) return null;
+    if (!msg.canEdit(_myId)) {
+      return 'Messages can only be edited for 15 minutes after sending.';
+    }
+    if (utf8.encode(text).length > messageByteLimit) {
+      return 'Message is too long.';
+    }
+
+    try {
+      final String content;
+      if (isCurrentChatGroup) {
+        content = MessageEnvelope.plain(text);
+      } else {
+        if (!await SignalService().establishSessionIfNeeded(targetId)) {
+          return "Couldn't reach this contact's encryption keys.";
+        }
+        content = await SignalService().encryptDirect(targetId, text);
+      }
+
+      final res = await _api.editMessage(msg.id, content);
+      final editedAt =
+          Message.fromJson(ApiService.dataMap(res.data)).editedAt ??
+          DateTime.now();
+
+      final updated = msg.copyWith(content: text, editedAt: editedAt);
+      activeChat = _withResolvedQuotes(
+        activeChat.map((m) => m.id == msg.id ? updated : m).toList(),
+      );
+      notifyListeners();
+
+      final db = await DatabaseHelper.instance.database;
+      await db.update(
+        'messages',
+        {'content': text, 'edited_at': editedAt.millisecondsSinceEpoch},
+        where: 'id = ?',
+        whereArgs: [msg.id],
+      );
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(e, fallback: "Couldn't edit the message.");
     }
   }
 
   void sendTypingNotification(bool typing) {
-    if (currentChatUserId != null) {
-      _ws.sendTyping(
-        receiverId: isCurrentChatGroup ? null : currentChatUserId,
-        groupId: isCurrentChatGroup ? currentChatUserId : null,
-        isTyping: typing,
-      );
-    }
+    final target = currentChatUserId;
+    if (target == null) return;
+    _ws.sendTyping(
+      receiverId: isCurrentChatGroup ? null : target,
+      groupId: isCurrentChatGroup ? target : null,
+      isTyping: typing,
+    );
   }
 
-  void closeChat(String closedChatId) {
-    if (currentChatUserId == closedChatId) {
-      chatOpenCount--;
-      if (chatOpenCount <= 0) {
-        currentChatUserId = null;
-        isPeerTyping = false;
-        isPeerOnline = false;
-        activeChat.clear();
-        chatOpenCount = 0;
+  // --- Realtime updates (called by ChatEventHandler) ---
+
+  void receiveIncoming(Message msg) {
+    if (activeChat.any((m) => m.id == msg.id)) return;
+    activeChat = _withResolvedQuotes([...activeChat, msg]);
+    isPeerTyping = false;
+    notifyListeners();
+  }
+
+  /// The peer read our messages.
+  void applyReadReceipt() {
+    bool changed = false;
+    activeChat = activeChat.map((m) {
+      if (_isMine(m) && !m.isRead) {
+        changed = true;
+        return m.copyWith(isRead: true);
       }
-      notifyListeners();
-    }
-  }
-
-  List<dynamic> _extractDataList(dynamic data, List<String> fallbackKeys) {
-    if (data == null) return [];
-    if (data is List) return data;
-    if (data is Map) {
-      if (data['data'] is List) return data['data'];
-      for (final key in fallbackKeys) {
-        if (data[key] is List) return data[key];
-      }
-    }
-    return [];
-  }
-
-  Future<List<Message>> getLocalMessagesForChat(String chatId) async {
-    try {
-      final db = await DatabaseHelper.instance.database;
-
-      final List<Map<String, dynamic>> maps = await db.query(
-        'messages',
-        where: 'chat_id = ? COLLATE NOCASE',
-        whereArgs: [chatId],
-        orderBy: 'created_at ASC',
-      );
-
-      return maps.map((map) => Message.fromJson(map)).toList();
-    } catch (e) {
-      debugPrint("Error fetching local messages for chat search/copy: $e");
-      return [];
-    }
+      return m;
+    }).toList();
+    if (changed) notifyListeners();
   }
 
   Future<void> markMessageAsSynced(String messageId) async {
     final index = activeChat.indexWhere((m) => m.id == messageId);
     if (index != -1) {
-      final existingMsg = activeChat[index];
-
       final newList = List<Message>.from(activeChat);
-
-      newList[index] = Message(
-        id: existingMsg.id,
-        senderId: existingMsg.senderId,
-        receiverId: existingMsg.receiverId,
-        content: existingMsg.content,
-        createdAt: existingMsg.createdAt,
-        isRead: existingMsg.isRead,
-        replyToMessageId: existingMsg.replyToMessageId,
-        quotedMessage: existingMsg.quotedMessage,
-        syncStatus: 'synced',
-      );
-
+      newList[index] = newList[index].copyWith(syncStatus: 'synced');
       activeChat = newList;
       notifyListeners();
+    }
 
-      try {
-        final db = await DatabaseHelper.instance.database;
-        await db.update(
-          'messages',
-          {'sync_status': 'synced'},
-          where: 'id = ?',
-          whereArgs: [messageId],
-        );
-        await db.delete(
-          'action_queue',
-          where: 'id = ?',
-          whereArgs: [messageId],
-        );
-      } catch (e) {
-        debugPrint("Failed to update DB sync status: $e");
-      }
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.update(
+        'messages',
+        {'sync_status': 'synced'},
+        where: 'id = ?',
+        whereArgs: [messageId],
+      );
+      await db.delete('action_queue', where: 'id = ?', whereArgs: [messageId]);
+    } catch (e) {
+      debugPrint("Failed to update DB sync status: $e");
     }
   }
 
-  void addRealTimeMessage(Message incomingMsg) async {
-    if (currentChatUserId == null) return;
-
-    bool belongsToCurrentChat =
-        (isCurrentChatGroup && incomingMsg.receiverId == currentChatUserId) ||
-        (!isCurrentChatGroup &&
-            (incomingMsg.senderId == currentChatUserId ||
-                incomingMsg.receiverId == currentChatUserId));
-
-    if (!belongsToCurrentChat) return;
-
-    Message newMsg = await _decryptMessageIfNeeded(incomingMsg);
-
-    if (belongsToCurrentChat) {
-      final existingIndex = activeChat.indexWhere((m) => m.id == newMsg.id);
-
-      if (existingIndex == -1) {
-        activeChat = [...activeChat, newMsg];
-        notifyListeners();
-
-        try {
-          await DatabaseHelper.instance.insertMessage({
-            'id': newMsg.id,
-            'chat_id': currentChatUserId,
-            'sender_id': newMsg.senderId,
-            'content': newMsg.content,
-            'created_at': newMsg.createdAt.millisecondsSinceEpoch,
-            'is_read': newMsg.isRead ? 1 : 0,
-            'reply_to_id': newMsg.replyToMessageId,
-            'sync_status': 'synced',
-          });
-        } catch (e) {
-          debugPrint("Failed to save incoming WS message to DB: $e");
-        }
-
-        _ws.sendReadReceipt(
-          receiverId: isCurrentChatGroup ? null : currentChatUserId,
-          groupId: isCurrentChatGroup ? currentChatUserId : null,
-        );
-      } else {
-        if (activeChat[existingIndex].syncStatus == 'pending') {
-          markMessageAsSynced(newMsg.id);
-        }
-      }
+  void closeChat(String closedChatId) {
+    if (currentChatUserId != closedChatId) return;
+    chatOpenCount--;
+    if (chatOpenCount <= 0) {
+      currentChatUserId = null;
+      isPeerTyping = false;
+      isPeerOnline = false;
+      activeChat = [];
+      chatOpenCount = 0;
     }
+    notifyListeners();
   }
 
-  Future<Message> _decryptMessageIfNeeded(Message msg) async {
-    final content = msg.content.trim();
-
-    if (content.startsWith('{') && content.contains('ciphertext')) {
-      try {
-        final db = await DatabaseHelper.instance.database;
-
-        final exactMatch = await db.query(
-          'messages',
-          where: 'id = ?',
-          whereArgs: [msg.id],
-        );
-
-        if (exactMatch.isNotEmpty) {
-          final exactContent = exactMatch.first['content'].toString();
-          if (!exactContent.contains('ciphertext') &&
-              !exactContent.contains('🔒')) {
-            return msg.copyWith(content: exactContent);
-          }
-        }
-
-        bool isSelfChat = msg.senderId == msg.receiverId;
-        bool isSentByMe =
-            isSelfChat ||
-            (!isCurrentChatGroup && msg.senderId != currentChatUserId) ||
-            msg.senderId == 'me';
-
-        if (isSentByMe) {
-          final targetChatId = currentChatUserId ?? msg.receiverId;
-          final fallbackRows = await db.query(
-            'messages',
-            where: 'chat_id = ?',
-            whereArgs: [targetChatId],
-          );
-
-          int minDiff = -1;
-          String? closestPlaintext;
-
-          for (var row in fallbackRows) {
-            final rSender = row['sender_id'].toString();
-            if (rSender != 'me' && rSender != msg.senderId) continue;
-
-            final rowContent = row['content'].toString();
-            if (rowContent.contains('ciphertext') ||
-                rowContent.contains('🔒')) {
-              continue;
-            }
-
-            final localTime = row['created_at'] as int;
-            final diff = (localTime - msg.createdAt.millisecondsSinceEpoch)
-                .abs();
-
-            if (diff < 5000 && (minDiff == -1 || diff < minDiff)) {
-              minDiff = diff;
-              closestPlaintext = rowContent;
-            }
-          }
-
-          if (closestPlaintext != null) {
-            return msg.copyWith(content: closestPlaintext);
-          }
-
-          return msg.copyWith(content: "🔒 [Sent from another device]");
-        }
-      } catch (e) {
-        debugPrint("Local sent-message lookup crashed: $e");
-      }
-
-      try {
-        final Map<String, dynamic> payload = jsonDecode(content);
-
-        if (isCurrentChatGroup && payload['type'] == 0) {
-          return msg.copyWith(content: payload['ciphertext']);
-        }
-
-        final decryptedText = await SignalService().decryptMessage(
-          msg.senderId,
-          payload['ciphertext'],
-          payload['type'],
-        );
-        return msg.copyWith(content: decryptedText);
-      } catch (e) {
-        debugPrint("LibSignal Decryption Failed: $e");
-        final errStr = e.toString();
-
-        if (errStr.contains('DuplicateMessageException')) {
-          return msg.copyWith(content: "🔒 [Message already decrypted]");
-        } else if (errStr.contains('NoSessionException') ||
-            errStr.contains('Bad Mac')) {
-          return msg.copyWith(content: "🔒 [Encrypted for past session]");
-        }
-
-        return msg.copyWith(content: "🔒 [Encrypted Message]");
-      }
+  /// Every cached message of a chat, oldest first, for in-chat search.
+  Future<List<Message>> getLocalMessagesForChat(String chatId) async {
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final rows = await db.query(
+        'messages',
+        where: 'chat_id = ? COLLATE NOCASE',
+        whereArgs: [chatId],
+        orderBy: 'created_at ASC',
+      );
+      return rows
+          .map(Message.fromRow)
+          .where((m) => !MessageEnvelope.isUnreadable(m.content))
+          .toList();
+    } catch (e) {
+      debugPrint("Error reading local messages: $e");
+      return [];
     }
-    return msg;
   }
 }

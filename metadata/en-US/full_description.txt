@@ -4,9 +4,9 @@ Elephant is a privacy-first, open-source messenger. Direct messages are end-to-e
 <ul>
 <li>End-to-end encrypted one-to-one chats (Signal Protocol: X3DH and Double Ratchet)</li>
 <li>Safety numbers with QR codes to verify who you are talking to</li>
-<li>Group chats</li>
+<li>Group chats with admin and member roles</li>
 <li>Real-time delivery with typing indicators, read receipts and online status</li>
-<li>Replies with quoted messages and Markdown formatting</li>
+<li>Replies with quoted messages, Markdown formatting, and editing your messages for 15 minutes after sending</li>
 <li>Messages stored on your device in an encrypted database (SQLCipher)</li>
 <li>Messages written offline are queued and sent when you reconnect</li>
 <li>Find people by username and share yours as a QR code</li>

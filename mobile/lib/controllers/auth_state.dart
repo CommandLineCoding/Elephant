@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/db_services.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -14,44 +15,77 @@ import '../services/auth_service.dart';
 class AuthState extends ChangeNotifier {
   final AuthService _authService = AuthService();
   final AppLinks _appLinks = AppLinks();
+  final FlutterSecureStorage _storage = const FlutterSecureStorage();
   StreamSubscription<Uri>? _linkSubscription;
 
   String? _token;
   bool _isLoading = false;
   String? _errorMessage;
-
   UserModel? _currentUser;
+
+  /// Full username (with discriminator) assigned at registration, shown once
+  /// so the user knows what to log in with.
+  String? newlyRegisteredUsername;
 
   String? get token => _token;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
-
   UserModel? get currentUser => _currentUser;
 
-  static VoidCallback? onGlobalUnauthorized;
-
   AuthState() {
-    onGlobalUnauthorized = logoutSilently;
+    AuthService.onSessionExpired = logoutSilently;
     _initDeepLinks();
   }
+
+  // --- Validation (mirrors the server's rules) ---
+
+  static String? validateUsername(String? value, {required bool isRegister}) {
+    final text = (value ?? '').trim().toLowerCase();
+    if (text.isEmpty) return 'Enter your username';
+    if (!isRegister) return null;
+    if (text.length < ServerLimits.usernameMin ||
+        text.length > ServerLimits.usernameMax) {
+      return 'Use ${ServerLimits.usernameMin}–${ServerLimits.usernameMax} characters';
+    }
+    if (!RegExp(r'^[a-z0-9]+$').hasMatch(text)) {
+      return 'Only letters and numbers';
+    }
+    return null;
+  }
+
+  static String? validatePassword(String? value, {required bool isRegister}) {
+    final text = value ?? '';
+    if (text.isEmpty) return 'Enter your password';
+    if (isRegister && text.length < ServerLimits.passwordMin) {
+      return 'Use at least ${ServerLimits.passwordMin} characters';
+    }
+    return null;
+  }
+
+  static String? validateDisplayName(String? value) {
+    return (value ?? '').trim().isEmpty ? 'Enter a display name' : null;
+  }
+
+  void clearError() {
+    if (_errorMessage != null) {
+      _errorMessage = null;
+      notifyListeners();
+    }
+  }
+
+  // --- Deep links (OAuth handoff) ---
 
   Future<void> _initDeepLinks() async {
     try {
       final initialUri = await _appLinks.getInitialLink();
-      if (initialUri != null) {
-        _handleIncomingUri(initialUri);
-      }
+      if (initialUri != null) _handleIncomingUri(initialUri);
     } catch (e) {
       debugPrint("Error reading initial deep link: $e");
     }
 
     _linkSubscription = _appLinks.uriLinkStream.listen(
-      (Uri uri) {
-        _handleIncomingUri(uri);
-      },
-      onError: (err) {
-        debugPrint("Deep link stream error: $err");
-      },
+      _handleIncomingUri,
+      onError: (err) => debugPrint("Deep link stream error: $err"),
     );
   }
 
@@ -61,46 +95,33 @@ class AuthState extends ChangeNotifier {
     }
   }
 
+  // --- Session ---
+
   Future<void> loadUserProfile() async {
     if (_token == null) return;
 
     try {
-      final res = await _authService.getCurrentUser(_token!);
-      final data = res.data;
-      final userData = data['data'] ?? data['user'] ?? data;
-
+      final res = await ApiService().getMe();
+      final userData = ApiService.dataMap(res.data);
       _currentUser = UserModel.fromJson(userData);
-
       await _authService.saveUserProfile(jsonEncode(userData));
-      notifyListeners();
     } catch (e) {
-      debugPrint("Network failed, attempting to load cached user profile: $e");
-
-      try {
-        final cachedData = await _authService.getCachedUserProfile();
-        if (cachedData != null) {
-          final decodedData = jsonDecode(cachedData);
-          _currentUser = UserModel.fromJson(decodedData);
-          notifyListeners();
-        } else {
-          _errorMessage = "No internet connection and no cached profile.";
-          notifyListeners();
-        }
-      } catch (cacheError) {
-        debugPrint("Cache read failed: $cacheError");
+      debugPrint("Profile fetch failed, using cached profile: $e");
+      final cachedData = await _authService.getCachedUserProfile();
+      if (cachedData != null) {
+        _currentUser = UserModel.fromJson(jsonDecode(cachedData));
       }
     }
+    notifyListeners();
   }
 
   Future<String?> checkAutoLogin() async {
     _token = await _authService.getToken();
 
     if (_token != null) {
-      await SignalService().ensureIdentityInitialized();
-      await SignalService().uploadPublicKeys();
       await loadUserProfile();
       if (_currentUser != null) {
-        await SignalService().initializeAndUploadKeys(_currentUser!.id);
+        unawaited(SignalService().ensureKeysPublished());
       }
     }
 
@@ -108,192 +129,136 @@ class AuthState extends ChangeNotifier {
     return _token;
   }
 
-  Future<bool> handleLogin(String username, String password) async {
+  /// Stores the token pair, loads the profile and publishes E2EE keys.
+  Future<bool> _completeSignIn(String accessToken, String refreshToken) async {
+    await _authService.saveTokens(accessToken, refreshToken);
+    _token = accessToken;
+    await loadUserProfile();
+
+    if (_currentUser == null) {
+      _errorMessage = "Signed in, but your profile couldn't be loaded.";
+      _token = null;
+      await _authService.logout();
+      return false;
+    }
+
+    // Keys on this device belong to whoever signed in last.
+    final lastUserId = await _storage.read(key: "last_user_id");
+    if (lastUserId != null && lastUserId != _currentUser!.id) {
+      await SignalService().wipeLocalKeys();
+      await DatabaseHelper.instance.wipeChatData();
+    }
+    await _storage.write(key: "last_user_id", value: _currentUser!.id);
+
+    await SignalService().ensureKeysPublished();
+    return true;
+  }
+
+  Future<bool> _runAuthRequest(
+    Future<Response> Function() request,
+    String fallbackError,
+  ) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
+    bool success = false;
     try {
-      final res = await _authService.login(username, password);
-      dynamic dataMap = res.data;
-
-      if (dataMap is String) {
-        try {
-          dataMap = jsonDecode(dataMap);
-        } catch (_) {}
-      }
-
-      if (dataMap is Map && dataMap['success'] == true) {
-        Map<String, dynamic>? tokens = dataMap['data']?['tokens'];
-        if (tokens != null &&
-            tokens['access_token'] != null &&
-            tokens['refresh_token'] != null) {
-          _token = tokens['access_token'];
-          await _authService.saveTokens(
-            tokens['access_token'],
-            tokens['refresh_token'],
-          );
-
-          await loadUserProfile();
-
-          if (_currentUser != null) {
-            final FlutterSecureStorage storage = const FlutterSecureStorage();
-            final String? lastUserId = await storage.read(key: "last_user_id");
-
-            if (lastUserId != null && lastUserId != _currentUser!.id) {
-              final db = await DatabaseHelper.instance.database;
-              await db.delete('signal_local_keys');
-              await db.delete('signal_identities');
-              await db.delete('signal_sessions');
-              await db.delete('signal_prekeys');
-              await db.delete('signal_signed_prekeys');
-            }
-            await storage.write(key: "last_user_id", value: _currentUser!.id);
-
-            await SignalService().ensureIdentityInitialized();
-            await SignalService().uploadPublicKeys();
-          }
-
-          _isLoading = false;
-          notifyListeners();
-          return true;
+      final res = await request();
+      final data = ApiService.dataMap(res.data);
+      final tokens = data['tokens'];
+      if (tokens is Map &&
+          tokens['access_token'] != null &&
+          tokens['refresh_token'] != null) {
+        final user = data['user'];
+        if (user is Map) {
+          newlyRegisteredUsername = res.statusCode == 201
+              ? user['username']?.toString()
+              : null;
         }
+        success = await _completeSignIn(
+          tokens['access_token'],
+          tokens['refresh_token'],
+        );
+      } else {
+        _errorMessage = fallbackError;
       }
-      _errorMessage =
-          dataMap['error'] ?? dataMap['message'] ?? "Authentication failed";
-    } on DioException catch (e) {
-      _errorMessage = e.response?.data?['error'] ?? "Server validation failed.";
     } catch (e) {
-      _errorMessage = "Connection parsing error occurred";
+      _errorMessage = ApiService.errorMessage(e, fallback: fallbackError);
     }
 
     _isLoading = false;
     notifyListeners();
-    return false;
+    return success;
+  }
+
+  Future<bool> handleLogin(String username, String password) {
+    return _runAuthRequest(
+      () => _authService.login(username.trim().toLowerCase(), password),
+      "Couldn't sign you in",
+    );
   }
 
   Future<bool> handleRegister(
     String username,
     String displayName,
     String password,
-  ) async {
-    _isLoading = true;
-    _errorMessage = null;
-    notifyListeners();
-
-    try {
-      final res = await _authService.register(username, displayName, password);
-      dynamic dataMap = res.data;
-
-      if (dataMap is String) {
-        try {
-          dataMap = jsonDecode(dataMap);
-        } catch (_) {}
-      }
-
-      if (dataMap is Map && dataMap['success'] == true) {
-        Map<String, dynamic>? tokens = dataMap['data']?['tokens'];
-        if (tokens != null &&
-            tokens['access_token'] != null &&
-            tokens['refresh_token'] != null) {
-          _token = tokens['access_token'];
-          await _authService.saveTokens(
-            tokens['access_token'],
-            tokens['refresh_token'],
-          );
-
-          await loadUserProfile();
-
-          if (_currentUser != null) {
-            await SignalService().ensureIdentityInitialized();
-            await SignalService().uploadPublicKeys();
-          }
-
-          _isLoading = false;
-          notifyListeners();
-          return true;
-        }
-      }
-      _errorMessage = dataMap['error'] ?? "Registration failed";
-    } on DioException catch (e) {
-      _errorMessage = e.response?.data?['error'] ?? "Registration rejected.";
-    } catch (e) {
-      _errorMessage = "Server error occurred during sign up";
-    }
-
-    _isLoading = false;
-    notifyListeners();
-    return false;
+  ) {
+    return _runAuthRequest(
+      () => _authService.register(
+        username.trim().toLowerCase(),
+        displayName.trim(),
+        password,
+      ),
+      "Couldn't create your account",
+    );
   }
 
   Future<void> handleOAuthLogin(String provider) async {
-    _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final String oAuthUrl = "${Env.httpBaseUrl}/auth/$provider";
-      final Uri uri = Uri.parse(oAuthUrl);
-
-      final bool launched = await launchUrl(
-        uri,
+      final launched = await launchUrl(
+        Uri.parse("${Env.httpBaseUrl}/auth/$provider"),
         mode: LaunchMode.externalApplication,
       );
-
       if (!launched) {
-        _errorMessage =
-            "Could not launch web browser for $provider authentication.";
+        _errorMessage = "Couldn't open the browser for $provider sign-in.";
+        notifyListeners();
       }
     } catch (e) {
-      _errorMessage = "OAuth launch error: $e";
-    } finally {
-      _isLoading = false;
+      _errorMessage = "Couldn't start $provider sign-in.";
       notifyListeners();
     }
   }
 
   Future<bool> handleOAuthCallback(Uri uri) async {
+    final accessToken = uri.queryParameters['access_token'];
+    final refreshToken = uri.queryParameters['refresh_token'];
+
+    if (accessToken == null || refreshToken == null) {
+      _errorMessage =
+          uri.queryParameters['error'] ?? "Sign-in was cancelled or failed.";
+      notifyListeners();
+      return false;
+    }
+
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
-    try {
-      final accessToken =
-          uri.queryParameters['access_token'] ?? uri.queryParameters['token'];
-      final refreshToken = uri.queryParameters['refresh_token'];
-
-      if (accessToken != null) {
-        _token = accessToken;
-        await _authService.saveTokens(accessToken, refreshToken ?? accessToken);
-        await loadUserProfile();
-
-        if (_currentUser != null) {
-          await SignalService().initializeAndUploadKeys(_currentUser!.id);
-        }
-
-        _isLoading = false;
-        notifyListeners();
-        return true;
-      } else if (uri.queryParameters.containsKey('error')) {
-        _errorMessage = uri.queryParameters['error'];
-      } else {
-        _errorMessage = "OAuth callback received no valid token payload.";
-      }
-    } catch (e) {
-      _errorMessage = "Failed to parse authentication callback data.";
-    }
+    final success = await _completeSignIn(accessToken, refreshToken);
 
     _isLoading = false;
     notifyListeners();
-    return false;
+    return success;
   }
 
   Future<void> logout() async {
     _token = null;
     _currentUser = null;
     await _authService.logout();
-    final storage = const FlutterSecureStorage();
-    await storage.delete(key: "last_user_id");
     notifyListeners();
   }
 
@@ -301,8 +266,8 @@ class AuthState extends ChangeNotifier {
     if (_token != null) {
       _token = null;
       _currentUser = null;
+      _errorMessage = "Your session expired. Please sign in again.";
       _authService.logout();
-      const FlutterSecureStorage().delete(key: "last_user_id");
       notifyListeners();
     }
   }
