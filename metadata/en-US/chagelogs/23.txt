@@ -1,4 +1,0 @@
-- Added user authentication with login and registration
-- Support for username and password-based accounts
-- Added theme customization options
-- Initial release on F-Droid

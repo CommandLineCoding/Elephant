@@ -26,15 +26,47 @@ jobs:
           distribution: temurin
           java-version: '25'
 
+      # Pinned so release APKs and F-Droid's build (which reads this line)
+      # use the same Flutter version.
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          flutter-version: '3.47.2'
           cache: true
+
+      - name: Check the tag matches pubspec.yaml
+        working-directory: mobile
+        run: |
+          version=$(sed -n -E 's/^version:[[:space:]]*([^+]+)\+.*/\1/p' pubspec.yaml)
+          if [ "v$version" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match pubspec.yaml version $version. Bump version (and its +build number) before tagging."
+            exit 1
+          fi
 
       - name: Install Flutter dependencies
         working-directory: mobile
-        run: flutter pub get
+        run: flutter pub get --enforce-lockfile
+
+      - name: Set up release signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; APKs are signed with a throwaway debug key and can't update each other."
+            echo "ELEPHANT_ALLOW_DEBUG_SIGNING=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          {
+            echo "ELEPHANT_KEYSTORE_PATH=$RUNNER_TEMP/release.jks"
+            echo "ELEPHANT_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD"
+            echo "ELEPHANT_KEY_ALIAS=$KEY_ALIAS"
+            echo "ELEPHANT_KEY_PASSWORD=$KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
 
       - name: Run Flutter analyze
         working-directory: mobile

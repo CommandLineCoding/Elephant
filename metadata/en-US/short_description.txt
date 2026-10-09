@@ -1,1 +1,1 @@
-Elephant – a privacy-first, open-source messenger.
+Private messenger with end-to-end encrypted chats that you can self-host

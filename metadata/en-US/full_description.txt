@@ -1,0 +1,27 @@
+Elephant is a privacy-first, open-source messenger. Direct messages are end-to-end encrypted with the Signal Protocol: your private keys never leave your device, and the server only ever stores public keys and encrypted text.
+
+<b>Features</b>
+<ul>
+<li>End-to-end encrypted one-to-one chats (Signal Protocol: X3DH and Double Ratchet)</li>
+<li>Safety numbers with QR codes to verify who you are talking to</li>
+<li>Group chats with admin and member roles</li>
+<li>Real-time delivery with typing indicators, read receipts and online status</li>
+<li>Replies with quoted messages, Markdown formatting, and editing your messages for 15 minutes after sending</li>
+<li>Messages stored on your device in an encrypted database (SQLCipher)</li>
+<li>Messages written offline are queued and sent when you reconnect</li>
+<li>Find people by username and share yours as a QR code</li>
+<li>Sign in with a username and password, or optionally with Google or GitHub</li>
+<li>Four themes: Frost, Aura, Onyx and Nebula</li>
+</ul>
+
+<b>Your server, your data</b>
+Elephant connects to the public server at elephant.commandlinecoding.in by default. The server is also free software (AGPL-3.0), and you can run your own and point the app at it from the sign-in screen.
+
+<b>Good to know</b>
+<ul>
+<li>Group messages are encrypted in transit (TLS) but are not end-to-end encrypted yet.</li>
+<li>Google and GitHub sign-in are optional and open in your browser. A username and password account needs no third-party service.</li>
+<li>No ads, analytics or trackers.</li>
+</ul>
+
+Source code, server setup and issue tracker: https://github.com/CommandLineCoding/Elephant

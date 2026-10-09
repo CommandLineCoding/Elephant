@@ -7,7 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 class HelpAboutPage extends StatelessWidget {
   const HelpAboutPage({super.key});
 
-  static const String appVersion = '0.3.0';
+  static const String appVersion = '0.3.1';
   static const String githubUrl =
       'https://github.com/commandlinecoding/elephant';
 
