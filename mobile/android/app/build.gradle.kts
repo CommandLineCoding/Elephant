@@ -1,4 +1,5 @@
 import java.util.Properties
+import com.android.build.gradle.internal.api.ApkVariantOutputImpl
 
 plugins {
     id("com.android.application")
@@ -89,8 +90,25 @@ tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach 
     }
 }
 
-// Per-ABI versionCodes come from Flutter itself with --split-per-abi:
-// 1000 + base (armeabi-v7a), 2000 + base (arm64-v8a), 4000 + base (x86_64).
-// fdroid/in.commandlinecoding.elephant.yml depends on this scheme.
+// Give each split APK a distinct, monotonically increasing versionCode so
+// F-Droid can publish all architectures from the same release.
+val abiVersionCodes = mapOf("armeabi-v7a" to 1, "arm64-v8a" to 2, "x86_64" to 3)
+
+// Keep Flutter's default 1000/2000/4000 ABI offsets from overriding our codes.
+extensions.extraProperties.set("force-version-code-ignoring-abi", true)
+
+android.applicationVariants.configureEach {
+    val variant = this
+    outputs.forEach { output ->
+        val abiCode = output.filters
+            .find { it.filterType == "ABI" }
+            ?.identifier
+            ?.let(abiVersionCodes::get)
+
+        if (abiCode != null) {
+            (output as ApkVariantOutputImpl).versionCodeOverride = variant.versionCode * 10 + abiCode
+        }
+    }
+}
 
 dependencies {}
