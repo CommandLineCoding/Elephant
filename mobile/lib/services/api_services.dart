@@ -98,6 +98,8 @@ class ApiService {
 
   Future<Response> getMe() => _dio.get("/users/me");
 
+  Future<Response> deleteAccount() => _dio.delete("/users/me");
+
   Future<Response> getUser(String userId) => _dio.get("/users/$userId");
 
   Future<Response> searchUsers(String query, {int page = 1}) {

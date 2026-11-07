@@ -262,6 +262,25 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Deletes the account on the server and erases this device's keys and
+  /// chat cache. Returns an error message, or null on success. The caller
+  /// then signs out as usual.
+  Future<String?> deleteAccount() async {
+    try {
+      await ApiService().deleteAccount();
+    } catch (e) {
+      debugPrint("Delete account failed: $e");
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't delete your account.",
+      );
+    }
+    await SignalService().wipeLocalKeys();
+    await DatabaseHelper.instance.wipeChatData();
+    await _storage.delete(key: "last_user_id");
+    return null;
+  }
+
   void logoutSilently() {
     if (_token != null) {
       _token = null;

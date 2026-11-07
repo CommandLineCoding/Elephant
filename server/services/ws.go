@@ -76,6 +76,17 @@ func (h *WSHub) Run() {
 	}
 }
 
+// Disconnect closes the user's live WebSocket, if any. ReadPump then
+// unregisters the client as usual.
+func (h *WSHub) Disconnect(userID string) {
+	h.mu.RLock()
+	client, ok := h.clients[strings.ToLower(userID)]
+	h.mu.RUnlock()
+	if ok {
+		_ = client.Conn.Close()
+	}
+}
+
 func (c *WSClient) ReadPump() {
 	defer func() {
 		Hub.Unregister <- c

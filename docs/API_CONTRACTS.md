@@ -54,6 +54,7 @@ Every route behind the auth guard returns this when the access token is missing,
 | GET | [/api/users/me](#1-user-me) | Yes | Get the authenticated user's profile |
 | GET | [/api/users/{id}](#2-get-user-by-id) | Yes | Get a user by ID |
 | GET | [/api/users/search?q=&page=&limit=](#3-search-users) | Yes | Search users by username or display name (rate limited) |
+| DELETE | [/api/users/me](#4-delete-account) | Yes | Permanently delete the authenticated user's account |
 | GET | [/api/ws?token=](#1-connect-to-websocket) | Yes (query) | WebSocket upgrade endpoint |
 | WS | [Client → Server](#2-client-to-server-messages) | — | Events the client sends |
 | WS | [Server → Client](#3-server-to-client-messages) | — | Events the server pushes |
@@ -451,6 +452,41 @@ If no users match, `data` is an empty array.
 {
   "success": false,
   "error": "Failed to execute user directory search operations"
+}
+```
+
+### 4. Delete Account
+
+- **URL:** `/api/users/me`
+- **Method:** `DELETE`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X DELETE "http://HOST:PORT/api/users/me" -H "Authorization: Bearer <access_token>"`
+
+Deletes the user. Their messages, group memberships, devices and prekeys, refresh tokens and safety-number verifications are removed by `ON DELETE CASCADE`, and any live WebSocket is closed. The access token stays valid until it expires but no longer refers to an account.
+
+#### `200 OK`
+
+```json
+{
+  "success": true
+}
+```
+
+#### `404 Not Found`
+
+```json
+{
+  "success": false,
+  "error": "User profile not found"
+}
+```
+
+#### `500 Internal Server Error`
+
+```json
+{
+  "success": false,
+  "error": "Failed to delete account"
 }
 ```
 

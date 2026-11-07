@@ -42,6 +42,17 @@ func TestHandleGetMe_Unauthorized(t *testing.T) {
 	}
 }
 
+func TestHandleDeleteMe_Unauthorized(t *testing.T) {
+	req := httptest.NewRequest("DELETE", "/api/users/me", nil)
+	w := httptest.NewRecorder()
+
+	HandleDeleteMe(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", w.Code)
+	}
+}
+
 func TestHandleGetMe_SuccessContext(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/users/me", nil)
 	
