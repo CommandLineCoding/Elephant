@@ -8,19 +8,27 @@ class Env {
   static String host = defaultHost;
   static String port = defaultPort;
 
-  static bool get _isSecure =>
-      port == "443" || host.contains("commandlinecoding.in");
+  /// Whether to use HTTPS/WSS. Chosen explicitly in Server settings so a
+  /// self-hosted TLS server on a non-443 port isn't contacted in plain text.
+  static bool useTls = true;
 
-  static String get httpBaseUrl {
-    final protocol = _isSecure ? "https" : "http";
-    final portSuffix = (port == "80" || port == "443") ? "" : ":$port";
-    return "$protocol://$host$portSuffix/api";
-  }
+  static String get httpBaseUrl =>
+      buildUrl(host: host, port: port, tls: useTls, path: '/api');
 
-  static String get wsBaseUrl {
-    final protocol = _isSecure ? "wss" : "ws";
-    final portSuffix = (port == "80" || port == "443") ? "" : ":$port";
-    return "$protocol://$host$portSuffix/api/ws";
+  static String get wsBaseUrl =>
+      buildUrl(host: host, port: port, tls: useTls, path: '/api/ws', ws: true);
+
+  /// Builds a server URL, omitting the port when it's the scheme's default.
+  static String buildUrl({
+    required String host,
+    required String port,
+    required bool tls,
+    required String path,
+    bool ws = false,
+  }) {
+    final scheme = ws ? (tls ? 'wss' : 'ws') : (tls ? 'https' : 'http');
+    final isDefaultPort = port == (tls ? '443' : '80');
+    return '$scheme://$host${isDefaultPort ? '' : ':$port'}$path';
   }
 
   static bool get isDefaultServer => host == defaultHost && port == defaultPort;
@@ -29,15 +37,26 @@ class Env {
     const storage = FlutterSecureStorage();
     host = await storage.read(key: "custom_host") ?? defaultHost;
     port = await storage.read(key: "custom_port") ?? defaultPort;
+    final storedTls = await storage.read(key: "custom_use_tls");
+    // Servers saved before the setting existed keep their old behaviour.
+    useTls = storedTls != null
+        ? storedTls == "true"
+        : port == "443" || host.contains("commandlinecoding.in");
   }
 
-  static Future<void> updateConfig(String newHost, String newPort) async {
+  static Future<void> updateConfig(
+    String newHost,
+    String newPort, {
+    bool tls = true,
+  }) async {
     host = newHost.trim().isEmpty ? defaultHost : newHost.trim();
     port = newPort.trim().isEmpty ? defaultPort : newPort.trim();
+    useTls = tls;
 
     const storage = FlutterSecureStorage();
     await storage.write(key: "custom_host", value: host);
     await storage.write(key: "custom_port", value: port);
+    await storage.write(key: "custom_use_tls", value: useTls.toString());
   }
 }
 

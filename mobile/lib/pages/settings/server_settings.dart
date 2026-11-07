@@ -33,6 +33,7 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
   late final TextEditingController _port = TextEditingController(
     text: Env.port,
   );
+  late bool _tls = Env.useTls;
   _Health _health = _Health.unknown;
 
   @override
@@ -42,10 +43,14 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
     super.dispose();
   }
 
-  String _baseUrl(String host, String port) {
-    final secure = port == '443' || host.contains('commandlinecoding.in');
-    final suffix = (port == '80' || port == '443') ? '' : ':$port';
-    return '${secure ? 'https' : 'http'}://$host$suffix/api';
+  /// Port 80 almost always means no TLS and 443 always means TLS, so
+  /// follow the port when it's one of those; otherwise keep the choice.
+  void _onPortChanged(String port) {
+    setState(() {
+      if (port == '80') _tls = false;
+      if (port == '443') _tls = true;
+      _health = _Health.unknown;
+    });
   }
 
   Future<void> _test() async {
@@ -57,12 +62,18 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
         : _port.text.trim();
     setState(() => _health = _Health.checking);
     try {
+      final url = Env.buildUrl(
+        host: host,
+        port: port,
+        tls: _tls,
+        path: '/api/health',
+      );
       final res = await Dio(
         BaseOptions(
           connectTimeout: const Duration(seconds: 6),
           receiveTimeout: const Duration(seconds: 6),
         ),
-      ).get('${_baseUrl(host, port)}/health');
+      ).get(url);
       final up = res.data is Map && res.data['data']?['postgres'] == 'up';
       setState(() => _health = up ? _Health.up : _Health.dbDown);
     } on DioException catch (e) {
@@ -78,7 +89,11 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
 
   Future<void> _save({bool reset = false}) async {
     final navigator = Navigator.of(context);
-    await Env.updateConfig(reset ? '' : _host.text, reset ? '' : _port.text);
+    await Env.updateConfig(
+      reset ? '' : _host.text,
+      reset ? '' : _port.text,
+      tls: reset || _tls,
+    );
     navigator.pop();
     if (mounted) {
       showSnack(
@@ -120,13 +135,31 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
             controller: _port,
             keyboardType: TextInputType.number,
             inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            onChanged: (_) => setState(() => _health = _Health.unknown),
+            onChanged: _onPortChanged,
             decoration: const InputDecoration(
               labelText: 'Port',
               hintText: Env.defaultPort,
               prefixIcon: Icon(Icons.numbers_rounded),
-              helperText:
-                  'Port 443 uses HTTPS/WSS; other ports use plain HTTP/WS.',
+            ),
+          ),
+          const SizedBox(height: Insets.md),
+          GlassSurface(
+            borderRadius: BorderRadius.circular(Radii.md),
+            child: Material(
+              type: MaterialType.transparency,
+              child: SwitchListTile(
+                value: _tls,
+                onChanged: (value) => setState(() {
+                  _tls = value;
+                  _health = _Health.unknown;
+                }),
+                title: const Text('Use HTTPS/WSS'),
+                subtitle: Text(
+                  _tls
+                      ? 'Traffic to the server is encrypted with TLS.'
+                      : 'Your password and session travel unencrypted. Only use this on a network you trust.',
+                ),
+              ),
             ),
           ),
           const SizedBox(height: Insets.lg),
