@@ -34,6 +34,9 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
     text: Env.port,
   );
   late bool _tls = Env.useTls;
+
+  /// Set once the user flips the switch; until then it follows the port.
+  bool _tlsChosen = false;
   _Health _health = _Health.unknown;
 
   @override
@@ -43,12 +46,11 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
     super.dispose();
   }
 
-  /// Port 80 almost always means no TLS and 443 always means TLS, so
-  /// follow the port when it's one of those; otherwise keep the choice.
+  /// Port 80 almost always means no TLS, so follow the port until the user
+  /// chooses. Uses the whole port, so typing 8080 doesn't stop at "80".
   void _onPortChanged(String port) {
     setState(() {
-      if (port == '80') _tls = false;
-      if (port == '443') _tls = true;
+      if (!_tlsChosen) _tls = port != '80';
       _health = _Health.unknown;
     });
   }
@@ -151,6 +153,7 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
                 value: _tls,
                 onChanged: (value) => setState(() {
                   _tls = value;
+                  _tlsChosen = true;
                   _health = _Health.unknown;
                 }),
                 title: const Text('Use HTTPS/WSS'),
