@@ -14,7 +14,7 @@ Ways to help:
 - **New here?** Start with [`good first issue`](https://github.com/CommandLineCoding/Elephant/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These are small and well scoped, and each one says which files to look at.
 - **Done a few PRs?** Try [`help wanted`](https://github.com/CommandLineCoding/Elephant/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) or `difficulty: medium`.
 - **Want something big?** Issues labelled `difficulty: hard` (group E2EE, multi-device, calls) are split into sub-issues. Please discuss your approach in the issue before writing code.
-- **What's next for the project:** see the [milestones](https://github.com/CommandLineCoding/Elephant/milestones).
+- **What's next for the project:** the [Elephant Roadmap board](https://github.com/orgs/CommandLineCoding/projects/3) shows what's planned and what's free to pick up (the **Ready** column). The [milestones](https://github.com/CommandLineCoding/Elephant/milestones) group issues by release.
 
 Labels tell you where the work is (`area: mobile`, `area: server`, `area: e2ee`, `area: infra`) and how big it is (`good first issue`, `difficulty: medium`, `difficulty: hard`).
 
