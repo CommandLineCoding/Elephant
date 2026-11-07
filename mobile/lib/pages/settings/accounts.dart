@@ -140,7 +140,7 @@ class AccountsSettings extends StatelessWidget {
                       context,
                       title: 'Sign out?',
                       message:
-                          'Your messages and encryption keys stay on this device for when you sign back in.',
+                          'Your messages and encryption keys stay on this device for when you sign back in. Signing in with a different account here erases them.',
                       confirmLabel: 'Sign out',
                       destructive: true,
                     );
