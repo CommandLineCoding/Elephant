@@ -435,6 +435,7 @@ class ActiveChatController extends ChangeNotifier {
       );
       return null;
     } catch (e) {
+      debugPrint("Edit message failed: $e");
       return ApiService.errorMessage(e, fallback: "Couldn't edit the message.");
     }
   }
