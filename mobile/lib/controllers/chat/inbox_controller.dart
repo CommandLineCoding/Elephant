@@ -14,12 +14,16 @@ class InboxController extends ChangeNotifier {
   bool isLoading = false;
   bool hasLoadedOnce = false;
 
+  /// Why the last load failed, shown instead of an empty inbox.
+  String? loadError;
+
   List<InboxItem> get groups => inbox.where((item) => item.isGroup).toList();
   int get unreadChats => inbox.where((item) => item.unreadCount > 0).length;
 
   void clearInbox() {
     inbox = [];
     hasLoadedOnce = false;
+    loadError = null;
     notifyListeners();
   }
 
@@ -36,6 +40,7 @@ class InboxController extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint("Failed to load local inbox cache: $e");
+      loadError = "Couldn't open your saved conversations.";
     }
 
     if (isOffline) return;
@@ -88,6 +93,7 @@ class InboxController extends ChangeNotifier {
 
       inbox = combined;
       hasLoadedOnce = true;
+      loadError = null;
       await _replaceInboxInDb(inbox);
 
       for (final chat in chatsToCatchUp) {
@@ -97,6 +103,10 @@ class InboxController extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint("Inbox fetch failed: $e");
+      loadError = ApiService.errorMessage(
+        e,
+        fallback: "Couldn't load your conversations.",
+      );
     } finally {
       isLoading = false;
       notifyListeners();

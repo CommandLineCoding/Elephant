@@ -10,16 +10,24 @@ import '../core/message_envelope.dart';
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
   static Database? _database;
+  static Future<Database>? _opening;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   static const String _dbName = 'secure_chat.db';
 
   DatabaseHelper._init();
 
+  /// Opens the database once. Concurrent first callers share the same
+  /// future, so the encryption key is only ever generated once.
   Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB(_dbName);
-    return _database!;
+    final db = _database;
+    if (db != null) return db;
+    final opening = _opening ??= _initDB(_dbName);
+    try {
+      return _database = await opening;
+    } finally {
+      _opening = null;
+    }
   }
 
   Future<String> _getEncryptionKey() async {
@@ -63,7 +71,22 @@ class DatabaseHelper {
     final path = join(dbPath, filePath);
     final password = await _getEncryptionKey();
 
-    return await openDatabase(
+    try {
+      return await _open(path, password);
+    } on DatabaseException catch (e) {
+      if (!await databaseExists(path)) rethrow;
+      // The file was encrypted with a key we no longer have. It only holds a
+      // cache and this device's Signal keys, which are regenerated and
+      // republished on the next sign-in, so start over instead of failing on
+      // every launch.
+      debugPrint('Local database unreadable, recreating it: $e');
+      await deleteDatabase(path);
+      return await _open(path, password);
+    }
+  }
+
+  Future<Database> _open(String path, String password) {
+    return openDatabase(
       path,
       version: 2,
       password: password,

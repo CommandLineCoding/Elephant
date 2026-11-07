@@ -308,6 +308,14 @@ class _ChatsTabState extends State<_ChatsTab> {
                       title: 'No matches',
                       message: 'No chat matches "$_query".',
                     )
+                  : inbox.loadError != null
+                  ? EmptyState(
+                      icon: Icons.cloud_off_rounded,
+                      title: 'Couldn\'t load chats',
+                      message: inbox.loadError!,
+                      actionLabel: 'Try again',
+                      onAction: () => inbox.loadInbox(),
+                    )
                   : EmptyState(
                       icon: Icons.forum_rounded,
                       title: 'No conversations yet',
