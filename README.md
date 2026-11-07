@@ -247,7 +247,7 @@ elephant/
 Contributions are welcome, and you don't need to know cryptography to help. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, how to claim an issue, and how to open a PR.
 
 - New here? Pick a [`good first issue`](https://github.com/CommandLineCoding/Elephant/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
-- See what's planned in the [milestones](https://github.com/CommandLineCoding/Elephant/milestones).
+- See what's planned on the [roadmap board](https://github.com/orgs/CommandLineCoding/projects/3) and in the [milestones](https://github.com/CommandLineCoding/Elephant/milestones).
 - Questions and ideas go in [Discussions](https://github.com/CommandLineCoding/Elephant/discussions).
 
 Please also read the [Code of Conduct](CODE_OF_CONDUCT.md). To report a security issue, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
