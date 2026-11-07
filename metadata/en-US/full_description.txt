@@ -12,10 +12,11 @@ Elephant is a privacy-first, open-source messenger. Direct messages are end-to-e
 <li>Find people by username and share yours as a QR code</li>
 <li>Sign in with a username and password, or optionally with Google or GitHub</li>
 <li>Four themes: Frost, Aura, Onyx and Nebula</li>
+<li>Delete your account and its messages from the server at any time</li>
 </ul>
 
 <b>Your server, your data</b>
-Elephant connects to the public server at elephant.commandlinecoding.in by default. The server is also free software (AGPL-3.0), and you can run your own and point the app at it from the sign-in screen.
+Elephant connects to the public server at elephant.commandlinecoding.in by default. The server is also free software (AGPL-3.0), and you can run your own and point the app at it from the sign-in screen, with HTTPS on any port.
 
 <b>Good to know</b>
 <ul>
