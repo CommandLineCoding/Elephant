@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an idea or improvement
+title: "[FEAT]: "
+labels: ["enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Not sure it's a fit yet? Start a thread in [Discussions → Ideas](https://github.com/CommandLineCoding/Elephant/discussions/categories/ideas) first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation, not the solution, e.g. "I can't tell whether my message was delivered when…"
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Elephant?
+      multiple: true
+      options:
+        - Mobile app
+        - Server / API
+        - Encryption
+        - Build, CI or deployment
+        - Docs
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself

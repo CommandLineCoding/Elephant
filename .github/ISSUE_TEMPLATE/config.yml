@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Ask a question
-    url: https://github.com/CommandLineCoding/elephant/discussions/new
-    about: Please ask your questions in our discussions area.
+    url: https://github.com/CommandLineCoding/Elephant/discussions/categories/q-a
+    about: Setup help, "how do I…", or anything you're unsure about.
+  - name: Share an idea
+    url: https://github.com/CommandLineCoding/Elephant/discussions/categories/ideas
+    about: Talk through an idea before turning it into a feature request.
+  - name: Report a security vulnerability
+    url: https://github.com/CommandLineCoding/Elephant/security/advisories/new
+    about: Please report vulnerabilities privately, not as a public issue.
