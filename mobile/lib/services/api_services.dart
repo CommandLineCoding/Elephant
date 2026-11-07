@@ -64,6 +64,11 @@ class ApiService {
         final message = data['error'] as String;
         return message[0].toUpperCase() + message.substring(1);
       }
+      // A bare 404/405 (not our JSON envelope) means the route doesn't exist,
+      // i.e. the server is older than the app.
+      if ((status == 404 || status == 405) && data is! Map) {
+        return 'This server doesn\'t support that yet. It may need updating.';
+      }
       switch (error.type) {
         case DioExceptionType.connectionTimeout:
         case DioExceptionType.receiveTimeout:
