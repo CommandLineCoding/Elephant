@@ -150,6 +150,9 @@ class ActiveChatController extends ChangeNotifier {
       await _cache(targetUid, older);
     } catch (e) {
       debugPrint("Failed to load older messages: $e");
+      // Stop paging until the chat is reopened; otherwise the rebuild below
+      // re-triggers this from the scroll listener in a tight retry loop.
+      hasMoreMessages = false;
     } finally {
       isLoadingMore = false;
       notifyListeners();
