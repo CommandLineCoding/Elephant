@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in the app or server doesn't work as expected
+title: "[BUG]: "
+labels: ["bug", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! For security problems, please use [private reporting](https://github.com/CommandLineCoding/Elephant/security/advisories/new) instead.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it happen?
+      options:
+        - Mobile app
+        - Server / API
+        - Encryption (keys, safety numbers, "can't decrypt")
+        - Build, CI or deployment
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a chat
+        2. Long-press a message and tap Edit
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: You → Help & about shows it.
+      placeholder: "0.3.2"
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: "Pixel 7, Android 15"
+  - type: dropdown
+    id: server
+    attributes:
+      label: Server
+      options:
+        - Elephant Cloud
+        - Self-hosted
+        - Not applicable
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Optional. `adb logcat | grep flutter` output or server logs help a lot. Remove anything private first.
+      render: text

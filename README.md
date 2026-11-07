@@ -210,7 +210,7 @@ flutter analyze
 
 ```
 elephant/
-├── .github/                  # Issue templates and GitHub Actions workflows
+├── .github/                  # Issue forms, PR template and GitHub Actions workflows
 ├── docs/
 │   └── API_CONTRACTS.md      # REST, WebSocket and E2EE API reference
 ├── metadata/                 # F-Droid / store listing metadata
@@ -236,6 +236,7 @@ elephant/
 │   └── Dockerfile
 ├── compose.yaml              # PostgreSQL + migrations + server (built from source)
 ├── .env.example              # Environment variable template
+├── CONTRIBUTING.md
 ├── SECURITY.md
 ├── CODE_OF_CONDUCT.md
 └── LICENSE
@@ -243,9 +244,13 @@ elephant/
 
 ## Contributing
 
-Contributions are welcome. Please open an issue using one of the [issue templates](.github/ISSUE_TEMPLATE/) before starting larger changes, and follow the [pull request template](.github/ISSUE_TEMPLATE/pull_request_template.md). Please also read the [Code of Conduct](CODE_OF_CONDUCT.md).
+Contributions are welcome, and you don't need to know cryptography to help. Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, how to claim an issue, and how to open a PR.
 
-To report a security issue, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
+- New here? Pick a [`good first issue`](https://github.com/CommandLineCoding/Elephant/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22).
+- See what's planned in the [milestones](https://github.com/CommandLineCoding/Elephant/milestones).
+- Questions and ideas go in [Discussions](https://github.com/CommandLineCoding/Elephant/discussions).
+
+Please also read the [Code of Conduct](CODE_OF_CONDUCT.md). To report a security issue, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 
 ## License
 
