@@ -2,6 +2,8 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -10,6 +12,7 @@ import (
 	"github.com/commandlinecoding/elephant/server/repository"
 	"github.com/commandlinecoding/elephant/server/services"
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 )
 
 func HandleUserSearch(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +62,33 @@ func HandleGetMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: user})
+}
+
+func HandleDeleteMe(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	uid, ok := r.Context().Value(middlewares.UserIDKey).(string)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Unauthorized context"})
+		return
+	}
+
+	repo := repository.NewUserRepository()
+	if err := repo.DeleteUser(r.Context(), uid); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			w.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "User profile not found"})
+			return
+		}
+		log.Printf("delete account %s: %v", uid, err)
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Failed to delete account"})
+		return
+	}
+
+	services.Hub.Disconnect(uid)
+	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true})
 }
 
 func HandleGetUserByID(w http.ResponseWriter, r *http.Request) {

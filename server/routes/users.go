@@ -12,6 +12,7 @@ func UserRoute(router chi.Router) {
 	router.Use(middlewares.AuthGuard)
 
 	router.Get("/me", controllers.HandleGetMe)
+	router.Delete("/me", controllers.HandleDeleteMe)
 	router.With(searchLimiter.Limit).Get("/search", controllers.HandleUserSearch)
 	router.Get("/{id}", controllers.HandleGetUserByID)
 }

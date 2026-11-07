@@ -31,6 +31,87 @@ Future<void> signOut(BuildContext context) async {
   navigator.popUntil((route) => route.isFirst);
 }
 
+/// Asks the user to type their username, deletes the account and signs out.
+Future<void> _deleteAccount(BuildContext context, String username) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (_) => _DeleteAccountDialog(username: username),
+  );
+  if (confirmed != true || !context.mounted) return;
+
+  final error = await context.read<AuthState>().deleteAccount();
+  if (!context.mounted) return;
+  if (error != null) {
+    showSnack(context, error);
+    return;
+  }
+  await signOut(context);
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  final String username;
+
+  const _DeleteAccountDialog({required this.username});
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  bool get _matches => _controller.text.trim() == widget.username;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Delete account?'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'This permanently deletes your account, your messages and your '
+            'group memberships from the server, and erases them from this '
+            'device. It can\'t be undone.',
+          ),
+          const SizedBox(height: Insets.lg),
+          Text('Type ${widget.username} to confirm.'),
+          const SizedBox(height: Insets.sm),
+          TextField(
+            controller: _controller,
+            autocorrect: false,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(hintText: widget.username),
+          ),
+        ],
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            backgroundColor: context.colors.error,
+            foregroundColor: context.colors.onError,
+            minimumSize: const Size(88, 44),
+          ),
+          onPressed: _matches ? () => Navigator.pop(context, true) : null,
+          child: const Text('Delete'),
+        ),
+      ],
+    );
+  }
+}
+
 class AccountsSettings extends StatelessWidget {
   const AccountsSettings({super.key});
 
@@ -146,6 +227,15 @@ class AccountsSettings extends StatelessWidget {
                     );
                     if (confirmed && context.mounted) await signOut(context);
                   },
+                ),
+                ElephantTile(
+                  icon: Icons.delete_forever_rounded,
+                  title: 'Delete account',
+                  destructive: true,
+                  showChevron: false,
+                  onTap: user == null
+                      ? null
+                      : () => _deleteAccount(context, user.username),
                 ),
               ],
             ),

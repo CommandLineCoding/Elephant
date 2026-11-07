@@ -176,3 +176,16 @@ func (r *UserRepository) CreateOAuthUser(ctx context.Context, username, email, d
 	}
 	return &u, nil
 }
+
+// DeleteUser removes the account. ON DELETE CASCADE removes its messages,
+// group memberships, devices, prekeys, refresh tokens and verifications.
+func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
+	tag, err := config.DB.Exec(ctx, `DELETE FROM users WHERE id = $1;`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
