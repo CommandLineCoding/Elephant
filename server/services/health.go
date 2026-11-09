@@ -13,8 +13,14 @@ func PerformHealthCheck() map[string]interface{} {
 		status = "down"
 	}
 
+	registration := "open"
+	if RegistrationClosed() {
+		registration = "closed"
+	}
+
 	return map[string]interface{} {
 		"postgres": status,
+		"registration": registration,
 		"timestamp": time.Now().UTC(),
 	}
 }

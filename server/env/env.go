@@ -34,6 +34,9 @@ var (
 	GITHUB_CLIENT_ID     string
 	GITHUB_CLIENT_SECRET string
 	GITHUB_REDIRECT_URL  string
+
+	// REGISTRATION: "open" (default) or "closed" to stop new accounts being created.
+	REGISTRATION string
 )
 
 func init() {
@@ -77,6 +80,8 @@ func init() {
 	GITHUB_CLIENT_ID = getEnv("GITHUB_CLIENT_ID", "")
 	GITHUB_CLIENT_SECRET = getEnv("GITHUB_CLIENT_SECRET", "")
 	GITHUB_REDIRECT_URL = getEnv("GITHUB_REDIRECT_URL", "")
+
+	REGISTRATION = getEnv("REGISTRATION", "open")
 }
 
 func getEnv(key, fallback string) string {

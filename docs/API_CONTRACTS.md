@@ -108,10 +108,13 @@ Reports the status of the server and its PostgreSQL connection pool.
   "success": true,
   "data": {
     "postgres": "up",
+    "registration": "open",
     "timestamp": "<Timestamp>"
   }
 }
 ```
+
+`registration` is `"open"` or `"closed"` (the server's `REGISTRATION` setting), so clients can hide their sign-up option on servers that don't accept new accounts.
 
 #### `500 Internal Server Error`
 
@@ -194,6 +197,14 @@ Returned for malformed JSON (`"Invalid payload syntax"`) or a failed validation 
 ```
 ```json
 { "success": false, "error": "display name cannot be empty" }
+```
+
+#### `403 Forbidden`
+
+The server has `REGISTRATION=closed`. Existing users can still log in.
+
+```json
+{ "success": false, "error": "Registration is closed on this server" }
 ```
 
 #### `500 Internal Server Error`
@@ -331,7 +342,7 @@ The provider redirects here. Set it as the redirect URL in your Google / GitHub 
 
 1. If a user is already linked to this provider account ID, sign them in.
 2. Otherwise, if a user exists with the same email, link the provider to that user.
-3. Otherwise, create a new user. The username is `<alphanumeric email handle>.<4 digits>` and the display name comes from the provider. OAuth-only accounts have no usable password.
+3. Otherwise, create a new user, unless the server has `REGISTRATION=closed`, in which case the "Authentication Failed" page is shown. The username is `<alphanumeric email handle>.<4 digits>` and the display name comes from the provider. OAuth-only accounts have no usable password.
 
 GitHub sign-in requires a verified primary email on the GitHub account.
 
