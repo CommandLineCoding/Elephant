@@ -14,10 +14,66 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// WSClient is one live WebSocket connection. Create it with NewWSClient.
+//
+// Send is never closed. A client is shut down by Close, which closes done and
+// the connection, so a send that races with shutdown can't panic.
 type WSClient struct {
 	UserID string
 	Conn   *websocket.Conn
 	Send   chan []byte
+
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func NewWSClient(userID string, conn *websocket.Conn) *WSClient {
+	return &WSClient{
+		UserID: userID,
+		Conn:   conn,
+		Send:   make(chan []byte, 256),
+		done:   make(chan struct{}),
+	}
+}
+
+// Close shuts the client down. It is safe to call more than once and from any
+// goroutine. ReadPump notices the closed connection and unregisters the client.
+func (c *WSClient) Close() {
+	c.closeOnce.Do(func() {
+		close(c.done)
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+		}
+	})
+}
+
+// trySend queues a message without blocking, and drops it if the client is
+// closed or its buffer is full.
+func (c *WSClient) trySend(b []byte) {
+	select {
+	case <-c.done:
+		return
+	default:
+	}
+	select {
+	case c.Send <- b:
+	default:
+	}
+}
+
+// enqueue queues a message without blocking. A client whose buffer is full is
+// too slow to keep up, so it is disconnected and will reconnect and resync.
+func (c *WSClient) enqueue(b []byte) {
+	select {
+	case <-c.done:
+		return
+	default:
+	}
+	select {
+	case c.Send <- b:
+	default:
+		c.Close()
+	}
 }
 
 type WSHub struct {
@@ -33,10 +89,42 @@ var Hub = &WSHub{
 	Unregister: make(chan *WSClient),
 }
 
-func (h *WSHub) broadcastStatus(userID string, online bool) {
+// clientFor returns the user's current connection, or nil if they're offline.
+func (h *WSHub) clientFor(userID string) *WSClient {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+	return h.clients[strings.ToLower(userID)]
+}
 
+// sendToUser queues b for one user. It never blocks.
+func (h *WSHub) sendToUser(userID string, b []byte) {
+	if c := h.clientFor(userID); c != nil {
+		c.enqueue(b)
+	}
+}
+
+// sendToUsers queues b for every listed user except one. The recipients are
+// collected under the lock and sent to after releasing it, and sending never
+// blocks, so a slow client can't stall the hub.
+func (h *WSHub) sendToUsers(userIDs []string, except string, b []byte) {
+	h.mu.RLock()
+	targets := make([]*WSClient, 0, len(userIDs))
+	for _, id := range userIDs {
+		if id == except {
+			continue
+		}
+		if c, ok := h.clients[strings.ToLower(id)]; ok {
+			targets = append(targets, c)
+		}
+	}
+	h.mu.RUnlock()
+
+	for _, c := range targets {
+		c.enqueue(b)
+	}
+}
+
+func (h *WSHub) broadcastStatus(userID string, online bool) {
 	msg := map[string]interface{}{
 		"type":    "user_status",
 		"user_id": userID,
@@ -44,12 +132,11 @@ func (h *WSHub) broadcastStatus(userID string, online bool) {
 	}
 	bytes, _ := json.Marshal(msg)
 
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	for _, client := range h.clients {
 		if !strings.EqualFold(client.UserID, userID) {
-			select {
-			case client.Send <- bytes:
-			default:
-			}
+			client.trySend(bytes)
 		}
 	}
 }
@@ -58,20 +145,38 @@ func (h *WSHub) Run() {
 	for {
 		select {
 		case client := <-h.Register:
+			uid := strings.ToLower(client.UserID)
+
 			h.mu.Lock()
-			h.clients[strings.ToLower(client.UserID)] = client
+			old := h.clients[uid]
+			h.clients[uid] = client
 			h.mu.Unlock()
-			go h.broadcastStatus(client.UserID, true)
+
+			// A reconnect (e.g. a phone switching networks) can arrive before
+			// the old connection has noticed it's dead. The new one wins.
+			if old != nil && old != client {
+				old.Close()
+			} else {
+				go h.broadcastStatus(client.UserID, true)
+			}
 
 		case client := <-h.Unregister:
+			uid := strings.ToLower(client.UserID)
+
+			// Only remove the entry if it still belongs to this connection.
+			// Otherwise the cleanup of an old connection would remove the
+			// user's newer one and they would stop receiving messages.
 			h.mu.Lock()
-			lowerUID := strings.ToLower(client.UserID)
-			if _, exists := h.clients[lowerUID]; exists {
-				delete(h.clients, lowerUID)
-				close(client.Send)
-				go h.broadcastStatus(client.UserID, false)
+			current := h.clients[uid] == client
+			if current {
+				delete(h.clients, uid)
 			}
 			h.mu.Unlock()
+
+			client.Close()
+			if current {
+				go h.broadcastStatus(client.UserID, false)
+			}
 		}
 	}
 }
@@ -79,18 +184,15 @@ func (h *WSHub) Run() {
 // Disconnect closes the user's live WebSocket, if any. ReadPump then
 // unregisters the client as usual.
 func (h *WSHub) Disconnect(userID string) {
-	h.mu.RLock()
-	client, ok := h.clients[strings.ToLower(userID)]
-	h.mu.RUnlock()
-	if ok {
-		_ = client.Conn.Close()
+	if c := h.clientFor(userID); c != nil {
+		c.Close()
 	}
 }
 
 func (c *WSClient) ReadPump() {
 	defer func() {
 		Hub.Unregister <- c
-		c.Conn.Close()
+		c.Close()
 	}()
 
 	c.Conn.SetReadLimit(4096)
@@ -115,9 +217,7 @@ func (c *WSClient) ReadPump() {
 
 		switch incoming.Type {
 		case "request_status":
-			Hub.mu.RLock()
-			_, online := Hub.clients[strings.ToLower(incoming.ReceiverID)]
-			Hub.mu.RUnlock()
+			online := Hub.clientFor(incoming.ReceiverID) != nil
 
 			resp := map[string]interface{}{
 				"type":    "user_status",
@@ -125,10 +225,7 @@ func (c *WSClient) ReadPump() {
 				"online":  online,
 			}
 			respBytes, _ := json.Marshal(resp)
-			select {
-			case c.Send <- respBytes:
-			default:
-			}
+			c.trySend(respBytes)
 
 		case "typing":
 			incoming.SenderID = c.UserID
@@ -141,36 +238,9 @@ func (c *WSClient) ReadPump() {
 					log.Printf("Failed to resolve group membership for typing indicator: %v", err)
 					continue
 				}
-
-				Hub.mu.RLock()
-				for _, memberID := range members {
-					if memberID == c.UserID {
-						continue
-					}
-					if targetClient, online := Hub.clients[strings.ToLower(memberID)]; online {
-						select {
-						case targetClient.Send <- outboundBytes:
-						default:
-							Hub.Unregister <- targetClient
-							targetClient.Conn.Close()
-						}
-					}
-				}
-				Hub.mu.RUnlock()
-
+				Hub.sendToUsers(members, c.UserID, outboundBytes)
 			} else {
-				Hub.mu.RLock()
-				targetClient, online := Hub.clients[strings.ToLower(incoming.ReceiverID)]
-				Hub.mu.RUnlock()
-
-				if online {
-					select {
-					case targetClient.Send <- outboundBytes:
-					default:
-						Hub.Unregister <- targetClient
-						targetClient.Conn.Close()
-					}
-				}
+				Hub.sendToUser(incoming.ReceiverID, outboundBytes)
 			}
 
 		case "read_receipt":
@@ -189,21 +259,7 @@ func (c *WSClient) ReadPump() {
 				groupRepo := repository.NewGroupRepository()
 				members, err := groupRepo.GetGroupMembers(context.Background(), incoming.GroupID)
 				if err == nil {
-					Hub.mu.RLock()
-					for _, memberID := range members {
-						if memberID == c.UserID {
-							continue
-						}
-						if targetClient, online := Hub.clients[strings.ToLower(memberID)]; online {
-							select {
-							case targetClient.Send <- outboundBytes:
-							default:
-								Hub.Unregister <- targetClient
-								targetClient.Conn.Close()
-							}
-						}
-					}
-					Hub.mu.RUnlock()
+					Hub.sendToUsers(members, c.UserID, outboundBytes)
 				}
 			} else {
 				go func(receiverID, senderID string) {
@@ -213,18 +269,7 @@ func (c *WSClient) ReadPump() {
 					}
 				}(c.UserID, incoming.ReceiverID)
 
-				Hub.mu.RLock()
-				targetClient, online := Hub.clients[strings.ToLower(incoming.ReceiverID)]
-				Hub.mu.RUnlock()
-
-				if online {
-					select {
-					case targetClient.Send <- outboundBytes:
-					default:
-						Hub.Unregister <- targetClient
-						targetClient.Conn.Close()
-					}
-				}
+				Hub.sendToUser(incoming.ReceiverID, outboundBytes)
 			}
 
 		case "chat":
@@ -235,10 +280,10 @@ func (c *WSClient) ReadPump() {
 				query := `
 					INSERT INTO messages (sender_id, receiver_id, group_id, content, id, reply_to_message_id)
 					VALUES (
-						$1::uuid, 
-						NULLIF($2, '')::uuid, 
-						NULLIF($3, '')::uuid, 
-						$4, 
+						$1::uuid,
+						NULLIF($2, '')::uuid,
+						NULLIF($3, '')::uuid,
+						$4,
 						COALESCE(NULLIF($5, '')::uuid, gen_random_uuid()),
 						NULLIF($6, '')::uuid
 					);
@@ -278,35 +323,9 @@ func (c *WSClient) ReadPump() {
 					log.Printf("Failed to resolve channel membership routing: %v", err)
 					continue
 				}
-
-				Hub.mu.RLock()
-				for _, memberID := range members {
-					if memberID == c.UserID {
-						continue
-					}
-					if targetClient, online := Hub.clients[strings.ToLower(memberID)]; online {
-						select {
-						case targetClient.Send <- outboundBytes:
-						default:
-							Hub.Unregister <- targetClient
-							targetClient.Conn.Close()
-						}
-					}
-				}
-				Hub.mu.RUnlock()
+				Hub.sendToUsers(members, c.UserID, outboundBytes)
 			} else {
-				Hub.mu.RLock()
-				targetClient, online := Hub.clients[strings.ToLower(incoming.ReceiverID)]
-				Hub.mu.RUnlock()
-
-				if online {
-					select {
-					case targetClient.Send <- outboundBytes:
-					default:
-						Hub.Unregister <- targetClient
-						targetClient.Conn.Close()
-					}
-				}
+				Hub.sendToUser(incoming.ReceiverID, outboundBytes)
 			}
 		}
 	}
@@ -316,17 +335,16 @@ func (c *WSClient) WritePump() {
 	ticker := time.NewTicker(54 * time.Second)
 	defer func() {
 		ticker.Stop()
-		c.Conn.Close()
+		c.Close()
 	}()
 
 	for {
 		select {
-		case message, ok := <-c.Send:
+		case <-c.done:
+			return
+
+		case message := <-c.Send:
 			_ = c.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if !ok {
-				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
 
 			w, err := c.Conn.NextWriter(websocket.TextMessage)
 			if err != nil {
