@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/db_services.dart';
+import 'package:mobile/services/push/push_prefs.dart';
+import 'package:mobile/services/push/push_service.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
@@ -151,6 +153,7 @@ class AuthState extends ChangeNotifier {
     await _storage.write(key: "last_user_id", value: _currentUser!.id);
 
     await SignalService().ensureKeysPublished();
+    unawaited(PushService.instance.onSignedIn());
     return true;
   }
 
@@ -256,6 +259,8 @@ class AuthState extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Needs the token, so before it's dropped.
+    await PushService.instance.onSigningOut();
     _token = null;
     _currentUser = null;
     await _authService.logout();
@@ -278,6 +283,9 @@ class AuthState extends ChangeNotifier {
     await SignalService().wipeLocalKeys();
     await DatabaseHelper.instance.wipeChatData();
     await _storage.delete(key: "last_user_id");
+    // The server removed the endpoint with the account. Forget it here, so
+    // signing out doesn't try to remove it with a token that's now invalid.
+    await PushPrefs.setEndpoint(null);
     return null;
   }
 

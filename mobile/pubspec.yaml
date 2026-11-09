@@ -48,6 +48,8 @@ dependencies:
   scrollable_positioned_list: ^0.3.8
   path: ^1.9.1
   libsignal_protocol_dart: ^0.8.2
+  unifiedpush: ^6.1.0
+  flutter_local_notifications: ^22.3.3
   
 launcher_name:
   default: "Elephant"
