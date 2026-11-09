@@ -61,3 +61,15 @@ func TestUnknownRoutesAndMethodsReturnJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestPushRoutesRequireAuth(t *testing.T) {
+	for _, method := range []string{"POST", "DELETE"} {
+		req := httptest.NewRequest(method, "/api/users/me/push", nil)
+		w := httptest.NewRecorder()
+		newTestRouter().ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s /api/users/me/push without a token: expected 401, got %d", method, w.Code)
+		}
+	}
+}

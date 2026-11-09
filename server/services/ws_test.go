@@ -262,3 +262,35 @@ func TestBroadcastDroppingSlowClientsDoesNotDeadlock(t *testing.T) {
 		waitFor(t, id+" to be removed", func() bool { return Hub.clientFor(id) == nil })
 	}
 }
+
+// Chat messages for people who weren't reached live need a push ping instead.
+func TestSendReportsWhoWasNotReachedLive(t *testing.T) {
+	online := connect(t, "reach-online")
+	_ = online
+
+	if !Hub.sendToUser("reach-online", []byte("hi")) {
+		t.Error("an online user should be reported as reached")
+	}
+	if Hub.sendToUser("reach-nobody", []byte("hi")) {
+		t.Error("an offline user must not be reported as reached")
+	}
+	if !Hub.IsOnline("reach-online") || Hub.IsOnline("reach-nobody") {
+		t.Error("IsOnline disagrees with who is connected")
+	}
+
+	missed := Hub.sendToUsers([]string{"reach-online", "reach-nobody", "reach-sender"}, "reach-sender", []byte("hi"))
+	if len(missed) != 1 || missed[0] != "reach-nobody" {
+		t.Errorf("only the offline member should be reported, got %v", missed)
+	}
+
+	// A client that can't keep up is dropped, so it is reported as missed too.
+	slow := NewWSClient("reach-slow", nil)
+	Hub.Register <- slow
+	flushHub()
+	for len(slow.Send) < cap(slow.Send) {
+		slow.Send <- []byte("full")
+	}
+	if got := Hub.sendToUsers([]string{"reach-slow"}, "", []byte("hi")); len(got) != 1 {
+		t.Errorf("a client with a full buffer should be reported as missed, got %v", got)
+	}
+}

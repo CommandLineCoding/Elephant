@@ -145,11 +145,20 @@ func TestMigrateExistingDatabaseThatIsComplete(t *testing.T) {
 	}
 }
 
-// The v0.3.2 outage: production had everything except migration 012.
-func TestMigrateExistingDatabaseMissingTheLatestMigration(t *testing.T) {
+// The v0.3.2 outage: production had migrations up to 011 applied by hand but
+// not 012 (and, later, nothing after it). They must all be applied at startup.
+func TestMigrateExistingDatabaseMissingRecentMigrations(t *testing.T) {
 	pool := isolatedPool(t)
 	names := embeddedMigrations(t)
-	applyByHand(t, pool, names[:len(names)-1])
+
+	const firstMissing = "012_add_edited_at_to_messages_up.sql"
+	var present []string
+	for _, n := range names {
+		if n < firstMissing {
+			present = append(present, n)
+		}
+	}
+	applyByHand(t, pool, present)
 	if hasColumn(t, pool, "messages", "edited_at") {
 		t.Fatal("test setup is wrong: edited_at should not exist yet")
 	}

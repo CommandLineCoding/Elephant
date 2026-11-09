@@ -37,6 +37,10 @@ var (
 
 	// REGISTRATION: "open" (default) or "closed" to stop new accounts being created.
 	REGISTRATION string
+
+	// PUSH_ALLOW_PRIVATE_ENDPOINTS: allow UnifiedPush endpoints on private/loopback
+	// addresses over plain HTTP, e.g. a self-hosted ntfy on your LAN. Default "false".
+	PUSH_ALLOW_PRIVATE_ENDPOINTS string
 )
 
 func init() {
@@ -82,6 +86,7 @@ func init() {
 	GITHUB_REDIRECT_URL = getEnv("GITHUB_REDIRECT_URL", "")
 
 	REGISTRATION = getEnv("REGISTRATION", "open")
+	PUSH_ALLOW_PRIVATE_ENDPOINTS = getEnv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "false")
 }
 
 func getEnv(key, fallback string) string {

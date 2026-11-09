@@ -61,18 +61,21 @@ func (c *WSClient) trySend(b []byte) {
 	}
 }
 
-// enqueue queues a message without blocking. A client whose buffer is full is
-// too slow to keep up, so it is disconnected and will reconnect and resync.
-func (c *WSClient) enqueue(b []byte) {
+// enqueue queues a message without blocking and reports whether it was queued.
+// A client whose buffer is full is too slow to keep up, so it is disconnected
+// and will reconnect and resync.
+func (c *WSClient) enqueue(b []byte) bool {
 	select {
 	case <-c.done:
-		return
+		return false
 	default:
 	}
 	select {
 	case c.Send <- b:
+		return true
 	default:
 		c.Close()
+		return false
 	}
 }
 
@@ -96,32 +99,44 @@ func (h *WSHub) clientFor(userID string) *WSClient {
 	return h.clients[strings.ToLower(userID)]
 }
 
-// sendToUser queues b for one user. It never blocks.
-func (h *WSHub) sendToUser(userID string, b []byte) {
-	if c := h.clientFor(userID); c != nil {
-		c.enqueue(b)
-	}
+// IsOnline reports whether the user has a live WebSocket.
+func (h *WSHub) IsOnline(userID string) bool {
+	return h.clientFor(userID) != nil
+}
+
+// sendToUser queues b for one user. It never blocks, and reports whether the
+// user had a live connection to queue it on.
+func (h *WSHub) sendToUser(userID string, b []byte) bool {
+	c := h.clientFor(userID)
+	return c != nil && c.enqueue(b)
 }
 
 // sendToUsers queues b for every listed user except one. The recipients are
 // collected under the lock and sent to after releasing it, and sending never
-// blocks, so a slow client can't stall the hub.
-func (h *WSHub) sendToUsers(userIDs []string, except string, b []byte) {
+// blocks, so a slow client can't stall the hub. It returns the users who were
+// not reached live, who may need a push notification instead.
+func (h *WSHub) sendToUsers(userIDs []string, except string, b []byte) (missed []string) {
+	type target struct {
+		id string
+		c  *WSClient
+	}
+
 	h.mu.RLock()
-	targets := make([]*WSClient, 0, len(userIDs))
+	targets := make([]target, 0, len(userIDs))
 	for _, id := range userIDs {
 		if id == except {
 			continue
 		}
-		if c, ok := h.clients[strings.ToLower(id)]; ok {
-			targets = append(targets, c)
-		}
+		targets = append(targets, target{id: id, c: h.clients[strings.ToLower(id)]})
 	}
 	h.mu.RUnlock()
 
-	for _, c := range targets {
-		c.enqueue(b)
+	for _, t := range targets {
+		if t.c == nil || !t.c.enqueue(b) {
+			missed = append(missed, t.id)
+		}
 	}
+	return missed
 }
 
 func (h *WSHub) broadcastStatus(userID string, online bool) {
@@ -323,9 +338,12 @@ func (c *WSClient) ReadPump() {
 					log.Printf("Failed to resolve channel membership routing: %v", err)
 					continue
 				}
-				Hub.sendToUsers(members, c.UserID, outboundBytes)
+				// Members with no live connection get a push ping instead.
+				Push.NotifyUsers(Hub.sendToUsers(members, c.UserID, outboundBytes))
 			} else {
-				Hub.sendToUser(incoming.ReceiverID, outboundBytes)
+				if !Hub.sendToUser(incoming.ReceiverID, outboundBytes) {
+					Push.NotifyUsers([]string{incoming.ReceiverID})
+				}
 			}
 		}
 	}
