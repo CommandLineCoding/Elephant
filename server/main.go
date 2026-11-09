@@ -25,6 +25,9 @@ func main() {
 	app.Use(middlewares.CorsHandler)
 	app.Use(middlewares.SimpleLogger)
 
+	// JSON 404/405. Must come before the sub-groups are mounted.
+	routes.ErrorHandlers(app.Mux)
+
 	// routes mapping using sub-groups
 	routes.ApiRoute(app.Group("/api"))
 
