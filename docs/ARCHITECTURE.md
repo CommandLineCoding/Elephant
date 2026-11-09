@@ -29,7 +29,7 @@ that talks to PostgreSQL through a `pgx` pool. The directory layout follows that
 
 Reached only through the repository layer. The schema serves two opposing access patterns: a
 write-heavy dispatch path on the hot side, and a read-heavy history path on reconnect.
-Migrations live in `server/migrations/`.
+Migrations live in `server/migrations/`, are embedded in the binary, and are applied when the server starts.
 
 ---
 

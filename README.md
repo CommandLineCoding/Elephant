@@ -71,7 +71,7 @@ You should see:
 
 ## Running the Published Image
 
-Prebuilt server images are published on every version tag. The image runs **only** the server binary, so you must provide a PostgreSQL 16 database and apply the migrations yourself (see [Database Migrations](#database-migrations)).
+Prebuilt server images are published on every version tag. The image runs **only** the server binary, so you must provide a PostgreSQL 16 database. The server applies any pending [database migrations](#database-migrations) itself when it starts.
 
 #### Docker Hub
 ```bash
@@ -115,13 +115,17 @@ go mod download
 go run main.go
 ```
 
-The server looks for a `.env` file in the current directory and every parent directory, so the repo-root `.env` is picked up automatically. Make sure PostgreSQL is reachable with the `POSTGRES_*` values and that migrations have been applied.
+The server looks for a `.env` file in the current directory and every parent directory, so the repo-root `.env` is picked up automatically. Make sure PostgreSQL is reachable with the `POSTGRES_*` values. Pending migrations are applied when the server starts.
 
 ### Database Migrations
 
-SQL migrations live in [server/migrations/](server/migrations/) as numbered `NNN_*_up.sql` files. [server/migrate.sh](server/migrate.sh) applies them in order and records each one in a `schema_migrations` table, so re-running it is safe. Docker Compose runs it automatically through the `migration` service.
+SQL migrations live in [server/migrations/](server/migrations/) as numbered `NNN_*_up.sql` files, and are embedded in the server binary. **When the server starts it applies every pending migration**, in order, each in its own transaction, and records it in a `schema_migrations` table. It takes a database lock first, so several instances starting at once are safe, and a failing migration stops startup instead of leaving the schema half-updated.
 
-To run it against your own database:
+- **Existing databases.** If a database already has the tables but no `schema_migrations` history (for example, one set up by hand), the server checks which migrations are already present, records those, and applies only what's missing.
+- **Turning it off.** Set `AUTO_MIGRATE=false` if the database user isn't allowed to change the schema, and apply the files yourself.
+- **Docker Compose** also runs [server/migrate.sh](server/migrate.sh) through the `migration` service before starting the server. Both use the same `schema_migrations` table, so they never repeat each other's work.
+
+To apply migrations without starting the server:
 
 ```bash
 docker run --rm \
@@ -157,6 +161,7 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `ARGON_MEMORY` | Argon2id memory cost (KiB) | `65536` |
 | `ARGON_ITERATIONS` | Argon2id iteration count | `3` |
 | `ARGON_PARALLELISM` | Argon2id parallelism degree | `2` |
+| `AUTO_MIGRATE` | Apply pending database migrations when the server starts. Set to `false` to manage them yourself | `true` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | — |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | — |
 | `GOOGLE_REDIRECT_URL` | Google OAuth callback URL, e.g. `https://HOST/api/auth/google/callback` | — |
@@ -232,7 +237,7 @@ elephant/
 │   ├── routes/               # Route definitions (/auth, /users, /messages, /groups, /e2ee)
 │   ├── services/             # Business logic (auth, JWT, OAuth, messages, E2EE, WebSocket hub)
 │   ├── tests/                # Integration tests
-│   ├── migrate.sh            # Migration runner used by Docker Compose
+│   ├── migrate.sh            # Standalone migration runner (also used by Docker Compose)
 │   └── Dockerfile
 ├── compose.yaml              # PostgreSQL + migrations + server (built from source)
 ├── .env.example              # Environment variable template
