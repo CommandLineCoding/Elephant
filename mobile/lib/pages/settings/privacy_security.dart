@@ -4,7 +4,7 @@ import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 
 class PrivacySecuritySettingsPage extends StatefulWidget {
   const PrivacySecuritySettingsPage({super.key});
@@ -68,7 +68,7 @@ class _PrivacySecuritySettingsPageState
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: GlassAppBar(
+      appBar: ElephantAppBar(
         title: const Text('Privacy & security'),
         actions: [
           if (_busy)
@@ -82,8 +82,7 @@ class _PrivacySecuritySettingsPageState
             ),
         ],
       ),
-      body: AmbientBackground(
-        intensity: 0.7,
+      body: ScreenBackground(
         child: ListView(
           padding: EdgeInsets.only(
             top: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.lg,
@@ -92,18 +91,18 @@ class _PrivacySecuritySettingsPageState
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: GlassSurface(
+              child: Panel(
                 borderRadius: BorderRadius.circular(Radii.xl),
                 padding: const EdgeInsets.all(Insets.xl),
                 child: Column(
                   children: [
-                    AccentGradientBox(
+                    AccentBox(
                       shape: BoxShape.circle,
                       padding: const EdgeInsets.all(16),
                       child: Icon(
                         Icons.lock_rounded,
                         size: 34,
-                        color: context.glass.onAccent,
+                        color: context.tokens.onAccent,
                       ),
                     ),
                     const SizedBox(height: Insets.lg),
@@ -127,18 +126,18 @@ class _PrivacySecuritySettingsPageState
               ),
             ),
             const SectionLabel('What\'s protected'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.lock_rounded,
-                  iconColor: context.glass.success,
+                  iconColor: context.tokens.success,
                   title: 'Direct messages',
                   subtitle: 'End-to-end encrypted',
                   showChevron: false,
                 ),
                 ElephantTile(
                   icon: Icons.lock_open_rounded,
-                  iconColor: context.glass.warning,
+                  iconColor: context.tokens.warning,
                   title: 'Group messages',
                   subtitle:
                       'Encrypted in transit only. End-to-end encryption for groups is coming.',
@@ -146,7 +145,7 @@ class _PrivacySecuritySettingsPageState
                 ),
                 ElephantTile(
                   icon: Icons.storage_rounded,
-                  iconColor: context.glass.success,
+                  iconColor: context.tokens.success,
                   title: 'Messages on this device',
                   subtitle: 'Stored in an encrypted database',
                   showChevron: false,
@@ -154,11 +153,11 @@ class _PrivacySecuritySettingsPageState
               ],
             ),
             const SectionLabel('Troubleshooting'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.restart_alt_rounded,
-                  iconColor: context.glass.warning,
+                  iconColor: context.tokens.warning,
                   title: 'Reset all secure sessions',
                   subtitle:
                       'Fixes messages that won\'t decrypt across many chats.',

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mobile/themes/app_themes.dart';
 
-/// Monogram avatar with a gradient derived from the user or group ID, so the
-/// same person always gets the same colours. People are circles; groups are
+/// Monogram avatar in a flat colour derived from the user or group ID, so the
+/// same person always gets the same colour. People are circles; groups are
 /// rounded squares, so the two are distinguishable at a glance.
 class ElephantAvatar extends StatelessWidget {
   final String name;
@@ -22,27 +22,27 @@ class ElephantAvatar extends StatelessWidget {
     this.showSelected = false,
   });
 
-  static const List<List<Color>> _gradients = [
-    [Color(0xFF6A8DFF), Color(0xFF8E6BFF)],
-    [Color(0xFF2EC4B6), Color(0xFF3A86FF)],
-    [Color(0xFFFF7A59), Color(0xFFFFB443)],
-    [Color(0xFFEC4899), Color(0xFF8B5CF6)],
-    [Color(0xFF10B981), Color(0xFF84CC16)],
-    [Color(0xFFF43F5E), Color(0xFFFB923C)],
-    [Color(0xFF0EA5E9), Color(0xFF22D3EE)],
-    [Color(0xFFA855F7), Color(0xFFF472B6)],
+  /// Muted, flat hues that all hold white initials at 4.4:1 or better.
+  static const List<Color> _colors = [
+    Color(0xFF4F5FE0),
+    Color(0xFF2A8577),
+    Color(0xFFB85A33),
+    Color(0xFF9A4A78),
+    Color(0xFF3F8244),
+    Color(0xFFB14852),
+    Color(0xFF2F7BA3),
+    Color(0xFF7C5CBA),
   ];
 
-  static List<Color> gradientFor(String seed) {
+  /// The colour for a person or group, derived from its ID so the same one
+  /// always gets the same colour.
+  static Color colorFor(String seed) {
     int hash = 0;
     for (final unit in seed.codeUnits) {
       hash = (hash * 31 + unit) & 0x7fffffff;
     }
-    return _gradients[hash % _gradients.length];
+    return _colors[hash % _colors.length];
   }
-
-  /// Accent colour for a person, e.g. their name in group chats.
-  static Color colorFor(String seed) => gradientFor(seed).first;
 
   static String initialsOf(String name) {
     final words = name
@@ -60,7 +60,7 @@ class ElephantAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = gradientFor(seed.isEmpty ? name : seed);
+    final color = colorFor(seed.isEmpty ? name : seed);
     final radius = isGroup
         ? BorderRadius.circular(size * 0.32)
         : BorderRadius.circular(size / 2);
@@ -74,21 +74,7 @@ class ElephantAvatar extends StatelessWidget {
           Container(
             width: size,
             height: size,
-            decoration: BoxDecoration(
-              borderRadius: radius,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: colors,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: colors.last.withValues(alpha: 0.25),
-                  blurRadius: size * 0.25,
-                  offset: Offset(0, size * 0.08),
-                ),
-              ],
-            ),
+            decoration: BoxDecoration(borderRadius: radius, color: color),
             alignment: Alignment.center,
             child: isGroup && name.trim().isEmpty
                 ? Icon(
@@ -98,11 +84,11 @@ class ElephantAvatar extends StatelessWidget {
                   )
                 : Text(
                     initialsOf(name),
-                    style: TextStyle(
+                    style: context.text.labelLarge?.copyWith(
                       color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: size * 0.36,
-                      letterSpacing: 0.5,
+                      fontWeight: FontWeight.w600,
+                      fontSize: size * 0.34,
+                      letterSpacing: 0.3,
                     ),
                   ),
           ),
@@ -118,7 +104,7 @@ class ElephantAvatar extends StatelessWidget {
                   width: size * 0.28,
                   height: size * 0.28,
                   decoration: BoxDecoration(
-                    color: context.glass.success,
+                    color: context.tokens.success,
                     shape: BoxShape.circle,
                     border: Border.all(
                       color: context.theme.scaffoldBackgroundColor,

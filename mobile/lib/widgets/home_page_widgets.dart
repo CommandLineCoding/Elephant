@@ -210,7 +210,7 @@ class DeliveryTick extends StatelessWidget {
     return Icon(
       isRead ? Icons.done_all_rounded : Icons.done_rounded,
       size: size,
-      color: isRead ? (readColor ?? context.glass.readTick) : color,
+      color: isRead ? (readColor ?? context.tokens.readTick) : color,
     );
   }
 }

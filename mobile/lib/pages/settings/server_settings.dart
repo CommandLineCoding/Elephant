@@ -5,12 +5,12 @@ import 'package:mobile/core/constants.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 
 /// Lets the user point the app at a self-hosted Elephant server before
 /// signing in. Returns once the sheet closes.
 Future<void> showServerSettingsSheet(BuildContext context) {
-  return showGlassSheet(
+  return showSheet(
     context,
     title: 'Server',
     builder: (_) => const _ServerSettingsForm(),
@@ -145,7 +145,7 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
             ),
           ),
           const SizedBox(height: Insets.md),
-          GlassSurface(
+          Panel(
             borderRadius: BorderRadius.circular(Radii.md),
             child: Material(
               type: MaterialType.transparency,
@@ -177,7 +177,7 @@ class _ServerSettingsFormState extends State<_ServerSettingsForm> {
             ],
           ),
           const SizedBox(height: Insets.lg),
-          GradientButton(label: 'Save', onPressed: _save),
+          PrimaryButton(label: 'Save', onPressed: _save),
           const SizedBox(height: Insets.sm),
           TextButton(
             onPressed: () => _save(reset: true),
@@ -218,7 +218,7 @@ class _HealthIndicator extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: TagPill(
             'Server is healthy',
-            color: context.glass.success,
+            color: context.tokens.success,
             icon: Icons.check_rounded,
           ),
         );
@@ -227,7 +227,7 @@ class _HealthIndicator extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: TagPill(
             'Database unreachable',
-            color: context.glass.warning,
+            color: context.tokens.warning,
             icon: Icons.warning_amber_rounded,
           ),
         );

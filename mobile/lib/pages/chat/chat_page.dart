@@ -16,7 +16,7 @@ import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/chat_page_widgets.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
@@ -364,7 +364,7 @@ class _ChatPageState extends State<ChatPage> {
       child: Scaffold(
         extendBodyBehindAppBar: true,
         appBar: _searchMode
-            ? GlassAppBar(
+            ? ElephantAppBar(
                     leading: IconButton(
                       icon: const Icon(Icons.arrow_back_rounded),
                       onPressed: _closeSearch,
@@ -372,7 +372,7 @@ class _ChatPageState extends State<ChatPage> {
                     titleSpacing: 0,
                     title: Padding(
                       padding: const EdgeInsets.only(right: Insets.lg),
-                      child: GlassSearchField(
+                      child: SearchField(
                         controller: _searchController,
                         hint: 'Search this chat',
                         autofocus: true,
@@ -399,8 +399,7 @@ class _ChatPageState extends State<ChatPage> {
                   const SizedBox(width: Insets.xs),
                 ],
               ),
-        body: AmbientBackground(
-          intensity: 0.4,
+        body: ScreenBackground(
           child: Stack(
             children: [
               Positioned.fill(
@@ -416,8 +415,7 @@ class _ChatPageState extends State<ChatPage> {
                     scale: _showScrollDown ? 1 : 0,
                     duration: const Duration(milliseconds: 220),
                     curve: Curves.easeOutBack,
-                    child: GlassSurface(
-                      strong: true,
+                    child: Panel(
                       borderRadius: BorderRadius.circular(99),
                       child: IconButton(
                         icon: const Icon(Icons.keyboard_arrow_down_rounded),

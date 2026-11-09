@@ -8,7 +8,7 @@ import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 
 /// Step 1 of creating a group: pick members, then name the group.
@@ -56,7 +56,7 @@ class _SelectContactPageState extends State<SelectContactPage> {
   }
 
   void _next() {
-    showGlassSheet<bool>(
+    showSheet<bool>(
       context,
       title: 'Name your group',
       builder: (_) => _CreateGroupSheet(members: Map.of(_selected)),
@@ -79,7 +79,7 @@ class _SelectContactPageState extends State<SelectContactPage> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: GlassAppBar(
+      appBar: ElephantAppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -101,8 +101,7 @@ class _SelectContactPageState extends State<SelectContactPage> {
           label: const Text('Next'),
         ),
       ),
-      body: AmbientBackground(
-        intensity: 0.5,
+      body: ScreenBackground(
         child: Column(
           children: [
             SizedBox(height: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.md),
@@ -159,7 +158,7 @@ class _SelectContactPageState extends State<SelectContactPage> {
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: GlassSearchField(
+              child: SearchField(
                 controller: _searchController,
                 hint: 'Search name or username',
                 onChanged: _onChanged,
@@ -303,7 +302,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           const SizedBox(height: Insets.xl),
           ValueListenableBuilder(
             valueListenable: _name,
-            builder: (_, value, _) => GradientButton(
+            builder: (_, value, _) => PrimaryButton(
               label: 'Create group',
               icon: Icons.check_rounded,
               isLoading: isLoading,

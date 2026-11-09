@@ -8,7 +8,7 @@ import 'package:mobile/pages/settings/settings_page.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 import '../chat/chat_page.dart';
 
@@ -62,7 +62,7 @@ class _NewChatPageState extends State<NewChatPage> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: GlassAppBar(
+      appBar: ElephantAppBar(
         title: const Text('New message'),
         actions: [
           IconButton(
@@ -73,14 +73,13 @@ class _NewChatPageState extends State<NewChatPage> {
           const SizedBox(width: Insets.xs),
         ],
       ),
-      body: AmbientBackground(
-        intensity: 0.5,
+      body: ScreenBackground(
         child: Column(
           children: [
             SizedBox(height: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.md),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: GlassSearchField(
+              child: SearchField(
                 controller: _searchController,
                 hint: 'Search name or username',
                 autofocus: true,
@@ -107,7 +106,7 @@ class _NewChatPageState extends State<NewChatPage> {
       padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + Insets.xl),
       children: [
         const SizedBox(height: Insets.lg),
-        GlassSection(
+        Section(
           children: [
             ElephantTile(
               icon: Icons.group_add_rounded,

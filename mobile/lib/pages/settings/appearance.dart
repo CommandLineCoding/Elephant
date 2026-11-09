@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/themes/theme_provider.dart';
 import 'package:mobile/widgets/ui/components.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 
 class AppearanceSettings extends StatelessWidget {
@@ -15,8 +15,8 @@ class AppearanceSettings extends StatelessWidget {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: const GlassAppBar(title: Text('Appearance')),
-      body: AmbientBackground(
+      appBar: const ElephantAppBar(title: Text('Appearance')),
+      body: ScreenBackground(
         child: ListView(
           padding: EdgeInsets.only(
             top: MediaQuery.paddingOf(context).top + kToolbarHeight,
@@ -47,7 +47,7 @@ class AppearanceSettings extends StatelessWidget {
                 0,
               ),
               child: Text(
-                'Every theme uses the same frosted-glass surfaces; only the light and colour change.',
+                'Every theme uses the same layout; only the colours change.',
                 style: context.text.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -70,7 +70,6 @@ class _ThemeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = AppThemes.paletteOf(type);
-    final gradient = LinearGradient(colors: [p.accent, p.accentAlt]);
 
     Widget bubble(String text, {required bool mine, double width = 92}) {
       return Align(
@@ -80,8 +79,7 @@ class _ThemeCard extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 3),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
-            gradient: mine ? gradient : null,
-            color: mine ? null : p.incomingBubble,
+            color: mine ? p.accent : p.incomingBubble,
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(14),
               topRight: const Radius.circular(14),
@@ -94,6 +92,7 @@ class _ThemeCard extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
+              fontFamily: AppThemes.fontFamily,
               fontSize: 10.5,
               color: mine ? p.onAccent : p.text,
               fontWeight: FontWeight.w500,
@@ -116,55 +115,12 @@ class _ThemeCard extends StatelessWidget {
             color: selected ? p.accent : context.colors.outline,
             width: selected ? 2.5 : 1,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: (selected ? p.accent : Colors.black).withValues(
-                alpha: selected ? 0.35 : 0.08,
-              ),
-              blurRadius: selected ? 22 : 12,
-              offset: const Offset(0, 8),
-            ),
-          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(Radii.xl - 2),
           child: Stack(
             children: [
               Positioned.fill(child: ColoredBox(color: p.background)),
-              Positioned(
-                top: -40,
-                left: -30,
-                child: Container(
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        p.ambient[0].withValues(alpha: 0.5),
-                        p.ambient[0].withValues(alpha: 0),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: -30,
-                right: -40,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        p.ambient[1].withValues(alpha: 0.45),
-                        p.ambient[1].withValues(alpha: 0),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: Column(
@@ -177,7 +133,7 @@ class _ThemeCard extends StatelessWidget {
                           height: 22,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: gradient,
+                            color: p.accent,
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -246,7 +202,7 @@ class _ThemeCard extends StatelessWidget {
                             padding: const EdgeInsets.all(3),
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              gradient: gradient,
+                              color: p.accent,
                             ),
                             child: Icon(
                               Icons.check_rounded,

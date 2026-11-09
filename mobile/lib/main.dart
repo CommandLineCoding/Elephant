@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/themes/theme_provider.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 
 import 'core/constants.dart';
 import 'services/auth_service.dart';
@@ -141,7 +141,7 @@ class _Splash extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: AmbientBackground(
+      body: ScreenBackground(
         child: Center(
           child: Image.asset(
             'assets/launcher/elephant.png',

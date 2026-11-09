@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:intl/intl.dart';
@@ -38,75 +37,67 @@ class ChatHeader extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    final glass = context.glass;
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: glass.blur, sigmaY: glass.blur),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: glass.glassStrongFill,
-            border: Border(bottom: BorderSide(color: glass.glassBorder)),
-          ),
-          child: AppBar(
-            toolbarHeight: kToolbarHeight + 6,
-            backgroundColor: Colors.transparent,
-            titleSpacing: 0,
-            actions: actions,
-            title: InkWell(
-              borderRadius: BorderRadius.circular(Radii.md),
-              onTap: onTitleTap,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
-                child: Row(
-                  children: [
-                    Hero(
-                      tag: 'avatar-$seed',
-                      child: ElephantAvatar(
-                        name: name,
-                        seed: seed,
-                        isGroup: isGroup,
-                        size: 40,
-                        isOnline: isOnline,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: context.text.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 200),
-                            child: Text(
-                              subtitle,
-                              key: ValueKey(subtitle),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: highlightSubtitle
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: highlightSubtitle
-                                    ? context.colors.primary
-                                    : context.colors.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+    final tokens = context.tokens;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: context.theme.scaffoldBackgroundColor,
+        border: Border(bottom: BorderSide(color: tokens.hairline)),
+      ),
+      child: AppBar(
+        toolbarHeight: kToolbarHeight + 6,
+        backgroundColor: Colors.transparent,
+        titleSpacing: 0,
+        actions: actions,
+        title: InkWell(
+          borderRadius: BorderRadius.circular(Radii.md),
+          onTap: onTitleTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+            child: Row(
+              children: [
+                Hero(
+                  tag: 'avatar-$seed',
+                  child: ElephantAvatar(
+                    name: name,
+                    seed: seed,
+                    isGroup: isGroup,
+                    size: 40,
+                    isOnline: isOnline,
+                  ),
                 ),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.text.titleMedium,
+                      ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 200),
+                        child: Text(
+                          subtitle,
+                          key: ValueKey(subtitle),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.text.bodySmall?.copyWith(
+                            fontWeight: highlightSubtitle
+                                ? FontWeight.w600
+                                : FontWeight.w400,
+                            color: highlightSubtitle
+                                ? context.colors.primary
+                                : context.colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -143,9 +134,9 @@ class ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final glass = context.glass;
+    final tokens = context.tokens;
     final isLocked = message.content.startsWith(MessageEnvelope.lockedPrefix);
-    final textColor = isMe ? glass.onAccent : glass.incomingText;
+    final textColor = isMe ? tokens.onAccent : tokens.incomingText;
     final metaColor = textColor.withValues(alpha: isMe ? 0.78 : 0.55);
 
     const big = Radius.circular(Radii.bubble);
@@ -166,19 +157,14 @@ class ChatBubble extends StatelessWidget {
       ),
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
       decoration: BoxDecoration(
-        gradient: isMe ? glass.accentGradient : null,
-        color: isMe ? null : glass.incomingBubble,
+        color: isMe ? context.colors.primary : tokens.incomingBubble,
         borderRadius: radius,
-        border: isMe ? null : Border.all(color: glass.glassBorder),
-        boxShadow: [
-          BoxShadow(
-            color: highlighted
-                ? context.colors.primary.withValues(alpha: 0.55)
-                : Colors.black.withValues(alpha: isMe ? 0.10 : 0.05),
-            blurRadius: highlighted ? 18 : 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        border: Border.all(
+          color: highlighted
+              ? context.colors.primary
+              : (isMe ? Colors.transparent : tokens.hairline),
+          width: highlighted ? 2 : 1,
+        ),
       ),
       child: IntrinsicWidth(
         child: Column(
@@ -190,9 +176,8 @@ class ChatBubble extends StatelessWidget {
                 padding: const EdgeInsets.only(bottom: 3),
                 child: Text(
                   senderName!,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
+                  style: context.text.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
                     color: ElephantAvatar.colorFor(senderSeed ?? senderName!),
                   ),
                 ),
@@ -355,9 +340,9 @@ class _QuoteBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final glass = context.glass;
-    final base = onMe ? glass.onAccent : glass.incomingText;
-    final accent = onMe ? glass.onAccent : context.colors.primary;
+    final tokens = context.tokens;
+    final base = onMe ? tokens.onAccent : tokens.incomingText;
+    final accent = onMe ? tokens.onAccent : context.colors.primary;
 
     return GestureDetector(
       onTap: onTap,
@@ -423,9 +408,9 @@ class DaySeparator extends StatelessWidget {
         margin: const EdgeInsets.symmetric(vertical: 14),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
         decoration: BoxDecoration(
-          color: context.glass.glassStrongFill,
+          color: context.tokens.panelFill,
           borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: context.glass.glassBorder),
+          border: Border.all(color: context.tokens.hairline),
         ),
         child: Text(
           label(date),
@@ -447,7 +432,7 @@ class EncryptionNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isGroup ? context.glass.warning : context.glass.success;
+    final color = isGroup ? context.tokens.warning : context.tokens.success;
     return Center(
       child: Container(
         margin: const EdgeInsets.fromLTRB(28, 12, 28, 8),
@@ -509,15 +494,15 @@ class _TypingIndicatorState extends State<TypingIndicator>
 
   @override
   Widget build(BuildContext context) {
-    final glass = context.glass;
+    final tokens = context.tokens;
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         margin: const EdgeInsets.only(top: 6, bottom: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: glass.incomingBubble,
-          border: Border.all(color: glass.glassBorder),
+          color: tokens.incomingBubble,
+          border: Border.all(color: tokens.hairline),
           borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(Radii.bubble),
             topRight: Radius.circular(Radii.bubble),
@@ -629,7 +614,7 @@ class ComposerBanner extends StatelessWidget {
   }
 }
 
-/// Glass composer: growing text field, byte budget near the limit, and a
+/// Composer: growing text field, byte budget near the limit, and a
 /// gradient send button.
 class ChatComposer extends StatefulWidget {
   final TextEditingController controller;
@@ -715,149 +700,130 @@ class _ChatComposerState extends State<ChatComposer> {
 
   @override
   Widget build(BuildContext context) {
-    final glass = context.glass;
+    final tokens = context.tokens;
     final bytes = _bytes;
     final over = bytes > widget.byteLimit;
     final nearLimit = bytes > widget.byteLimit * 0.8;
     final canSend =
         widget.controller.text.trim().isNotEmpty && !over && !_sending;
 
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: glass.blur, sigmaY: glass.blur),
-        child: Container(
-          decoration: BoxDecoration(
-            color: glass.glassStrongFill,
-            border: Border(top: BorderSide(color: glass.glassBorder)),
+    return Container(
+      decoration: BoxDecoration(
+        color: context.theme.scaffoldBackgroundColor,
+        border: Border(top: BorderSide(color: tokens.hairline)),
+      ),
+      padding: EdgeInsets.only(
+        top: Insets.sm,
+        bottom: Insets.sm + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            child: widget.banner ?? const SizedBox(width: double.infinity),
           ),
-          padding: EdgeInsets.only(
-            top: Insets.sm,
-            bottom: Insets.sm + MediaQuery.paddingOf(context).bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedSize(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOutCubic,
-                child: widget.banner ?? const SizedBox(width: double.infinity),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: Insets.md),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: widget.controller,
-                        focusNode: widget.focusNode,
-                        keyboardType: TextInputType.multiline,
-                        textCapitalization: TextCapitalization.sentences,
-                        minLines: 1,
-                        maxLines: 6,
-                        style: TextStyle(
-                          fontSize: 15.5,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Insets.md),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: widget.controller,
+                    focusNode: widget.focusNode,
+                    keyboardType: TextInputType.multiline,
+                    textCapitalization: TextCapitalization.sentences,
+                    minLines: 1,
+                    maxLines: 6,
+                    style: context.text.bodyLarge?.copyWith(
+                      color: over
+                          ? context.colors.error
+                          : context.colors.onSurface,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: widget.isEditing ? 'Edit message' : 'Message',
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Radii.xl),
+                        borderSide: BorderSide(color: tokens.hairline),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Radii.xl),
+                        borderSide: BorderSide(
+                          color: over ? context.colors.error : tokens.hairline,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(Radii.xl),
+                        borderSide: BorderSide(
                           color: over
                               ? context.colors.error
-                              : context.colors.onSurface,
+                              : context.colors.onSurfaceVariant,
                         ),
-                        decoration: InputDecoration(
-                          hintText: widget.isEditing
-                              ? 'Edit message'
-                              : 'Message',
-                          isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 18,
-                            vertical: 12,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Radii.xl),
-                            borderSide: BorderSide.none,
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Radii.xl),
-                            borderSide: over
-                                ? BorderSide(color: context.colors.error)
-                                : BorderSide.none,
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(Radii.xl),
-                            borderSide: BorderSide(
-                              color: over
-                                  ? context.colors.error
-                                  : context.colors.primary.withValues(
-                                      alpha: 0.6,
-                                    ),
-                            ),
-                          ),
-                          suffixIcon: nearLimit
-                              ? Padding(
-                                  padding: const EdgeInsets.only(right: 12),
-                                  child: Center(
-                                    widthFactor: 1,
-                                    child: Text(
-                                      '${widget.byteLimit - bytes}',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: over
-                                            ? context.colors.error
-                                            : context.colors.onSurfaceVariant,
-                                      ),
-                                    ),
+                      ),
+                      suffixIcon: nearLimit
+                          ? Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: Center(
+                                widthFactor: 1,
+                                child: Text(
+                                  '${widget.byteLimit - bytes}',
+                                  style: context.text.labelMedium?.copyWith(
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                    color: over
+                                        ? context.colors.error
+                                        : context.colors.onSurfaceVariant,
                                   ),
-                                )
-                              : null,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: Insets.sm),
-                    AnimatedScale(
-                      scale: canSend ? 1 : 0.88,
-                      duration: const Duration(milliseconds: 180),
-                      child: AnimatedOpacity(
-                        opacity: canSend ? 1 : 0.45,
-                        duration: const Duration(milliseconds: 180),
-                        child: Material(
-                          color: Colors.transparent,
-                          shape: const CircleBorder(),
-                          child: Ink(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: glass.accentGradient,
-                            ),
-                            child: InkWell(
-                              customBorder: const CircleBorder(),
-                              onTap: canSend ? _submit : null,
-                              child: SizedBox(
-                                width: 46,
-                                height: 46,
-                                child: _sending
-                                    ? Padding(
-                                        padding: const EdgeInsets.all(13),
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: glass.onAccent,
-                                        ),
-                                      )
-                                    : Icon(
-                                        widget.isEditing
-                                            ? Icons.check_rounded
-                                            : Icons.arrow_upward_rounded,
-                                        color: glass.onAccent,
-                                      ),
+                                ),
                               ),
-                            ),
-                          ),
-                        ),
+                            )
+                          : null,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: Insets.sm),
+                AnimatedOpacity(
+                  opacity: canSend ? 1 : 0.4,
+                  duration: const Duration(milliseconds: 150),
+                  child: Material(
+                    color: context.colors.primary,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: canSend ? _submit : null,
+                      child: SizedBox(
+                        width: 46,
+                        height: 46,
+                        child: _sending
+                            ? Padding(
+                                padding: const EdgeInsets.all(13),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: tokens.onAccent,
+                                ),
+                              )
+                            : Icon(
+                                widget.isEditing
+                                    ? Icons.check_rounded
+                                    : Icons.arrow_upward_rounded,
+                                color: tokens.onAccent,
+                              ),
                       ),
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

@@ -12,7 +12,7 @@ import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 
 /// Ends the session and returns to the sign-in screen. Encryption keys stay on
@@ -126,9 +126,8 @@ class AccountsSettings extends StatelessWidget {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: const GlassAppBar(title: Text('Account')),
-      body: AmbientBackground(
-        intensity: 0.7,
+      appBar: const ElephantAppBar(title: Text('Account')),
+      body: ScreenBackground(
         child: ListView(
           padding: EdgeInsets.only(
             top: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.xl,
@@ -160,7 +159,7 @@ class AccountsSettings extends StatelessWidget {
                 ),
               ),
             const SectionLabel('Profile'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.alternate_email_rounded,
@@ -197,7 +196,7 @@ class AccountsSettings extends StatelessWidget {
               ],
             ),
             const SectionLabel('Server'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.dns_outlined,
@@ -209,7 +208,7 @@ class AccountsSettings extends StatelessWidget {
               ],
             ),
             const SizedBox(height: Insets.xl),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.logout_rounded,
