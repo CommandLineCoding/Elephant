@@ -64,17 +64,29 @@ jobs:
       run: |
         cd server
         sudo apt-get update && sudo apt-get install -y postgresql-client
-        PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-          -f migrations/001_create_users_up.sql \
-          -f migrations/002_create_refresh_tokens_up.sql \
-          -f migrations/003_add_search_indexes_up.sql \
-          -f migrations/004_create_message_up.sql \
-          -f migrations/005_create_message_status_up.sql \
-          -f migrations/006_create_groups_table_up.sql
+
+        # The server applies every pending migration when it starts, which is
+        # exactly what production does, so there is no list of files to keep in
+        # sync here.
         go run main.go &
-        for i in $(seq 1 10); do
-          curl -sf http://$HOST:$PORT/api/health && break
+        up=0
+        for i in $(seq 1 30); do
+          if curl -sf http://$HOST:$PORT/api/health; then up=1; break; fi
           echo "Waiting for server... attempt $i"
           sleep 2
         done
+        if [ "$up" != 1 ]; then
+          echo "The server never became healthy" >&2
+          exit 1
+        fi
+
+        # Every migration file must have been applied.
+        expected=$(ls migrations/*_up.sql | wc -l)
+        applied=$(PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -p "$POSTGRES_PORT" -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "SELECT count(*) FROM schema_migrations")
+        echo "Migrations applied: $applied of $expected"
+        if [ "$applied" != "$expected" ]; then
+          echo "Expected $expected migrations to be applied, found $applied" >&2
+          exit 1
+        fi
+
         go test -v ./...
