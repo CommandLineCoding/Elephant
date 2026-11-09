@@ -70,6 +70,18 @@ class Message {
   });
 
   bool get isEdited => editedAt != null;
+
+  /// Whether the server's edit time is newer than the cached one. The local copy
+  /// is stored in milliseconds but the server sends microseconds, so comparing
+  /// them directly makes an unchanged edit look newer. The message would then be
+  /// decrypted a second time, which a Signal session rejects, and the readable
+  /// text replaced by a placeholder.
+  static bool isNewerEdit(DateTime? server, DateTime? local) {
+    if (server == null) return false;
+    if (local == null) return true;
+    return server.millisecondsSinceEpoch > local.millisecondsSinceEpoch;
+  }
+
   bool get isPending => syncStatus == 'pending';
 
   bool isFrom(String? currentUserId) {

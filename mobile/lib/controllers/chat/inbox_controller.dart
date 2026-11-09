@@ -202,6 +202,51 @@ class InboxController extends ChangeNotifier {
     await Future.wait(unread.map(markReadFor));
   }
 
+  /// Shows an edited message's new text as the chat's preview, if it is the
+  /// newest message in the chat. Earlier messages aren't shown in the inbox.
+  Future<void> updatePreviewForEdit(
+    String chatId,
+    String messageId,
+    String text,
+  ) async {
+    final index = inbox.indexWhere(
+      (item) => item.id.toLowerCase() == chatId.toLowerCase(),
+    );
+    if (index == -1) return;
+
+    try {
+      final db = await DatabaseHelper.instance.database;
+      final newest = await db.query(
+        'messages',
+        columns: ['id'],
+        where: 'chat_id = ? COLLATE NOCASE',
+        whereArgs: [chatId],
+        orderBy: 'created_at DESC',
+        limit: 1,
+      );
+      if (newest.isEmpty ||
+          (newest.first['id'] as String).toLowerCase() !=
+              messageId.toLowerCase()) {
+        return;
+      }
+    } catch (e) {
+      debugPrint("Couldn't tell whether the edited message is the newest: $e");
+      return;
+    }
+
+    final stillThere = inbox.indexWhere(
+      (item) => item.id.toLowerCase() == chatId.toLowerCase(),
+    );
+    if (stillThere == -1) return;
+    inbox[stillThere] = inbox[stillThere].copyWith(
+      lastMessage: MessageEnvelope.isUnreadable(text)
+          ? '🔒 Encrypted message'
+          : text,
+    );
+    notifyListeners();
+    _saveItem(inbox[stillThere]);
+  }
+
   void renameLocal(String chatId, String newTitle) {
     final index = inbox.indexWhere((item) => item.id == chatId);
     if (index == -1) return;

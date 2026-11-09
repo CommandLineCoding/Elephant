@@ -76,7 +76,52 @@ class ChatEventHandler {
       case 'read_receipt':
         await _handleReadReceipt(data);
         break;
+
+      case 'message_edited':
+        await _handleMessageEdited(data);
+        break;
     }
+  }
+
+  /// Someone edited a message in a conversation we're in.
+  Future<void> _handleMessageEdited(Map<String, dynamic> data) async {
+    final chatId = _chatIdFor(data);
+    final messageId = data['message_id']?.toString() ?? '';
+    final senderId = data['sender_id']?.toString() ?? '';
+    if (chatId == null || messageId.isEmpty || senderId.isEmpty) return;
+    if (_id(senderId) == currentUserId.trim().toLowerCase()) return;
+
+    // The new text is encrypted like any message, so it is decrypted once, here.
+    final content = await SignalService().decodeIncoming(
+      senderId,
+      data['content']?.toString() ?? '',
+    );
+    // If it can't be read, keep the text we have rather than replace it with a
+    // placeholder. The edit still shows up the next time history is loaded.
+    if (MessageEnvelope.isUnreadable(content)) return;
+
+    // Stored with the server's own timestamp, so the same edit coming back in a
+    // history page is recognised and isn't decrypted again.
+    final editedAt =
+        DateTime.tryParse(data['edited_at']?.toString() ?? '')?.toLocal() ??
+        DateTime.now();
+
+    try {
+      final db = await DatabaseHelper.instance.database;
+      await db.update(
+        'messages',
+        {'content': content, 'edited_at': editedAt.millisecondsSinceEpoch},
+        where: 'id = ? COLLATE NOCASE',
+        whereArgs: [messageId],
+      );
+    } catch (e) {
+      debugPrint("Failed to save an edited message: $e");
+    }
+
+    if (_isOpen(chatId)) {
+      activeChatController.applyRemoteEdit(messageId, content, editedAt);
+    }
+    await inboxController.updatePreviewForEdit(chatId, messageId, content);
   }
 
   Future<void> _handleChat(Map<String, dynamic> data) async {

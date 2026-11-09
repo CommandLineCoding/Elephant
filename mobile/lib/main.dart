@@ -36,7 +36,8 @@ Future<void> main(List<String> args) async {
 
   final inboxController = InboxController();
   final activeChatController = ActiveChatController()
-    ..currentUserIdProvider = currentUserId;
+    ..currentUserIdProvider = currentUserId
+    ..onMessageEdited = inboxController.updatePreviewForEdit;
 
   runApp(
     MultiProvider(

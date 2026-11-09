@@ -33,6 +33,20 @@ class ActiveChatController extends ChangeNotifier {
 
   void refreshUI() => notifyListeners();
 
+  /// Called after the signed-in user edits a message, so the inbox can show the
+  /// new text (set from main.dart).
+  Future<void> Function(String chatId, String messageId, String text)?
+  onMessageEdited;
+
+  /// Applies an edit someone else made, pushed over the WebSocket, to the open
+  /// chat.
+  void applyRemoteEdit(String messageId, String content, DateTime editedAt) {
+    final updated = withEditApplied(activeChat, messageId, content, editedAt);
+    if (identical(updated, activeChat)) return;
+    activeChat = _withResolvedQuotes(updated);
+    notifyListeners();
+  }
+
   bool _isMine(Message msg) => msg.isFrom(_myId);
 
   /// Plaintext byte budget for the open chat.
@@ -208,9 +222,10 @@ class ActiveChatController extends ChangeNotifier {
       final local = cachedById[msg.id];
       final localIsReadable =
           local != null && !MessageEnvelope.isUnreadable(local.content);
-      final editedSinceCache =
-          msg.editedAt != null &&
-          (local?.editedAt == null || msg.editedAt!.isAfter(local!.editedAt!));
+      final editedSinceCache = Message.isNewerEdit(
+        msg.editedAt,
+        local?.editedAt,
+      );
 
       String content;
       if (localIsReadable && !editedSinceCache) {
@@ -436,6 +451,7 @@ class ActiveChatController extends ChangeNotifier {
         where: 'id = ?',
         whereArgs: [msg.id],
       );
+      await onMessageEdited?.call(targetId, msg.id, text);
       return null;
     } catch (e) {
       debugPrint("Edit message failed: $e");
@@ -530,4 +546,23 @@ class ActiveChatController extends ChangeNotifier {
       return [];
     }
   }
+}
+
+/// [chat] with the message [messageId] replaced by its edited version, or [chat]
+/// itself if there is no such message.
+@visibleForTesting
+List<Message> withEditApplied(
+  List<Message> chat,
+  String messageId,
+  String content,
+  DateTime editedAt,
+) {
+  final id = messageId.toLowerCase();
+  if (!chat.any((m) => m.id.toLowerCase() == id)) return chat;
+  return [
+    for (final m in chat)
+      m.id.toLowerCase() == id
+          ? m.copyWith(content: content, editedAt: editedAt)
+          : m,
+  ];
 }
