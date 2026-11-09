@@ -9,6 +9,7 @@ import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
+import 'package:mobile/services/push/push_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/home_page_widgets.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -25,6 +26,7 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int _tab = 0;
+  late final InboxController _inbox = context.read<InboxController>();
 
   @override
   void initState() {
@@ -32,6 +34,28 @@ class _HomePageState extends State<HomePage> {
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _maybeShowNewUsername(),
     );
+    // A tapped notification asks for a chat. The inbox may still be loading
+    // (when the tap started the app), so also try again as it changes.
+    PushService.instance.chatToOpen.addListener(_openRequestedChat);
+    _inbox.addListener(_openRequestedChat);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openRequestedChat());
+  }
+
+  @override
+  void dispose() {
+    PushService.instance.chatToOpen.removeListener(_openRequestedChat);
+    _inbox.removeListener(_openRequestedChat);
+    super.dispose();
+  }
+
+  void _openRequestedChat() {
+    final id = PushService.instance.chatToOpen.value;
+    if (id == null || !mounted) return;
+
+    final chat = _inbox.inbox.where((item) => item.id == id).firstOrNull;
+    if (chat == null) return; // not loaded yet
+    PushService.instance.chatToOpen.value = null;
+    openConversation(context, chat);
   }
 
   /// Registration assigns a discriminator; make sure the user sees it once.

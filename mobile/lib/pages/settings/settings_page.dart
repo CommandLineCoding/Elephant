@@ -5,6 +5,7 @@ import 'package:mobile/core/constants.dart';
 import 'package:mobile/pages/settings/accounts.dart';
 import 'package:mobile/pages/settings/appearance.dart';
 import 'package:mobile/pages/settings/help_about.dart';
+import 'package:mobile/pages/settings/notifications.dart';
 import 'package:mobile/pages/settings/privacy_security.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/themes/theme_provider.dart';
@@ -187,6 +188,13 @@ class SettingsPage extends StatelessWidget {
                   title: 'Account',
                   subtitle: 'Username, server and sign out',
                   onTap: () => _push(context, const AccountsSettings()),
+                ),
+                ElephantTile(
+                  icon: Icons.notifications_none_rounded,
+                  title: 'Notifications',
+                  subtitle: 'Alerts for new messages',
+                  onTap: () =>
+                      _push(context, const NotificationsSettingsPage()),
                 ),
                 ElephantTile(
                   icon: Icons.shield_outlined,

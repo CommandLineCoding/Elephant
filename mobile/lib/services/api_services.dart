@@ -105,6 +105,14 @@ class ApiService {
 
   Future<Response> deleteAccount() => _dio.delete("/users/me");
 
+  // --- Push notifications (UnifiedPush) ---
+
+  Future<Response> registerPushEndpoint(String endpoint) =>
+      _dio.post("/users/me/push", data: {"endpoint": endpoint});
+
+  Future<Response> removePushEndpoint(String endpoint) =>
+      _dio.delete("/users/me/push", data: {"endpoint": endpoint});
+
   Future<Response> getUser(String userId) => _dio.get("/users/$userId");
 
   Future<Response> searchUsers(String query, {int page = 1}) {

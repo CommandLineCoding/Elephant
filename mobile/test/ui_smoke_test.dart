@@ -19,6 +19,7 @@ import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/accounts.dart';
 import 'package:mobile/pages/settings/appearance.dart';
 import 'package:mobile/pages/settings/help_about.dart';
+import 'package:mobile/pages/settings/notifications.dart';
 import 'package:mobile/pages/settings/privacy_security.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/services/chat/chat_event_handler.dart';
@@ -253,6 +254,7 @@ void main() {
         for (final page in const [
           AppearanceSettings(),
           PrivacySecuritySettingsPage(),
+          NotificationsSettingsPage(),
           HelpAboutPage(),
         ]) {
           await render(tester, theme, entry.value, page);

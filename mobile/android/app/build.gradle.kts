@@ -28,6 +28,13 @@ configurations.all {
     exclude(group = "com.google.android.play", module = "app-update")
     exclude(group = "com.google.android.play", module = "tasks")
     exclude(group = "com.google.android.play", module = "split-install")
+
+    // The UnifiedPush connector depends on the plain-Java Tink, and
+    // flutter_secure_storage on the Android build. They hold the same classes,
+    // which fails the duplicate-class check, so keep only the Android build, at
+    // the newer version the connector needs.
+    exclude(group = "com.google.crypto.tink", module = "tink")
+    resolutionStrategy.force("com.google.crypto.tink:tink-android:1.24.0")
 }
 
 android {
@@ -38,6 +45,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Needed by flutter_local_notifications.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     signingConfigs {
@@ -111,4 +120,7 @@ android.applicationVariants.configureEach {
     }
 }
 
-dependencies {}
+dependencies {
+    // Needed by flutter_local_notifications (java.time on older Android versions).
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+}
