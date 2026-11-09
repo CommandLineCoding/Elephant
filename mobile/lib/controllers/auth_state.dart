@@ -24,6 +24,8 @@ class AuthState extends ChangeNotifier {
   bool _isLoading = false;
   String? _errorMessage;
   UserModel? _currentUser;
+  bool _registrationClosed = false;
+  int _registrationCheck = 0;
 
   /// Full username (with discriminator) assigned at registration, shown once
   /// so the user knows what to log in with.
@@ -34,7 +36,23 @@ class AuthState extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   UserModel? get currentUser => _currentUser;
 
-  AuthState() {
+  /// Whether the selected server has said it isn't accepting new accounts.
+  /// False until it says so, so an older server or a failed check shows
+  /// everything as before.
+  bool get registrationClosed => _registrationClosed;
+
+  final Dio _healthClient;
+
+  /// [healthClient] is for tests; the app uses the default.
+  AuthState({@visibleForTesting Dio? healthClient})
+    : _healthClient =
+          healthClient ??
+          Dio(
+            BaseOptions(
+              connectTimeout: const Duration(seconds: 6),
+              receiveTimeout: const Duration(seconds: 6),
+            ),
+          ) {
     AuthService.onSessionExpired = logoutSilently;
     _initDeepLinks();
   }
@@ -66,6 +84,34 @@ class AuthState extends ChangeNotifier {
 
   static String? validateDisplayName(String? value) {
     return (value ?? '').trim().isEmpty ? 'Enter a display name' : null;
+  }
+
+  /// Reads `data.registration` from a `/api/health` response body.
+  static bool isRegistrationClosed(dynamic body) =>
+      body is Map &&
+      body['data'] is Map &&
+      body['data']['registration'] == 'closed';
+
+  /// Asks the selected server whether it accepts new accounts. Any failure
+  /// leaves registration available, and an answer from a server the user has
+  /// since switched away from is ignored.
+  Future<void> refreshRegistrationStatus() async {
+    final check = ++_registrationCheck;
+    var closed = false;
+    try {
+      final res = await _healthClient.get(
+        Env.buildUrl(
+          host: Env.host,
+          port: Env.port,
+          tls: Env.useTls,
+          path: '/api/health',
+        ),
+      );
+      closed = isRegistrationClosed(res.data);
+    } catch (_) {}
+    if (check != _registrationCheck || closed == _registrationClosed) return;
+    _registrationClosed = closed;
+    notifyListeners();
   }
 
   void clearError() {
