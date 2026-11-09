@@ -218,5 +218,7 @@ func HandleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	services.Hub.PublishMessageEdit(r.Context(), updatedMsg)
+
 	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: updatedMsg})
 }

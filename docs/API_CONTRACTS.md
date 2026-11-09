@@ -801,6 +801,24 @@ Contact lists are cached for about 20 seconds when answering `request_status`, s
 }
 ```
 
+#### 6. Message Edited
+
+Sent when someone edits a message ([`PUT /api/messages/{id}`](#4-edit-message)), to the **other** person in a direct chat or to the **other members** of a group. The editor is not sent their own edit.
+
+```json
+{
+  "type": "message_edited",
+  "message_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+  "sender_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "receiver_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "content": "<new content>",
+  "created_at": "<Timestamp>",
+  "edited_at": "<Timestamp>"
+}
+```
+
+A group edit carries `group_id` instead of `receiver_id`. `content` is exactly what the editor sent, so for E2EE direct messages it is ciphertext that the receiver decrypts like any other message. Someone who isn't connected doesn't receive the event; they get the edited message (with `edited_at`) the next time they load the conversation. Edits never trigger a push notification.
+
 ---
 
 ## Messages Endpoints
@@ -962,7 +980,7 @@ Returns one entry per direct chat and per group you belong to, ordered by latest
 
 ### 4. Edit Message
 
-Replaces the content of a message you sent. Edits are only allowed within **15 minutes** of `created_at`, and they are not broadcast over the WebSocket. For E2EE direct messages, the client must send newly encrypted content.
+Replaces the content of a message you sent. Edits are only allowed within **15 minutes** of `created_at`. The other people in the conversation who are connected are sent a [`message_edited`](#6-message-edited) event over the WebSocket. For E2EE direct messages, the client must send newly encrypted content.
 
 - **URL:** `/api/messages/{id}`
 - **Method:** `PUT`
