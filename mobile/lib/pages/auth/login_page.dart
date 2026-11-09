@@ -78,72 +78,54 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
-    final isRegister = _registering(auth);
+    final registering = _registering(auth);
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
       body: ScreenBackground(
         child: SafeArea(
-          child: Stack(
-            children: [
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(
-                    Insets.xl,
-                    72,
-                    Insets.xl,
-                    Insets.xl,
+          child: LayoutBuilder(
+            builder: (context, box) => SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: const EdgeInsets.symmetric(horizontal: Insets.xl),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 420,
+                    minHeight: box.maxHeight,
                   ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
+                  child: IntrinsicHeight(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children:
-                          [
-                                _Brand(isRegister: isRegister),
-                                const SizedBox(height: Insets.xxl),
-                                Panel(
-                                  borderRadius: BorderRadius.circular(Radii.xl),
-                                  padding: const EdgeInsets.all(Insets.xl),
-                                  child: _buildForm(auth),
-                                ),
-                                const SizedBox(height: Insets.xl),
-                                _buildOAuth(auth),
-                                const SizedBox(height: Insets.xl),
-                                _ServerChip(onTap: _openServerSettings),
-                              ]
-                              .animate(interval: 70.ms)
-                              .fadeIn(duration: 450.ms)
-                              .slideY(begin: 0.08, curve: Curves.easeOutCubic),
+                      children: [
+                        _TopBar(
+                          onAppearance: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const AppearanceSettings(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: Insets.xxl),
+                        _Heading(isRegister: registering),
+                        const SizedBox(height: Insets.xl),
+                        _buildForm(auth),
+                        const SizedBox(height: Insets.xl),
+                        _buildOAuth(auth),
+                        const Spacer(),
+                        const SizedBox(height: Insets.xl),
+                        _ServerRow(onTap: _openServerSettings),
+                        const SizedBox(height: Insets.lg),
+                      ],
                     ),
                   ),
                 ),
               ),
-              Positioned(
-                top: Insets.sm,
-                right: Insets.lg,
-                child: Panel(
-                  borderRadius: BorderRadius.circular(99),
-                  child: IconButton(
-                    tooltip: 'Appearance',
-                    icon: Icon(
-                      Icons.palette_outlined,
-                      color: context.colors.primary,
-                    ),
-                    onPressed: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const AppearanceSettings(),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
-    );
+    ).animate().fadeIn(duration: 300.ms);
   }
 
   Widget _buildForm(AuthState auth) {
@@ -156,10 +138,10 @@ class _LoginPageState extends State<LoginPage> {
           if (auth.registrationClosed)
             const _ClosedNote()
           else
-            _ModeSwitch(isRegister: registering, onChanged: _setMode),
+            _ModeTabs(isRegister: registering, onChanged: _setMode),
           const SizedBox(height: Insets.xl),
           AnimatedSize(
-            duration: const Duration(milliseconds: 250),
+            duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
             child: auth.errorMessage == null
                 ? const SizedBox(width: double.infinity)
@@ -168,75 +150,84 @@ class _LoginPageState extends State<LoginPage> {
                     child: _ErrorBanner(message: auth.errorMessage!),
                   ),
           ),
-          TextFormField(
-            controller: _usernameController,
-            textInputAction: TextInputAction.next,
-            autocorrect: false,
-            enableSuggestions: false,
-            keyboardType: TextInputType.visiblePassword,
-            inputFormatters: [
-              FilteringTextInputFormatter.allow(
-                registering ? RegExp(r'[a-zA-Z0-9]') : RegExp(r'[a-zA-Z0-9.]'),
+          _LabeledField(
+            label: 'Username',
+            child: TextFormField(
+              controller: _usernameController,
+              textInputAction: TextInputAction.next,
+              autocorrect: false,
+              enableSuggestions: false,
+              keyboardType: TextInputType.visiblePassword,
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(
+                  registering
+                      ? RegExp(r'[a-zA-Z0-9]')
+                      : RegExp(r'[a-zA-Z0-9.]'),
+                ),
+              ],
+              decoration: InputDecoration(
+                hintText: registering
+                    ? 'letters and numbers'
+                    : 'e.g. alex.4821',
+                helperText: registering
+                    ? 'A 4-digit tag is added for you, e.g. alex.4821'
+                    : null,
+                helperMaxLines: 2,
               ),
-            ],
-            decoration: InputDecoration(
-              labelText: 'Username',
-              hintText: registering ? 'letters and numbers' : 'e.g. alex.4821',
-              prefixIcon: const Icon(Icons.alternate_email_rounded),
-              helperText: registering
-                  ? 'A 4-digit tag is added for you, e.g. alex.4821'
-                  : null,
-              helperMaxLines: 2,
+              validator: (v) =>
+                  AuthState.validateUsername(v, isRegister: registering),
             ),
-            validator: (v) =>
-                AuthState.validateUsername(v, isRegister: registering),
           ),
           AnimatedSize(
-            duration: const Duration(milliseconds: 280),
+            duration: const Duration(milliseconds: 240),
             curve: Curves.easeOutCubic,
             child: registering
                 ? Padding(
                     padding: const EdgeInsets.only(top: Insets.lg),
-                    child: TextFormField(
-                      controller: _displayNameController,
-                      textInputAction: TextInputAction.next,
-                      textCapitalization: TextCapitalization.words,
-                      maxLength: 100,
-                      decoration: const InputDecoration(
-                        labelText: 'Display name',
-                        hintText: 'How others see you',
-                        prefixIcon: Icon(Icons.badge_outlined),
-                        counterText: '',
+                    child: _LabeledField(
+                      label: 'Display name',
+                      child: TextFormField(
+                        controller: _displayNameController,
+                        textInputAction: TextInputAction.next,
+                        textCapitalization: TextCapitalization.words,
+                        maxLength: 100,
+                        decoration: const InputDecoration(
+                          hintText: 'How others see you',
+                          counterText: '',
+                        ),
+                        validator: AuthState.validateDisplayName,
                       ),
-                      validator: AuthState.validateDisplayName,
                     ),
                   )
                 : const SizedBox(width: double.infinity),
           ),
           const SizedBox(height: Insets.lg),
-          TextFormField(
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => _submit(),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_outline_rounded),
-              helperText: registering
-                  ? 'At least ${ServerLimits.passwordMin} characters'
-                  : null,
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
+          _LabeledField(
+            label: 'Password',
+            child: TextFormField(
+              controller: _passwordController,
+              obscureText: _obscurePassword,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                helperText: registering
+                    ? 'At least ${ServerLimits.passwordMin} characters'
+                    : null,
+                suffixIcon: IconButton(
+                  tooltip: _obscurePassword ? 'Show password' : 'Hide password',
+                  icon: Icon(
+                    _obscurePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                    size: 20,
+                  ),
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
                 ),
-                onPressed: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
               ),
+              validator: (v) =>
+                  AuthState.validatePassword(v, isRegister: registering),
             ),
-            validator: (v) =>
-                AuthState.validatePassword(v, isRegister: registering),
           ),
           const SizedBox(height: Insets.xl),
           PrimaryButton(
@@ -251,18 +242,14 @@ class _LoginPageState extends State<LoginPage> {
 
   Widget _buildOAuth(AuthState auth) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
             const Expanded(child: Divider()),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.md),
-              child: Text(
-                'or continue with',
-                style: context.text.bodySmall?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
+              child: Text('or continue with', style: context.text.bodySmall),
             ),
             const Expanded(child: Divider()),
           ],
@@ -296,69 +283,109 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-class _Brand extends StatelessWidget {
+/// The app mark and a quiet appearance button.
+class _TopBar extends StatelessWidget {
+  final VoidCallback onAppearance;
+
+  const _TopBar({required this.onAppearance});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: Insets.md),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.asset(
+              'assets/launcher/elephant.png',
+              width: 36,
+              height: 36,
+            ),
+          ),
+          const SizedBox(width: Insets.md),
+          Text('Elephant', style: context.text.titleMedium),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Appearance',
+            icon: const Icon(Icons.palette_outlined),
+            color: context.colors.onSurfaceVariant,
+            onPressed: onAppearance,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Heading extends StatelessWidget {
   final bool isRegister;
 
-  const _Brand({required this.isRegister});
+  const _Heading({required this.isRegister});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 200),
+      layoutBuilder: (current, previous) => Stack(
+        alignment: Alignment.topLeft,
+        children: [...previous, ?current],
+      ),
+      child: Column(
+        key: ValueKey(isRegister),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isRegister ? 'Create your account' : 'Welcome back',
+            style: context.text.headlineMedium,
+          ),
+          const SizedBox(height: Insets.sm),
+          Text(
+            isRegister
+                ? 'Your keys are made on this device and stay on it.'
+                : 'Private conversations, end-to-end encrypted.',
+            style: context.text.bodyLarge?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A label above its field, instead of a floating label inside it.
+class _LabeledField extends StatelessWidget {
+  final String label;
+  final Widget child;
+
+  const _LabeledField({required this.label, required this.child});
 
   @override
   Widget build(BuildContext context) {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 84,
-          height: 84,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: context.tokens.panelFill,
-            border: Border.all(color: context.tokens.hairline),
-            boxShadow: [
-              BoxShadow(
-                color: context.colors.primary.withValues(alpha: 0.35),
-                blurRadius: 40,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: Image.asset('assets/launcher/elephant.png'),
-        ),
-        const SizedBox(height: Insets.lg),
-        Text('Elephant', style: context.text.headlineMedium),
-        const SizedBox(height: Insets.xs),
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 250),
-          child: Text(
-            isRegister
-                ? 'Create your account. Your keys stay on this device.'
-                : 'Private conversations, end-to-end encrypted.',
-            key: ValueKey(isRegister),
-            textAlign: TextAlign.center,
-            style: context.text.bodyMedium?.copyWith(
-              color: context.colors.onSurfaceVariant,
-            ),
-          ),
-        ),
+        Text(label, style: context.text.labelLarge),
+        const SizedBox(height: Insets.sm),
+        child,
       ],
     );
   }
 }
 
-/// Shown in place of the Sign in / Register switch when the server isn't
+/// Shown in place of the Sign in / Register tabs when the server isn't
 /// accepting new accounts.
 class _ClosedNote extends StatelessWidget {
   const _ClosedNote();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Panel(
+      borderRadius: BorderRadius.circular(Radii.md),
       padding: const EdgeInsets.symmetric(
         horizontal: Insets.md,
-        vertical: Insets.sm,
-      ),
-      decoration: BoxDecoration(
-        color: context.colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(Radii.md),
+        vertical: Insets.md,
       ),
       child: Row(
         children: [
@@ -367,13 +394,11 @@ class _ClosedNote extends StatelessWidget {
             size: 18,
             color: context.colors.onSurfaceVariant,
           ),
-          const SizedBox(width: Insets.sm),
+          const SizedBox(width: Insets.md),
           Expanded(
             child: Text(
               "This server isn't accepting new accounts.",
-              style: context.text.bodyMedium?.copyWith(
-                color: context.colors.onSurfaceVariant,
-              ),
+              style: context.text.bodyMedium,
             ),
           ),
         ],
@@ -382,69 +407,55 @@ class _ClosedNote extends StatelessWidget {
   }
 }
 
-class _ModeSwitch extends StatelessWidget {
+/// Two text tabs with an underline, not a pill: selection is shown by weight
+/// and a line, and the accent colour is left for the main button.
+class _ModeTabs extends StatelessWidget {
   final bool isRegister;
   final ValueChanged<bool> onChanged;
 
-  const _ModeSwitch({required this.isRegister, required this.onChanged});
+  const _ModeTabs({required this.isRegister, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 46,
-      padding: const EdgeInsets.all(4),
+    return DecoratedBox(
       decoration: BoxDecoration(
-        color: context.colors.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(99),
+        border: Border(bottom: BorderSide(color: context.tokens.hairline)),
       ),
-      child: Stack(
+      child: Row(
         children: [
-          AnimatedAlign(
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOutCubic,
-            alignment: isRegister
-                ? Alignment.centerRight
-                : Alignment.centerLeft,
-            child: FractionallySizedBox(
-              widthFactor: 0.5,
-              child: AccentBox(
-                borderRadius: BorderRadius.circular(99),
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ),
-          Row(
-            children: [
-              _segment(context, 'Sign in', !isRegister, () => onChanged(false)),
-              _segment(context, 'Register', isRegister, () => onChanged(true)),
-            ],
-          ),
+          _tab(context, 'Sign in', !isRegister, () => onChanged(false)),
+          const SizedBox(width: Insets.xl),
+          _tab(context, 'Register', isRegister, () => onChanged(true)),
         ],
       ),
     );
   }
 
-  Widget _segment(
+  Widget _tab(
     BuildContext context,
     String label,
     bool selected,
     VoidCallback onTap,
   ) {
-    return Expanded(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Center(
-          child: AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 200),
-            style: TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-              color: selected
-                  ? context.tokens.onAccent
-                  : context.colors.onSurfaceVariant,
+    return InkWell(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: Insets.md),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: selected ? context.colors.onSurface : Colors.transparent,
+              width: 2,
             ),
-            child: Text(label),
+          ),
+        ),
+        child: Text(
+          label,
+          style: context.text.titleSmall?.copyWith(
+            color: selected
+                ? context.colors.onSurface
+                : context.colors.onSurfaceVariant,
           ),
         ),
       ),
@@ -461,23 +472,22 @@ class _ErrorBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final error = context.colors.error;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.all(Insets.md),
       decoration: BoxDecoration(
         color: error.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(Radii.md),
-        border: Border.all(color: error.withValues(alpha: 0.3)),
+        border: Border.all(color: error.withValues(alpha: 0.35)),
       ),
       child: Row(
         children: [
           Icon(Icons.error_outline_rounded, color: error, size: 20),
-          const SizedBox(width: 10),
+          const SizedBox(width: Insets.md),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(
+              style: context.text.bodyMedium?.copyWith(
                 color: error,
-                fontWeight: FontWeight.w600,
-                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
@@ -497,84 +507,71 @@ class _OAuthButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Panel(
-      borderRadius: BorderRadius.circular(Radii.md),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          child: SizedBox(
-            height: 50,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                if (glyph != null)
-                  Text(
-                    glyph!,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 18,
-                      color: context.colors.onSurface,
-                    ),
-                  )
-                else
-                  Icon(icon, size: 20, color: context.colors.onSurface),
-                const SizedBox(width: 10),
-                Text(
-                  label,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-        ),
+    return OutlinedButton(
+      onPressed: onTap,
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: Insets.md),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (glyph != null)
+            Text(
+              glyph!,
+              style: context.text.titleMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else
+            Icon(icon, size: 20),
+          const SizedBox(width: Insets.sm),
+          Flexible(child: Text(label, overflow: TextOverflow.ellipsis)),
+        ],
       ),
     );
   }
 }
 
-class _ServerChip extends StatelessWidget {
+/// Which server the app talks to, as a quiet line at the foot of the page.
+class _ServerRow extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _ServerChip({required this.onTap});
+  const _ServerRow({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Panel(
-        borderRadius: BorderRadius.circular(99),
-        child: Material(
-          type: MaterialType.transparency,
-          child: InkWell(
-            onTap: onTap,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.dns_outlined,
-                    size: 16,
-                    color: context.colors.primary,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Radii.sm),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: Insets.md,
+            vertical: Insets.sm,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Server', style: context.text.bodySmall),
+              const SizedBox(width: Insets.sm),
+              Flexible(
+                child: Text(
+                  Env.isDefaultServer
+                      ? 'Elephant Cloud'
+                      : '${Env.host}:${Env.port}',
+                  overflow: TextOverflow.ellipsis,
+                  style: context.text.bodySmall?.copyWith(
+                    color: context.colors.onSurface,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    Env.isDefaultServer
-                        ? 'Elephant Cloud'
-                        : '${Env.host}:${Env.port}',
-                    style: context.text.bodySmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Icon(
-                    Icons.tune_rounded,
-                    size: 15,
-                    color: context.colors.onSurfaceVariant,
-                  ),
-                ],
+                ),
               ),
-            ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: context.colors.onSurfaceVariant,
+              ),
+            ],
           ),
         ),
       ),
