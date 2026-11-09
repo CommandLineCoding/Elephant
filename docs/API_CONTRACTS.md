@@ -634,7 +634,7 @@ Returned even if the endpoint wasn't stored, so apps can call it freely on sign-
 
 #### `101 Switching Protocols`
 
-The connection is open. All other connected users receive a `user_status` event with `online: true`.
+The connection is open. Your connected [contacts](#5-user-status) receive a `user_status` event with `online: true`.
 
 #### `401 Unauthorized`
 
@@ -708,7 +708,7 @@ Persists the message and delivers it live to online recipients. Offline recipien
 }
 ```
 
-The server replies directly with a [`user_status`](#5-user-status) event.
+The server replies directly with a [`user_status`](#5-user-status) event. The answer is only real for your [contacts](#5-user-status): for anyone else the reply always says `"online": false`, so a stranger can't use this to find out when someone is around.
 
 #### 4. Typing Indicator
 
@@ -787,7 +787,11 @@ When `reply_to_message_id` resolves to a stored message, the event includes a pr
 
 #### 5. User Status
 
-Broadcast to every connected client when a user connects or disconnects. Also sent directly in response to `request_status`.
+Sent when a user connects or disconnects, to **their contacts** who are connected, and directly in response to `request_status`.
+
+A user's **contacts** are the people they have exchanged a direct message with (in either direction) and the people they share a group with. Nobody else is told when they are online, and a `request_status` about a non-contact is answered with `online: false`. If the server can't load someone's contacts, it shares nothing rather than falling back to telling everyone.
+
+Contact lists are cached for about 20 seconds when answering `request_status`, so someone you have only just started a conversation with can show as offline for a short while. Connect and disconnect events always use a fresh list.
 
 ```json
 {
