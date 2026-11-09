@@ -123,6 +123,9 @@ func HandleResetKeys(w http.ResponseWriter, r *http.Request) {
 
 	svc := services.NewE2EEService()
 	if err := svc.ResetKeys(r.Context(), uid, req.Password); err != nil {
+		if respondIfBusy(w, err) {
+			return
+		}
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: err.Error()})
 		return

@@ -80,6 +80,9 @@ func (s *E2EEService) ResetKeys(ctx context.Context, uid string, password string
 		}
 
 		match, err := VerifyPassword(password, passwordHash)
+		if errors.Is(err, ErrServerBusy) {
+			return err
+		}
 		if err != nil || !match {
 			return errors.New("invalid password re-authentication attempt")
 		}

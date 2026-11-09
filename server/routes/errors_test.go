@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/commandlinecoding/elephant/server/models"
@@ -71,5 +72,50 @@ func TestPushRoutesRequireAuth(t *testing.T) {
 		if w.Code != http.StatusUnauthorized {
 			t.Errorf("%s /api/users/me/push without a token: expected 401, got %d", method, w.Code)
 		}
+	}
+}
+
+// Sign-in and sign-up cost a password hash, so both are limited per address.
+func TestAuthRoutesAreRateLimited(t *testing.T) {
+	router := newTestRouter() // one router, so the limiters keep their state
+
+	post := func(path, remote string) (int, models.JSONResponse) {
+		req := httptest.NewRequest("POST", path, strings.NewReader("not json")) // refused before any database work
+		req.RemoteAddr = remote
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		var resp models.JSONResponse
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		return w.Code, resp
+	}
+
+	// login: burst of 10
+	for i := 1; i <= 10; i++ {
+		if code, _ := post("/api/auth/login", "203.0.113.7:1000"); code != http.StatusBadRequest {
+			t.Fatalf("login attempt %d: expected the handler's 400, got %d", i, code)
+		}
+	}
+	code, resp := post("/api/auth/login", "203.0.113.7:1000")
+	if code != http.StatusTooManyRequests || !strings.Contains(resp.Error, "sign-in") {
+		t.Errorf("11th login: expected 429 about sign-in, got %d %q", code, resp.Error)
+	}
+	if code, _ := post("/api/auth/login", "203.0.113.8:1000"); code != http.StatusBadRequest {
+		t.Errorf("another address must not share the limit, got %d", code)
+	}
+
+	// register: burst of 5
+	for i := 1; i <= 5; i++ {
+		if code, _ := post("/api/auth/register", "203.0.113.7:1000"); code != http.StatusBadRequest {
+			t.Fatalf("register attempt %d: expected 400, got %d", i, code)
+		}
+	}
+	code, resp = post("/api/auth/register", "203.0.113.7:1000")
+	if code != http.StatusTooManyRequests || !strings.Contains(resp.Error, "sign-up") {
+		t.Errorf("6th register: expected 429 about sign-up, got %d %q", code, resp.Error)
+	}
+
+	// the two limits are independent
+	if code, _ := post("/api/auth/login", "203.0.113.9:1000"); code != http.StatusBadRequest {
+		t.Errorf("login should be unaffected by register, got %d", code)
 	}
 }

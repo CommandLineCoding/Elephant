@@ -35,6 +35,15 @@ var (
 	GITHUB_CLIENT_SECRET string
 	GITHUB_REDIRECT_URL  string
 
+	// ARGON_MAX_CONCURRENT: how many password hashes may run at once. Each uses
+	// ARGON_MEMORY of RAM, so this bounds the memory a burst of logins can take.
+	ARGON_MAX_CONCURRENT string
+
+	// TRUSTED_PROXY_HOPS: how to find a client's address behind reverse proxies.
+	// "auto" (default), "0" (never trust X-Forwarded-For), or the number of
+	// proxies in front of the server that append to it.
+	TRUSTED_PROXY_HOPS string
+
 	// REGISTRATION: "open" (default) or "closed" to stop new accounts being created.
 	REGISTRATION string
 
@@ -84,6 +93,9 @@ func init() {
 	GITHUB_CLIENT_ID = getEnv("GITHUB_CLIENT_ID", "")
 	GITHUB_CLIENT_SECRET = getEnv("GITHUB_CLIENT_SECRET", "")
 	GITHUB_REDIRECT_URL = getEnv("GITHUB_REDIRECT_URL", "")
+
+	ARGON_MAX_CONCURRENT = getEnv("ARGON_MAX_CONCURRENT", "2")
+	TRUSTED_PROXY_HOPS = getEnv("TRUSTED_PROXY_HOPS", "auto")
 
 	REGISTRATION = getEnv("REGISTRATION", "open")
 	PUSH_ALLOW_PRIVATE_ENDPOINTS = getEnv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "false")

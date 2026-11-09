@@ -27,6 +27,9 @@ func (s *AuthService) Login(ctx context.Context, username, password string) (*mo
 	}
 
 	match, err := VerifyPassword(password, user.PasswordHash)
+	if errors.Is(err, ErrServerBusy) {
+		return nil, nil, err
+	}
 	if err != nil || !match {
 		return nil, nil, errors.New("invalid username or password credentials")
 	}
