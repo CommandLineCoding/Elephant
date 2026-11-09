@@ -25,6 +25,11 @@ type WSClient struct {
 
 	done      chan struct{}
 	closeOnce sync.Once
+
+	// The people this user may see the status of, cached for contactCacheTTL.
+	contactsMu sync.Mutex
+	contacts   map[string]struct{}
+	contactsAt time.Time
 }
 
 func NewWSClient(userID string, conn *websocket.Conn) *WSClient {
@@ -79,17 +84,39 @@ func (c *WSClient) enqueue(b []byte) bool {
 	}
 }
 
+// loader returns the contact lookup. It is read under the lock because tests
+// replace it while the hub's goroutines are running.
+func (h *WSHub) loader() contactLoader {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.contacts
+}
+
+// contactCacheTTL is how long a connected user's contact list is reused to
+// answer status requests. Presence changes are always sent using a fresh list.
+var contactCacheTTL = 20 * time.Second
+
+// contactLoader returns the users someone shares a conversation or group with.
+type contactLoader func(ctx context.Context, userID string) ([]string, error)
+
+func loadContactsFromDB(ctx context.Context, userID string) ([]string, error) {
+	return repository.NewContactRepository().GetContactIDs(ctx, userID)
+}
+
 type WSHub struct {
 	clients    map[string]*WSClient
 	Register   chan *WSClient
 	Unregister chan *WSClient
 	mu         sync.RWMutex
+
+	contacts contactLoader
 }
 
 var Hub = &WSHub{
 	clients:    make(map[string]*WSClient),
 	Register:   make(chan *WSClient),
 	Unregister: make(chan *WSClient),
+	contacts:   loadContactsFromDB,
 }
 
 // clientFor returns the user's current connection, or nil if they're offline.
@@ -139,7 +166,19 @@ func (h *WSHub) sendToUsers(userIDs []string, except string, b []byte) (missed [
 	return missed
 }
 
+// broadcastStatus tells the user's contacts that they went online or offline.
+// Nobody else hears about it, so a stranger can't watch when someone is
+// around. If the contact list can't be loaded, nobody is told.
 func (h *WSHub) broadcastStatus(userID string, online bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	contacts, err := h.loader()(ctx, userID)
+	if err != nil {
+		log.Printf("Presence update skipped, couldn't load contacts: %v", err)
+		return
+	}
+
 	msg := map[string]interface{}{
 		"type":    "user_status",
 		"user_id": userID,
@@ -148,12 +187,43 @@ func (h *WSHub) broadcastStatus(userID string, online bool) {
 	bytes, _ := json.Marshal(msg)
 
 	h.mu.RLock()
-	defer h.mu.RUnlock()
-	for _, client := range h.clients {
-		if !strings.EqualFold(client.UserID, userID) {
-			client.trySend(bytes)
+	targets := make([]*WSClient, 0, len(contacts))
+	for _, id := range contacts {
+		if c, ok := h.clients[strings.ToLower(id)]; ok && !strings.EqualFold(c.UserID, userID) {
+			targets = append(targets, c)
 		}
 	}
+	h.mu.RUnlock()
+
+	for _, c := range targets {
+		c.trySend(bytes)
+	}
+}
+
+// canSeeStatus reports whether viewer may see whether target is online: only
+// people who share a conversation or a group. A failed lookup says no.
+func (h *WSHub) canSeeStatus(viewer *WSClient, target string) bool {
+	viewer.contactsMu.Lock()
+	defer viewer.contactsMu.Unlock()
+
+	if viewer.contacts == nil || time.Since(viewer.contactsAt) > contactCacheTTL {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		ids, err := h.loader()(ctx, viewer.UserID)
+		if err != nil {
+			log.Printf("Status request refused, couldn't load contacts: %v", err)
+			return false
+		}
+		viewer.contacts = make(map[string]struct{}, len(ids))
+		for _, id := range ids {
+			viewer.contacts[strings.ToLower(id)] = struct{}{}
+		}
+		viewer.contactsAt = time.Now()
+	}
+
+	_, ok := viewer.contacts[strings.ToLower(target)]
+	return ok
 }
 
 func (h *WSHub) Run() {
@@ -232,7 +302,9 @@ func (c *WSClient) ReadPump() {
 
 		switch incoming.Type {
 		case "request_status":
-			online := Hub.clientFor(incoming.ReceiverID) != nil
+			// Strangers are told "offline", whatever the truth, so asking
+			// can't be used to find out when someone is around.
+			online := Hub.canSeeStatus(c, incoming.ReceiverID) && Hub.clientFor(incoming.ReceiverID) != nil
 
 			resp := map[string]interface{}{
 				"type":    "user_status",

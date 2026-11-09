@@ -15,7 +15,7 @@ Elephant is a privacy-first, open-source messaging application built with Go and
 - **End-to-end encrypted direct messages:** The Signal Protocol (X3DH + Double Ratchet, via `libsignal_protocol_dart`) runs on the device. The server only stores public prekey bundles and opaque ciphertext.
 - **Contact verification:** Users can mark a contact's identity key as verified. The verification resets automatically if that contact's identity key changes.
 - **Group chats:** Groups have admin/member roles, renaming, member management, unread tracking, and typing indicators and read receipts. *Group messages are not yet end-to-end encrypted.*
-- **Real-time messaging:** Chat, typing indicators, read receipts and online presence are delivered over a single WebSocket.
+- **Real-time messaging:** Chat, typing indicators, read receipts and online presence (shown only to people you share a chat or group with) are delivered over a single WebSocket.
 - **Message features:** Users can reply/quote messages and edit their own messages within 15 minutes. Paginated history is available for direct and group chats.
 - **Notifications (optional):** New-message alerts through [UnifiedPush](https://unifiedpush.org), so no Google services are involved. Install a distributor such as ntfy, then turn them on under Settings → Notifications. The server only sends a tiny ping with no message content, and the notification says who it's from, never what was said.
 - **Authentication:** Accounts use a username and password (Argon2id) or Google/GitHub OAuth. Short-lived JWT access tokens are paired with rotating refresh tokens.
