@@ -163,7 +163,7 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `ARGON_ITERATIONS` | Argon2id iteration count | `3` |
 | `ARGON_MAX_CONCURRENT` | How many password hashes may run at once. Each uses `ARGON_MEMORY` of RAM, so this caps the memory a burst of sign-ins can take (the default of 2 stays under about 300 MB). Extra requests wait up to 10 s, then get a `503` | `2` |
 | `ARGON_PARALLELISM` | Argon2id parallelism degree | `2` |
-| `TRUSTED_PROXY_HOPS` | How the sign-in and sign-up rate limits find a client's address behind a reverse proxy. `auto` trusts `X-Forwarded-For` only when the connecting address is private or loopback (a proxy on your host or network). `0` never trusts it. A number N always trusts it and uses the entry N from the end, for N proxies in front of the server (e.g. `2` for Cloudflare in front of another proxy). If the server is exposed directly with no proxy, use `0` | `auto` |
+| `GOMEMLIMIT` | Soft memory limit for the Go runtime, about 80% of the container's memory (e.g. `400MiB` for a 512 MB container). Go otherwise keeps the memory it grew to after a burst of work. Set to `off` to disable | `400MiB` |
 | `AUTO_MIGRATE` | Apply pending database migrations when the server starts. Set to `false` to manage them yourself | `true` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | — |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | — |
