@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/commandlinecoding/elephant/server/models"
 	"github.com/commandlinecoding/elephant/server/repository"
@@ -78,8 +79,18 @@ func (s *UserService) Register(ctx context.Context, requestedName, dn, passwd st
 	return s.repo.CreateUser(ctx, finalUsername, dn, hash)
 }
 
+// MinSearchQueryLength is the shortest user search the server accepts, in
+// characters. The app enforces the same limit before it sends a request.
+const MinSearchQueryLength = 2
+
+// ErrSearchQueryTooShort is returned by Search for queries under MinSearchQueryLength.
+var ErrSearchQueryTooShort = errors.New("search query too short")
+
 func (s *UserService) Search(ctx context.Context, query string, page, limit int) ([]models.User, error) {
 	query = strings.TrimSpace(query)
+	if utf8.RuneCountInString(query) < MinSearchQueryLength {
+		return nil, ErrSearchQueryTooShort
+	}
 
 	if limit <= 0 || limit > 100 {
 		limit = 20
