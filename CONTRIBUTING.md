@@ -97,7 +97,7 @@ A maintainer will review it. Small follow-up commits on the same branch are fine
 
 - Add a **new** file named with the next number, e.g. `013_add_blocked_users_up.sql`. Never edit a migration that's already merged, because it has already run on real databases.
 - Make it safe to run twice (`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`).
-- Tick "This PR adds a migration" in the PR template, so maintainers remember to apply it in production.
+- The server applies new migrations itself at startup, so there's nothing to run by hand. Tick "This PR adds a migration" in the PR template anyway, so reviewers know to check it.
 
 ### API changes
 
