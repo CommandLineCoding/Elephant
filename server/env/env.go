@@ -24,6 +24,9 @@ var (
 	ARGON_ITERATIONS  string
 	ARGON_PARALLELISM string
 
+	// AUTO_MIGRATE: apply pending database migrations at startup ("false" to disable).
+	AUTO_MIGRATE string
+
 	GOOGLE_CLIENT_ID     string
 	GOOGLE_CLIENT_SECRET string
 	GOOGLE_REDIRECT_URL  string
@@ -67,6 +70,8 @@ func init() {
 	ARGON_MEMORY = getEnv("ARGON_MEMORY", "65536")
 	ARGON_ITERATIONS = getEnv("ARGON_ITERATIONS", "3")
 	ARGON_PARALLELISM = getEnv("ARGON_PARALLELISM", "2")
+
+	AUTO_MIGRATE = getEnv("AUTO_MIGRATE", "true")
 
 	GOOGLE_CLIENT_ID = getEnv("GOOGLE_CLIENT_ID", "")
 	GOOGLE_CLIENT_SECRET = getEnv("GOOGLE_CLIENT_SECRET", "")

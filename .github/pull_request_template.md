@@ -13,7 +13,7 @@ Closes #
 
 ## Checklist
 
-- [ ] This PR adds a database migration (new `server/migrations/NNN_*_up.sql`; maintainers must apply it in production)
+- [ ] This PR adds a database migration (new `server/migrations/NNN_*_up.sql`, which the server applies at startup)
 - [ ] This PR changes the API, and `docs/API_CONTRACTS.md` is updated
 - [ ] UI change: screenshots are below
 

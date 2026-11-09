@@ -34,13 +34,14 @@ func isPrivateOrLocal(host string) bool {
 		strings.HasPrefix(h, "127.")
 }
 
-func InitDatabase() {
+// databaseURL builds the connection string from the POSTGRES_* variables.
+func databaseURL() string {
 	sslMode := "require"
 	if isPrivateOrLocal(env.POSTGRES_HOST) {
 		sslMode = "disable"
 	}
 
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
 		env.POSTGRES_USER,
 		env.POSTGRES_PASSWORD,
 		env.POSTGRES_HOST,
@@ -48,6 +49,10 @@ func InitDatabase() {
 		env.POSTGRES_DB,
 		sslMode,
 	)
+}
+
+func InitDatabase() {
+	dsn := databaseURL()
 
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
