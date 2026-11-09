@@ -313,15 +313,18 @@ class SearchField extends StatelessWidget {
             contentPadding: const EdgeInsets.symmetric(vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(Radii.md),
-              borderSide: BorderSide.none,
+              borderSide: BorderSide(color: context.tokens.hairline),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(Radii.md),
-              borderSide: BorderSide.none,
+              borderSide: BorderSide(color: context.tokens.hairline),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(Radii.md),
-              borderSide: BorderSide(color: context.colors.primary, width: 1.4),
+              borderSide: BorderSide(
+                color: context.colors.onSurfaceVariant,
+                width: 1.4,
+              ),
             ),
             suffixIcon: value.text.isEmpty
                 ? null
