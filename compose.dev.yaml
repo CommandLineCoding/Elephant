@@ -1,0 +1,20 @@
+# Development additions to compose.yaml:
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+#
+# - builds the server from ./server instead of pulling the published image
+# - publishes the database on 127.0.0.1 only, for psql and the integration tests
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    # A published port needs a network that isn't internal.
+    networks:
+      - backend
+      - frontend
+
+  server:
+    image: elephant-server:dev
+    build:
+      context: ./server
+      dockerfile: Dockerfile

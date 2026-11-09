@@ -43,7 +43,7 @@ By default, the app connects to the public server at `elephant.commandlinecoding
 
 ## Quick Start (Docker Compose, recommended)
 
-[compose.yaml](compose.yaml) starts PostgreSQL, applies all database migrations, then starts the server.
+[compose.yaml](compose.yaml) starts PostgreSQL, applies all database migrations, then starts the published server image. Every container runs as an unprivileged user with all Linux capabilities dropped and a read-only filesystem, and the database sits on a private network: nothing is published to the host except the server's port.
 
 ```bash
 git clone https://github.com/commandlinecoding/elephant.git
@@ -56,7 +56,14 @@ docker compose up -d
 # or: podman-compose up -d
 ```
 
-The `server` service is built from [server/Dockerfile](server/Dockerfile), so local changes take effect after `docker compose up -d --build`.
+This pulls `ghcr.io/commandlinecoding/elephant:latest`. To pin a version or use another image, set `ELEPHANT_IMAGE` in `.env`. The server runs as user and group `1000` by default; set `ELEPHANT_UID` and `ELEPHANT_GID` to change that.
+
+**Developing?** Build the server from your checkout, and reach the database from the host (published on `127.0.0.1` only), by adding [compose.dev.yaml](compose.dev.yaml):
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+# or: podman-compose -f compose.yaml -f compose.dev.yaml up -d --build
+```
 
 Once it's running, verify the server is healthy:
 
@@ -173,7 +180,7 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `REGISTRATION` | `open` lets anyone create an account. `closed` refuses new accounts (username sign-up and new Google/GitHub accounts); existing users can still sign in. Any other value stops the server from starting | `open` |
 | `PUSH_ALLOW_PRIVATE_ENDPOINTS` | Let users register [UnifiedPush](https://unifiedpush.org) endpoints on private or loopback addresses over plain HTTP, e.g. a self-hosted ntfy on your LAN. Off by default so the server can't be pointed at your internal network | `false` |
 
-See [.env.example](.env.example) for a starting template. In Docker Compose, `POSTGRES_PORT` sets the **host** port that the database is published on. The server always connects to `db:5432` inside the network.
+See [.env.example](.env.example) for a starting template. With [compose.dev.yaml](compose.dev.yaml), `POSTGRES_PORT` sets the **host** port that the database is published on (on `127.0.0.1` only); the default compose file doesn't publish it at all. The server always connects to `db:5432` inside the network.
 
 ## API
 
@@ -243,7 +250,8 @@ elephant/
 │   ├── tests/                # Integration tests
 │   ├── migrate.sh            # Standalone migration runner (also used by Docker Compose)
 │   └── Dockerfile
-├── compose.yaml              # PostgreSQL + migrations + server (built from source)
+├── compose.yaml              # PostgreSQL + migrations + the published server image (hardened)
+├── compose.dev.yaml          # Development additions: build from source, database on 127.0.0.1
 ├── .env.example              # Environment variable template
 ├── CONTRIBUTING.md
 ├── SECURITY.md

@@ -1,17 +1,40 @@
+# Elephant: PostgreSQL, the migrations, and the server.
+#
+#   cp .env.example .env     # then set JWT_SECRET and POSTGRES_PASSWORD
+#   docker compose up -d     # or: podman-compose up -d
+#
+# This runs the published image. To build the server from your checkout and to
+# reach the database from the host (for development), add compose.dev.yaml:
+#
+#   docker compose -f compose.yaml -f compose.dev.yaml up -d --build
+
+# Every container drops all Linux capabilities, can't gain new privileges, and
+# has a read-only filesystem (writable only where a service lists a volume or
+# tmpfs).
+x-hardened: &hardened
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  read_only: true
+
 services:
   db:
+    <<: *hardened
     image: postgres:16-alpine
     container_name: elephant_db
+    user: "70:70" # the image's postgres user, so it never runs as root
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "${POSTGRES_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp
+      - /run/postgresql
+    # Only reachable from the server and the migration job. Nothing is
+    # published to the host; compose.dev.yaml does that for development.
     networks:
-      - elephant_net
+      - backend
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
@@ -20,11 +43,15 @@ services:
       retries: 5
 
   migration:
+    <<: *hardened
     image: postgres:16-alpine
     container_name: elephant_migration
+    user: "70:70"
     volumes:
-      - ./server/migrations:/migrations:z
-      - ./server/migrate.sh:/migrate.sh:z
+      - ./server/migrations:/migrations:ro,z
+      - ./server/migrate.sh:/migrate.sh:ro,z
+    tmpfs:
+      - /tmp
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -36,13 +63,17 @@ services:
       db:
         condition: service_healthy
     networks:
-      - elephant_net
+      - backend
 
   server:
-    build:
-      context: ./server
-      dockerfile: Dockerfile
+    <<: *hardened
+    image: ${ELEPHANT_IMAGE:-ghcr.io/commandlinecoding/elephant:latest}
     container_name: elephant_server
+    # The server writes nothing, so any unprivileged id works. Set these if you
+    # want it to match a particular user on the host.
+    user: "${ELEPHANT_UID:-1000}:${ELEPHANT_GID:-1000}"
+    tmpfs:
+      - /tmp
     ports:
       - "${PORT}:${PORT}"
     environment:
@@ -67,16 +98,23 @@ services:
       - GITHUB_REDIRECT_URL=${GITHUB_REDIRECT_URL}
       - REGISTRATION=${REGISTRATION:-open}
       - PUSH_ALLOW_PRIVATE_ENDPOINTS=${PUSH_ALLOW_PRIVATE_ENDPOINTS:-false}
+      - ARGON_MAX_CONCURRENT=${ARGON_MAX_CONCURRENT:-2}
+      - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-auto}
     depends_on:
       migration:
         condition: service_completed_successfully
+    # backend reaches the database; frontend carries the published port and the
+    # server's own outbound requests (Google/GitHub sign-in, push pings).
     networks:
-      - elephant_net
+      - backend
+      - frontend
     restart: unless-stopped
 
 volumes:
   pgdata:
 
 networks:
-  elephant_net:
-    driver: bridge
+  # No route in or out, so the database can only be reached by its neighbours.
+  backend:
+    internal: true
+  frontend: {}
