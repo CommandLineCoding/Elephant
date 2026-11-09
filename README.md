@@ -162,6 +162,7 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `ARGON_MEMORY` | Argon2id memory cost (KiB) | `65536` |
 | `ARGON_ITERATIONS` | Argon2id iteration count | `3` |
 | `ARGON_PARALLELISM` | Argon2id parallelism degree | `2` |
+| `GOMEMLIMIT` | Soft memory limit for the Go runtime, about 80% of the container's memory (e.g. `400MiB` for a 512 MB container). Go otherwise keeps the memory it grew to after a burst of work. Set to `off` to disable | `400MiB` |
 | `AUTO_MIGRATE` | Apply pending database migrations when the server starts. Set to `false` to manage them yourself | `true` |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID | — |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret | — |
