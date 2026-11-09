@@ -13,6 +13,8 @@ func UserRoute(router chi.Router) {
 
 	router.Get("/me", controllers.HandleGetMe)
 	router.Delete("/me", controllers.HandleDeleteMe)
+	router.Post("/me/push", controllers.HandlePushRegister)
+	router.Delete("/me/push", controllers.HandlePushUnregister)
 	router.With(searchLimiter.Limit).Get("/search", controllers.HandleUserSearch)
 	router.Get("/{id}", controllers.HandleGetUserByID)
 }

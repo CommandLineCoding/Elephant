@@ -51,6 +51,12 @@ func HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// This path has no live delivery, so a recipient who isn't connected needs
+	// a push ping to know to fetch.
+	if !services.Hub.IsOnline(req.ReceiverID) {
+		services.Push.NotifyUsers([]string{req.ReceiverID})
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: msg})
 }

@@ -169,6 +169,7 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | — |
 | `GITHUB_REDIRECT_URL` | GitHub OAuth callback URL, e.g. `https://HOST/api/auth/github/callback` | — |
 | `REGISTRATION` | `open` lets anyone create an account. `closed` refuses new accounts (username sign-up and new Google/GitHub accounts); existing users can still sign in. Any other value stops the server from starting | `open` |
+| `PUSH_ALLOW_PRIVATE_ENDPOINTS` | Let users register [UnifiedPush](https://unifiedpush.org) endpoints on private or loopback addresses over plain HTTP, e.g. a self-hosted ntfy on your LAN. Off by default so the server can't be pointed at your internal network | `false` |
 
 See [.env.example](.env.example) for a starting template. In Docker Compose, `POSTGRES_PORT` sets the **host** port that the database is published on. The server always connects to `db:5432` inside the network.
 

@@ -67,6 +67,8 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/api/users/{id}](#2-get-user-by-id) | Yes | Get a user by ID |
 | GET | [/api/users/search?q=&page=&limit=](#3-search-users) | Yes | Search users by username or display name (rate limited) |
 | DELETE | [/api/users/me](#4-delete-account) | Yes | Permanently delete the authenticated user's account |
+| POST | [/api/users/me/push](#5-register-a-push-endpoint) | Yes | Register a UnifiedPush endpoint for new-message pings |
+| DELETE | [/api/users/me/push](#6-remove-a-push-endpoint) | Yes | Remove a UnifiedPush endpoint |
 | GET | [/api/ws?token=](#1-connect-to-websocket) | Yes (query) | WebSocket upgrade endpoint |
 | WS | [Client → Server](#2-client-to-server-messages) | — | Events the client sends |
 | WS | [Server → Client](#3-server-to-client-messages) | — | Events the server pushes |
@@ -522,6 +524,69 @@ Deletes the user. Their messages, group memberships, devices and prekeys, refres
   "success": false,
   "error": "Failed to delete account"
 }
+```
+
+### 5. Register a Push Endpoint
+
+Registers a [UnifiedPush](https://unifiedpush.org) endpoint, so the server can tell the app when it has new messages while the app is closed. Registering an endpoint that is already stored just refreshes it.
+
+- **URL:** `/api/users/me/push`
+- **Method:** `POST`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X POST "http://HOST:PORT/api/users/me/push" -H "Authorization: Bearer <access_token>" -H "Content-Type: application/json" -d '{"endpoint":"https://ntfy.example.org/upAbC123"}'`
+
+#### Request Body
+
+```json
+{ "endpoint": "https://ntfy.example.org/upAbC123" }
+```
+
+The endpoint must be an `https` URL of at most 2048 characters, with no credentials in it. Because the server calls this URL, it must not point at a private or reserved address: loopback, private ranges (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`), shared address space (`100.64/10`, which includes Tailscale), link-local (including the cloud metadata address `169.254.169.254`), unspecified and multicast addresses are all refused. The address is checked again when the server connects, so a hostname that later resolves to one of these is refused too. A server operator can allow private endpoints over plain `http` (for a self-hosted ntfy on a LAN) with `PUSH_ALLOW_PRIVATE_ENDPOINTS=true`. Link-local, unspecified and multicast addresses stay blocked either way.
+
+Each user keeps at most 5 endpoints. Registering a sixth drops the one that was refreshed least recently.
+
+#### `200 OK`
+
+```json
+{ "success": true }
+```
+
+#### `400 Bad Request`
+
+```json
+{ "success": false, "error": "invalid push endpoint: endpoint must use https" }
+```
+
+#### The ping
+
+When a **chat message** is for a user who has **no live WebSocket**, the server sends one request to each of their endpoints, about a second after the message is stored:
+
+```
+POST <endpoint>
+Content-Type: application/json
+TTL: 3600
+
+{"type":"new_messages"}
+```
+
+The ping carries **no message content, sender or conversation**, so the push server learns only that something arrived. On receiving it, the app connects and fetches its messages as usual. Pings to one user are spaced at least 5 seconds apart, and messages that arrive meanwhile are covered by the next ping. Redirects are not followed. An endpoint that answers `404` or `410` is removed automatically. Typing indicators and read receipts never trigger a ping.
+
+### 6. Remove a Push Endpoint
+
+- **URL:** `/api/users/me/push`
+- **Method:** `DELETE`
+- **Authentication Required:** `YES`
+
+```json
+{ "endpoint": "https://ntfy.example.org/upAbC123" }
+```
+
+#### `200 OK`
+
+Returned even if the endpoint wasn't stored, so apps can call it freely on sign-out.
+
+```json
+{ "success": true }
 ```
 
 ---

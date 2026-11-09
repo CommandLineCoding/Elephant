@@ -43,6 +43,9 @@ func main() {
 	// WS init
 	go services.Hub.Run()
 
+	// UnifiedPush pings for users with no live connection
+	services.Push.Start(4)
+
 	// app init
 	app := config.App
 
