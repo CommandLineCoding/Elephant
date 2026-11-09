@@ -33,11 +33,7 @@ func HandleWSUpgrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &services.WSClient{
-		UserID: uid,
-		Conn:   conn,
-		Send:   make(chan []byte, 256),
-	}
+	client := services.NewWSClient(uid, conn)
 
 	services.Hub.Register <- client
 
