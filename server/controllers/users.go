@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -27,6 +28,14 @@ func HandleUserSearch(w http.ResponseWriter, r *http.Request) {
 
 	svc := services.NewUserService()
 	users, err := svc.Search(r.Context(), q, page, limit)
+	if errors.Is(err, services.ErrSearchQueryTooShort) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{
+			Success: false,
+			Error:   fmt.Sprintf("Search needs at least %d characters", services.MinSearchQueryLength),
+		})
+		return
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{

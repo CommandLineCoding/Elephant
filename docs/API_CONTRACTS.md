@@ -415,7 +415,7 @@ Case-insensitive substring match on username **or** display name, ordered by use
 
 | Param | Default | Notes |
 |---|---|---|
-| `q` | `""` | An empty query matches every user |
+| `q` | required | At least 2 characters after trimming whitespace, otherwise `400` |
 | `page` | `1` | 1-based |
 | `limit` | `20` | Values outside 1–100 fall back to 20 |
 
@@ -436,6 +436,17 @@ Case-insensitive substring match on username **or** display name, ordered by use
 ```
 
 If no users match, `data` is an empty array.
+
+#### `400 Bad Request`
+
+The query is shorter than 2 characters.
+
+```json
+{
+  "success": false,
+  "error": "Search needs at least 2 characters"
+}
+```
 
 #### `429 Too Many Requests`
 
