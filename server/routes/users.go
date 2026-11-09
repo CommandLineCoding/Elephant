@@ -7,7 +7,7 @@ import (
 )
 
 func UserRoute(router chi.Router) {
-	searchLimiter := middlewares.NewRateLimiter(2.0, 10.0)
+	searchLimiter := middlewares.NewRateLimiter(2.0, 10.0).WithMessage("Rate limit exceeded. Too many search requests.")
 
 	router.Use(middlewares.AuthGuard)
 

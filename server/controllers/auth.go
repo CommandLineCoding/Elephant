@@ -19,6 +19,18 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// respondIfBusy answers 503 with a Retry-After and reports true when err says
+// too many password hashes are already running.
+func respondIfBusy(w http.ResponseWriter, err error) bool {
+	if !errors.Is(err, services.ErrServerBusy) {
+		return false
+	}
+	w.Header().Set("Retry-After", "2")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: services.ErrServerBusy.Error()})
+	return true
+}
+
 type RegisterReq struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
@@ -40,6 +52,9 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, services.ErrRegistrationClosed) {
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Registration is closed on this server"})
+		return
+	}
+	if respondIfBusy(w, err) {
 		return
 	}
 	if err != nil {
@@ -92,6 +107,9 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 	svc := services.NewAuthService()
 	user, tokens, err := svc.Login(r.Context(), req.Username, req.Password)
+	if respondIfBusy(w, err) {
+		return
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: err.Error()})

@@ -19,6 +19,9 @@ func HashPassword(password string) (string, error) {
 		return "", err
 	}
 
+	if err := passwordGate.acquire(); err != nil {
+		return "", err
+	}
 	hash := argon2.IDKey(
 		[]byte(password),
 		salt,
@@ -27,6 +30,7 @@ func HashPassword(password string) (string, error) {
 		config.Argon.Parallelism,
 		config.Argon.KeyLength,
 	)
+	passwordGate.release()
 
 	b64Salt := base64.RawStdEncoding.EncodeToString(salt)
 	b64Hash := base64.RawStdEncoding.EncodeToString(hash)
@@ -76,6 +80,9 @@ func VerifyPassword(password, encodedHash string) (bool, error) {
 		return false, err
 	}
 
+	if err := passwordGate.acquire(); err != nil {
+		return false, err
+	}
 	actualHash := argon2.IDKey(
 		[]byte(password),
 		salt,
@@ -84,6 +91,7 @@ func VerifyPassword(password, encodedHash string) (bool, error) {
 		uint8(parallelism),
 		uint32(len(expectedHash)),
 	)
+	passwordGate.release()
 
 	if subtle.ConstantTimeCompare(expectedHash, actualHash) == 1 {
 		return true, nil

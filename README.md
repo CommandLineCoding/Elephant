@@ -161,6 +161,7 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `JWT_SECRET` | Secret key for signing JWTs (HS256). **Always set this**, because the built-in default is public | `default-long-safe-secret-key-string` |
 | `ARGON_MEMORY` | Argon2id memory cost (KiB) | `65536` |
 | `ARGON_ITERATIONS` | Argon2id iteration count | `3` |
+| `ARGON_MAX_CONCURRENT` | How many password hashes may run at once. Each uses `ARGON_MEMORY` of RAM, so this caps the memory a burst of sign-ins can take (the default of 2 stays under about 300 MB). Extra requests wait up to 10 s, then get a `503` | `2` |
 | `ARGON_PARALLELISM` | Argon2id parallelism degree | `2` |
 | `GOMEMLIMIT` | Soft memory limit for the Go runtime, about 80% of the container's memory (e.g. `400MiB` for a 512 MB container). Go otherwise keeps the memory it grew to after a burst of work. Set to `off` to disable | `400MiB` |
 | `AUTO_MIGRATE` | Apply pending database migrations when the server starts. Set to `false` to manage them yourself | `true` |

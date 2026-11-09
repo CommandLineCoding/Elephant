@@ -209,6 +209,22 @@ The server has `REGISTRATION=closed`. Existing users can still log in.
 { "success": false, "error": "Registration is closed on this server" }
 ```
 
+#### `429 Too Many Requests`
+
+Each client address may make a burst of 5 sign-ups, then one every 20 seconds. The response has a `Retry-After` header (seconds).
+
+```json
+{ "success": false, "error": "Too many sign-up attempts. Please wait a moment and try again." }
+```
+
+#### `503 Service Unavailable`
+
+Password hashing is capped (`ARGON_MAX_CONCURRENT`) to bound memory. Requests wait their turn and give up after about 10 seconds. The response has `Retry-After: 2`. Retry shortly.
+
+```json
+{ "success": false, "error": "the server is busy, please try again in a moment" }
+```
+
 #### `500 Internal Server Error`
 
 `"Token generation failure"` or `"Failed to securely record registration token metrics"`.
@@ -267,6 +283,22 @@ The username is trimmed and lowercased before lookup.
   "success": false,
   "error": "Invalid json payload structure"
 }
+```
+
+#### `429 Too Many Requests`
+
+Each client address may make a burst of 10 sign-in attempts, then one every 5 seconds. The response has a `Retry-After` header (seconds).
+
+```json
+{ "success": false, "error": "Too many sign-in attempts. Please wait a moment and try again." }
+```
+
+#### `503 Service Unavailable`
+
+Password hashing is capped (`ARGON_MAX_CONCURRENT`) to bound memory. Requests wait their turn and give up after about 10 seconds. The response has `Retry-After: 2`. Retry shortly.
+
+```json
+{ "success": false, "error": "the server is busy, please try again in a moment" }
 ```
 
 ### 3. Refresh

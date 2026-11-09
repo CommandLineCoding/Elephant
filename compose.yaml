@@ -67,6 +67,8 @@ services:
       - GITHUB_REDIRECT_URL=${GITHUB_REDIRECT_URL}
       - REGISTRATION=${REGISTRATION:-open}
       - PUSH_ALLOW_PRIVATE_ENDPOINTS=${PUSH_ALLOW_PRIVATE_ENDPOINTS:-false}
+      - ARGON_MAX_CONCURRENT=${ARGON_MAX_CONCURRENT:-2}
+      - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-auto}
     depends_on:
       migration:
         condition: service_completed_successfully
