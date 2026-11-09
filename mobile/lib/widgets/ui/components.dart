@@ -144,6 +144,44 @@ class ElephantTile extends StatelessWidget {
   }
 }
 
+/// Heading block at the top of a settings page: a small icon, a title and a
+/// paragraph, laid out on the page rather than in a card.
+class PageIntro extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String body;
+
+  const PageIntro({
+    super.key,
+    required this.icon,
+    required this.title,
+    required this.body,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: Insets.page + 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 26, color: context.colors.onSurface),
+          const SizedBox(height: Insets.lg),
+          Text(title, style: context.text.headlineSmall),
+          const SizedBox(height: Insets.sm),
+          Text(
+            body,
+            style: context.text.bodyMedium?.copyWith(
+              color: context.colors.onSurfaceVariant,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Centered illustration-style placeholder for empty lists.
 class EmptyState extends StatelessWidget {
   final IconData icon;

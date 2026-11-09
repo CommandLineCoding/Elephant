@@ -89,41 +89,12 @@ class _PrivacySecuritySettingsPageState
             bottom: Insets.xxl + MediaQuery.paddingOf(context).bottom,
           ),
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: Panel(
-                borderRadius: BorderRadius.circular(Radii.xl),
-                padding: const EdgeInsets.all(Insets.xl),
-                child: Column(
-                  children: [
-                    AccentBox(
-                      shape: BoxShape.circle,
-                      padding: const EdgeInsets.all(16),
-                      child: Icon(
-                        Icons.lock_rounded,
-                        size: 34,
-                        color: context.tokens.onAccent,
-                      ),
-                    ),
-                    const SizedBox(height: Insets.lg),
-                    Text(
-                      'Your keys never leave this device',
-                      style: context.text.titleLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: Insets.sm),
-                    Text(
-                      'Direct messages use the Signal Protocol. The server only stores your public keys '
-                      'and encrypted text, so it can\'t read your direct chats.',
-                      textAlign: TextAlign.center,
-                      style: context.text.bodyMedium?.copyWith(
-                        color: context.colors.onSurfaceVariant,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            PageIntro(
+              icon: Icons.lock_outline_rounded,
+              title: 'Your keys never leave this device',
+              body:
+                  'Direct messages use the Signal Protocol. The server only stores your public keys '
+                  'and encrypted text, so it can\'t read your direct chats.',
             ),
             const SectionLabel('What\'s protected'),
             Section(

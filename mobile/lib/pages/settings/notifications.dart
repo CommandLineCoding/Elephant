@@ -204,43 +204,14 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
             bottom: Insets.xxl + MediaQuery.paddingOf(context).bottom,
           ),
           children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: Panel(
-                borderRadius: BorderRadius.circular(Radii.xl),
-                padding: const EdgeInsets.all(Insets.xl),
-                child: Column(
-                  children: [
-                    AccentBox(
-                      shape: BoxShape.circle,
-                      padding: const EdgeInsets.all(16),
-                      child: Icon(
-                        Icons.notifications_rounded,
-                        size: 34,
-                        color: context.tokens.onAccent,
-                      ),
-                    ),
-                    const SizedBox(height: Insets.lg),
-                    Text(
-                      'Alerts without Google',
-                      style: context.text.titleLarge,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: Insets.sm),
-                    Text(
-                      'Elephant uses UnifiedPush instead of Google\'s push '
-                      'service. Your server sends a tiny ping when you have a '
-                      'new message and nothing else, so the notification only '
-                      'says who it\'s from, never what was said.',
-                      textAlign: TextAlign.center,
-                      style: context.text.bodyMedium?.copyWith(
-                        color: context.colors.onSurfaceVariant,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+            PageIntro(
+              icon: Icons.notifications_none_rounded,
+              title: 'Alerts without Google',
+              body:
+                  'Elephant uses UnifiedPush instead of Google\'s push '
+                  'service. Your server sends a tiny ping when you have a '
+                  'new message and nothing else, so the notification only '
+                  'says who it\'s from, never what was said.',
             ),
             const SectionLabel('Message alerts'),
             Section(
