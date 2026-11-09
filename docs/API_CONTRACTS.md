@@ -39,6 +39,18 @@ Every route behind the auth guard returns this when the access token is missing,
 }
 ```
 
+### Common errors: `404` and `405`
+
+A request to a route that doesn't exist returns `404`, and a known path with the wrong HTTP method returns `405`. Both use the usual envelope. Routes behind the auth guard answer `401` first when the token is missing.
+
+```json
+{ "success": false, "error": "Route not found" }
+```
+
+```json
+{ "success": false, "error": "Method not allowed" }
+```
+
 ---
 
 ## API Overview
