@@ -26,12 +26,21 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscurePassword = true;
 
   @override
+  void initState() {
+    super.initState();
+    context.read<AuthState>().refreshRegistrationStatus();
+  }
+
+  @override
   void dispose() {
     _usernameController.dispose();
     _displayNameController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
+
+  /// Register is only offered while the server accepts new accounts.
+  bool _registering(AuthState auth) => _isRegister && !auth.registrationClosed;
 
   void _setMode(bool register) {
     if (_isRegister == register) return;
@@ -45,7 +54,7 @@ class _LoginPageState extends State<LoginPage> {
     FocusScope.of(context).unfocus();
 
     final auth = context.read<AuthState>();
-    if (_isRegister) {
+    if (_registering(auth)) {
       await auth.handleRegister(
         _usernameController.text,
         _displayNameController.text,
@@ -61,12 +70,15 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _openServerSettings() async {
     await showServerSettingsSheet(context);
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    context.read<AuthState>().refreshRegistrationStatus();
   }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthState>();
+    final isRegister = _registering(auth);
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -90,7 +102,7 @@ class _LoginPageState extends State<LoginPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children:
                           [
-                                _Brand(isRegister: _isRegister),
+                                _Brand(isRegister: isRegister),
                                 const SizedBox(height: Insets.xxl),
                                 GlassSurface(
                                   strong: true,
@@ -147,12 +159,16 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildForm(AuthState auth) {
+    final registering = _registering(auth);
     return Form(
       key: _formKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _ModeSwitch(isRegister: _isRegister, onChanged: _setMode),
+          if (auth.registrationClosed)
+            const _ClosedNote()
+          else
+            _ModeSwitch(isRegister: registering, onChanged: _setMode),
           const SizedBox(height: Insets.xl),
           AnimatedSize(
             duration: const Duration(milliseconds: 250),
@@ -172,25 +188,25 @@ class _LoginPageState extends State<LoginPage> {
             keyboardType: TextInputType.visiblePassword,
             inputFormatters: [
               FilteringTextInputFormatter.allow(
-                _isRegister ? RegExp(r'[a-zA-Z0-9]') : RegExp(r'[a-zA-Z0-9.]'),
+                registering ? RegExp(r'[a-zA-Z0-9]') : RegExp(r'[a-zA-Z0-9.]'),
               ),
             ],
             decoration: InputDecoration(
               labelText: 'Username',
-              hintText: _isRegister ? 'letters and numbers' : 'e.g. alex.4821',
+              hintText: registering ? 'letters and numbers' : 'e.g. alex.4821',
               prefixIcon: const Icon(Icons.alternate_email_rounded),
-              helperText: _isRegister
+              helperText: registering
                   ? 'A 4-digit tag is added for you, e.g. alex.4821'
                   : null,
               helperMaxLines: 2,
             ),
             validator: (v) =>
-                AuthState.validateUsername(v, isRegister: _isRegister),
+                AuthState.validateUsername(v, isRegister: registering),
           ),
           AnimatedSize(
             duration: const Duration(milliseconds: 280),
             curve: Curves.easeOutCubic,
-            child: _isRegister
+            child: registering
                 ? Padding(
                     padding: const EdgeInsets.only(top: Insets.lg),
                     child: TextFormField(
@@ -218,7 +234,7 @@ class _LoginPageState extends State<LoginPage> {
             decoration: InputDecoration(
               labelText: 'Password',
               prefixIcon: const Icon(Icons.lock_outline_rounded),
-              helperText: _isRegister
+              helperText: registering
                   ? 'At least ${ServerLimits.passwordMin} characters'
                   : null,
               suffixIcon: IconButton(
@@ -232,11 +248,11 @@ class _LoginPageState extends State<LoginPage> {
               ),
             ),
             validator: (v) =>
-                AuthState.validatePassword(v, isRegister: _isRegister),
+                AuthState.validatePassword(v, isRegister: registering),
           ),
           const SizedBox(height: Insets.xl),
           GradientButton(
-            label: _isRegister ? 'Create account' : 'Sign in',
+            label: registering ? 'Create account' : 'Sign in',
             isLoading: auth.isLoading,
             onPressed: _submit,
           ),
@@ -336,6 +352,44 @@ class _Brand extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Shown in place of the Sign in / Register switch when the server isn't
+/// accepting new accounts.
+class _ClosedNote extends StatelessWidget {
+  const _ClosedNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Insets.md,
+        vertical: Insets.sm,
+      ),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(Radii.md),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.lock_outline_rounded,
+            size: 18,
+            color: context.colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: Insets.sm),
+          Expanded(
+            child: Text(
+              "This server isn't accepting new accounts.",
+              style: context.text.bodyMedium?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
