@@ -3,6 +3,7 @@ package controllers
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -36,6 +37,11 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 
 	svc := services.NewUserService()
 	user, err := svc.Register(r.Context(), req.Username, req.DisplayName, req.Password)
+	if errors.Is(err, services.ErrRegistrationClosed) {
+		w.WriteHeader(http.StatusForbidden)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Registration is closed on this server"})
+		return
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: err.Error()})
@@ -187,6 +193,10 @@ func HandleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			_ = userRepo.LinkProviderAccount(r.Context(), u.ID, provider, profile.ID)
 		} else {
+			if services.RegistrationClosed() {
+				renderHandoffError(w, "Registration is closed on this server.")
+				return
+			}
 			emailHandle := strings.Split(profile.Email, "@")[0]
 			baseUsername := cleanAlphanumeric(emailHandle)
 

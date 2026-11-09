@@ -10,6 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/commandlinecoding/elephant/server/env"
 	"github.com/commandlinecoding/elephant/server/models"
 	"github.com/commandlinecoding/elephant/server/repository"
 )
@@ -23,6 +24,10 @@ func NewUserService() *UserService {
 }
 
 func (s *UserService) Register(ctx context.Context, requestedName, dn, passwd string) (*models.User, error) {
+	if RegistrationClosed() {
+		return nil, ErrRegistrationClosed
+	}
+
 	requestedName = strings.ToLower(strings.TrimSpace(requestedName))
 	dn = strings.TrimSpace(dn)
 
@@ -77,6 +82,15 @@ func (s *UserService) Register(ctx context.Context, requestedName, dn, passwd st
 	}
 
 	return s.repo.CreateUser(ctx, finalUsername, dn, hash)
+}
+
+// ErrRegistrationClosed is returned when the server doesn't accept new accounts.
+var ErrRegistrationClosed = errors.New("registration is closed on this server")
+
+// RegistrationClosed reports whether REGISTRATION=closed. Existing users can
+// still sign in; only creating new accounts is refused.
+func RegistrationClosed() bool {
+	return strings.EqualFold(strings.TrimSpace(env.REGISTRATION), "closed")
 }
 
 // MinSearchQueryLength is the shortest user search the server accepts, in
