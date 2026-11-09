@@ -30,11 +30,11 @@ You need Git, Docker (or Podman), and for the app, Flutter. The Flutter version 
 git clone https://github.com/<you>/Elephant.git
 cd Elephant
 cp .env.example .env          # the defaults work locally; Google/GitHub sign-in stays off
-docker compose up -d --build  # or: podman-compose up -d --build
+docker compose -f compose.yaml -f compose.dev.yaml up -d --build  # or: podman-compose -f ... (same flags)
 curl http://localhost:3000/api/health
 ```
 
-Compose starts PostgreSQL, applies every migration, and starts the server on port 3000 (`PORT` in `.env`). To run the server outside Docker, see [Local Development](README.md#local-development).
+Compose starts PostgreSQL, applies every migration, and starts the server on port 3000 (`PORT` in `.env`). The `compose.dev.yaml` file builds the server from your checkout (the default file runs the published image) and publishes the database on `127.0.0.1:<POSTGRES_PORT>`, which the integration tests use. To run the server outside Docker, see [Local Development](README.md#local-development).
 
 ### App
 
