@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/themes/theme_provider.dart';
@@ -74,6 +75,12 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: context.watch<ThemeProvider>().themeData,
       themeAnimationDuration: const Duration(milliseconds: 350),
+      // Screens without an app bar (sign-in, the home tabs) still need the
+      // status bar to match the theme.
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: Theme.of(context).appBarTheme.systemOverlayStyle!,
+        child: child!,
+      ),
       home: const SessionGateway(),
     );
   }

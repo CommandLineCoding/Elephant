@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 enum ThemeType { frost, aura, onyx, nebula }
 
@@ -287,6 +288,18 @@ class AppThemes {
       labelSmall: style(11, FontWeight.w500, 1.3, spacing: 0.1, color: p.muted),
     );
 
+    // Set explicitly: otherwise Flutter guesses from the (transparent) app bar
+    // background and draws light icons on the light themes too.
+    final overlayStyle =
+        (p.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark)
+            .copyWith(
+              statusBarColor: Colors.transparent,
+              systemNavigationBarColor: p.background,
+              systemNavigationBarIconBrightness: p.isDark
+                  ? Brightness.light
+                  : Brightness.dark,
+            );
+
     final inputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(Radii.md),
       borderSide: BorderSide(color: p.outline),
@@ -301,6 +314,7 @@ class AppThemes {
       splashFactory: InkRipple.splashFactory,
       dividerTheme: DividerThemeData(color: p.outline, thickness: 1, space: 1),
       appBarTheme: AppBarTheme(
+        systemOverlayStyle: overlayStyle,
         backgroundColor: p.background,
         surfaceTintColor: Colors.transparent,
         foregroundColor: p.text,
