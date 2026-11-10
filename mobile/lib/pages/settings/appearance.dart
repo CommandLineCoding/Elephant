@@ -27,6 +27,9 @@ class AppearanceSettings extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
               child: GridView.count(
+                // Without this the grid pads itself by MediaQuery.padding,
+                // repeating the status bar and app bar height.
+                padding: EdgeInsets.zero,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisCount: 2,
