@@ -128,7 +128,10 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
       ),
-      floatingActionButton: _tab == 2
+      // An empty list shows its own button for the same action, which the
+      // floating one would cover.
+      floatingActionButton:
+          _tab == 2 || (_tab == 0 ? inbox.inbox : inbox.groups).isEmpty
           ? null
           : Padding(
               padding: const EdgeInsets.only(bottom: Insets.sm),

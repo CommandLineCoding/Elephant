@@ -263,4 +263,30 @@ void main() {
       });
     }
   }
+
+  testWidgets('compose button hides while the list is empty', (tester) async {
+    await render(tester, ThemeType.nebula, sizes['regular']!, const HomePage());
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+
+    // The sample inbox has no groups, so the Groups tab is empty.
+    await tester.tap(find.text('Groups').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(find.text('Create a group'), findsOneWidget);
+
+    await tester.tap(find.text('Chats').last);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(FloatingActionButton), findsOneWidget);
+
+    Provider.of<InboxController>(
+      tester.element(find.byType(HomePage)),
+      listen: false,
+    ).clearInbox();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.byType(FloatingActionButton), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
 }
