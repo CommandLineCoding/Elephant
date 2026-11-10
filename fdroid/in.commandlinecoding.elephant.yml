@@ -14,9 +14,9 @@ RepoType: git
 Repo: https://github.com/CommandLineCoding/Elephant.git
 
 Builds:
-  - versionName: 0.3.2
-    versionCode: 41
-    commit: v0.3.2
+  - versionName: 0.3.3
+    versionCode: 51
+    commit: v0.3.3
     subdir: mobile
     output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
     srclibs:
@@ -37,9 +37,9 @@ Builds:
       - $$flutter$$/bin/flutter build apk --release --split-per-abi --target-platform="android-arm"
     ndk: 28.2.13676358
 
-  - versionName: 0.3.2
-    versionCode: 42
-    commit: v0.3.2
+  - versionName: 0.3.3
+    versionCode: 52
+    commit: v0.3.3
     subdir: mobile
     output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
     srclibs:
@@ -60,9 +60,9 @@ Builds:
       - $$flutter$$/bin/flutter build apk --release --split-per-abi --target-platform="android-arm64"
     ndk: 28.2.13676358
 
-  - versionName: 0.3.2
-    versionCode: 43
-    commit: v0.3.2
+  - versionName: 0.3.3
+    versionCode: 53
+    commit: v0.3.3
     subdir: mobile
     output: build/app/outputs/flutter-apk/app-x86_64-release.apk
     srclibs:
@@ -90,5 +90,5 @@ VercodeOperation:
   - '%c * 10 + 2'
   - '%c * 10 + 3'
 UpdateCheckData: mobile/pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
-CurrentVersion: 0.3.2
-CurrentVersionCode: 43
+CurrentVersion: 0.3.3
+CurrentVersionCode: 53

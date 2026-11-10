@@ -1,0 +1,6 @@
+- New look: a calmer, flat design set in the Inter typeface
+- New: notifications for new messages through UnifiedPush, without Google services
+- Edits now show up straight away, in the open chat and the chat list
+- Your online status is only shared with people you chat with
+- Register is hidden on servers that aren't accepting new accounts
+- More reliable delivery after reconnecting

@@ -41,7 +41,7 @@ body:
     attributes:
       label: App version
       description: You → Help & about shows it.
-      placeholder: "0.3.2"
+      placeholder: "0.3.3"
   - type: input
     id: device
     attributes:
