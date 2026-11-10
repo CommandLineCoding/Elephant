@@ -366,7 +366,7 @@ class _ChatsTabState extends State<_ChatsTab> {
                 );
               },
             ),
-          const SliverPadding(padding: EdgeInsets.only(bottom: 140)),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
         ],
       ),
     );
@@ -424,7 +424,7 @@ class _GroupsTab extends StatelessWidget {
               },
             ),
           ],
-          const SliverPadding(padding: EdgeInsets.only(bottom: 140)),
+          const SliverPadding(padding: EdgeInsets.only(bottom: 88)),
         ],
       ),
     );

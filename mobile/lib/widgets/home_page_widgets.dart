@@ -71,111 +71,125 @@ class ConversationTile extends StatelessWidget {
 
     final mutedColor = context.colors.onSurfaceVariant;
 
+    const avatarSize = 52.0;
+    final onSurface = context.colors.onSurface;
+    final previewStyle = context.text.bodyMedium?.copyWith(
+      color: hasUnread ? onSurface : mutedColor,
+      fontWeight: hasUnread ? FontWeight.w500 : FontWeight.w400,
+      fontStyle: hasMessage ? FontStyle.normal : FontStyle.italic,
+    );
+
     return InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: Insets.page,
-          vertical: 11,
-        ),
-        child: Row(
-          children: [
-            ElephantAvatar(
-              name: conversation.title,
-              seed: conversation.id,
-              isGroup: conversation.isGroup,
-              size: 54,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: Insets.page,
+              vertical: 12,
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+            child: Row(
+              children: [
+                ElephantAvatar(
+                  name: conversation.title,
+                  seed: conversation.id,
+                  isGroup: conversation.isGroup,
+                  size: avatarSize,
+                ),
+                const SizedBox(width: Insets.lg),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Expanded(
-                        child: Text(
-                          conversation.title.isEmpty
-                              ? (conversation.username ?? 'Unknown')
-                              : conversation.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.text.titleMedium?.copyWith(
-                            fontWeight: hasUnread
-                                ? FontWeight.w800
-                                : FontWeight.w700,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              conversation.title.isEmpty
+                                  ? (conversation.username ?? 'Unknown')
+                                  : conversation.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.text.titleMedium?.copyWith(
+                                fontWeight: hasUnread
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
+                          const SizedBox(width: Insets.sm),
+                          Text(
+                            formatInboxTime(conversation.timestamp),
+                            style: context.text.labelMedium?.copyWith(
+                              color: hasUnread ? onSurface : mutedColor,
+                              fontWeight: hasUnread
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        formatInboxTime(conversation.timestamp),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: hasUnread
-                              ? context.colors.primary
-                              : mutedColor,
-                          fontWeight: hasUnread
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          if (isMe && hasMessage && !conversation.isGroup) ...[
+                            DeliveryTick(
+                              isPending:
+                                  conversation.lastMessageSyncStatus ==
+                                  'pending',
+                              isRead: conversation.lastMessageIsRead ?? false,
+                              color: mutedColor,
+                              size: 15,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
+                          Expanded(
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  if (prefix != null)
+                                    TextSpan(
+                                      text: '$prefix: ',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        color: hasUnread
+                                            ? onSurface
+                                            : mutedColor,
+                                      ),
+                                    ),
+                                  TextSpan(text: preview),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: previewStyle,
+                            ),
+                          ),
+                          if (hasUnread) ...[
+                            const SizedBox(width: Insets.sm),
+                            UnreadBadge(conversation.unreadCount),
+                          ],
+                        ],
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (isMe && hasMessage && !conversation.isGroup) ...[
-                        DeliveryTick(
-                          isPending:
-                              conversation.lastMessageSyncStatus == 'pending',
-                          isRead: conversation.lastMessageIsRead ?? false,
-                          color: mutedColor,
-                        ),
-                        const SizedBox(width: 4),
-                      ],
-                      Expanded(
-                        child: Text.rich(
-                          TextSpan(
-                            children: [
-                              if (prefix != null)
-                                TextSpan(
-                                  text: '$prefix: ',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    color: hasUnread
-                                        ? context.colors.onSurface
-                                        : mutedColor,
-                                  ),
-                                ),
-                              TextSpan(text: preview),
-                            ],
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            color: hasUnread
-                                ? context.colors.onSurface
-                                : mutedColor,
-                            fontStyle: hasMessage
-                                ? FontStyle.normal
-                                : FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                      if (hasUnread) ...[
-                        const SizedBox(width: 8),
-                        UnreadBadge(conversation.unreadCount),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Divider(
+            indent: Insets.page + avatarSize + Insets.lg,
+            endIndent: 0,
+            color: context.tokens.hairline,
+          ),
+        ],
       ),
     );
   }
