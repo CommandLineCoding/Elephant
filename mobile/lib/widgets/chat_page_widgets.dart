@@ -361,19 +361,17 @@ class _QuoteBlock extends StatelessWidget {
             if (author != null)
               Text(
                 author!,
-                style: TextStyle(
+                style: context.text.labelMedium?.copyWith(
                   color: accent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             Text(
               quote.content.replaceAll('\n', ' '),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+              style: context.text.bodySmall?.copyWith(
                 color: base.withValues(alpha: 0.8),
-                fontSize: 13,
               ),
             ),
           ],
@@ -383,7 +381,7 @@ class _QuoteBlock extends StatelessWidget {
   }
 }
 
-/// "Today" / "Yesterday" / date pill between days.
+/// "Today" / "Yesterday" / date label between days.
 class DaySeparator extends StatelessWidget {
   final DateTime date;
 
@@ -404,19 +402,12 @@ class DaySeparator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 14),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-        decoration: BoxDecoration(
-          color: context.tokens.panelFill,
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: context.tokens.hairline),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: Insets.lg),
         child: Text(
           label(date),
-          style: context.text.labelSmall?.copyWith(
-            letterSpacing: 0.3,
-            fontSize: 11.5,
+          style: context.text.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
           ),
         ),
       ),
@@ -432,37 +423,26 @@ class EncryptionNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = isGroup ? context.tokens.warning : context.tokens.success;
     return Center(
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(28, 12, 28, 8),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(Radii.md),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Row(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(40, Insets.lg, 40, Insets.sm),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              isGroup ? Icons.lock_open_rounded : Icons.lock_rounded,
-              size: 16,
-              color: color,
+              isGroup ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+              size: 18,
+              color: isGroup
+                  ? context.tokens.warning
+                  : context.colors.onSurfaceVariant,
             ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                isGroup
-                    ? 'Group messages are protected in transit but are not end-to-end encrypted yet.'
-                    : 'Messages are end-to-end encrypted. Only you and this contact can read them.',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  height: 1.35,
-                ),
-              ),
+            const SizedBox(height: Insets.sm),
+            Text(
+              isGroup
+                  ? 'Group messages are protected in transit but are not end-to-end encrypted yet.'
+                  : 'Messages are end-to-end encrypted. Only you and this contact can read them.',
+              textAlign: TextAlign.center,
+              style: context.text.bodySmall?.copyWith(height: 1.45),
             ),
           ],
         ),
@@ -568,15 +548,15 @@ class ComposerBanner extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(Insets.md, 0, Insets.md, Insets.sm),
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
       decoration: BoxDecoration(
-        color: context.colors.primary.withValues(alpha: 0.08),
+        color: context.colors.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(Radii.md),
         border: Border(
-          left: BorderSide(color: context.colors.primary, width: 3),
+          left: BorderSide(color: context.colors.onSurfaceVariant, width: 3),
         ),
       ),
       child: Row(
         children: [
-          Icon(icon, size: 18, color: context.colors.primary),
+          Icon(icon, size: 18, color: context.colors.onSurfaceVariant),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -585,20 +565,16 @@ class ComposerBanner extends StatelessWidget {
               children: [
                 Text(
                   title,
-                  style: TextStyle(
-                    color: context.colors.primary,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 12.5,
+                  style: context.text.labelMedium?.copyWith(
+                    color: context.colors.onSurface,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 Text(
                   body.replaceAll('\n', ' '),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: context.colors.onSurfaceVariant,
-                    fontSize: 13.5,
-                  ),
+                  style: context.text.bodySmall,
                 ),
               ],
             ),
@@ -614,8 +590,8 @@ class ComposerBanner extends StatelessWidget {
   }
 }
 
-/// Composer: growing text field, byte budget near the limit, and a
-/// gradient send button.
+/// Composer: growing text field, byte budget near the limit, and a send
+/// button.
 class ChatComposer extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -790,11 +766,16 @@ class _ChatComposerState extends State<ChatComposer> {
                   ),
                 ),
                 const SizedBox(width: Insets.sm),
-                AnimatedOpacity(
-                  opacity: canSend ? 1 : 0.4,
+                AnimatedContainer(
                   duration: const Duration(milliseconds: 150),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: canSend
+                        ? context.colors.primary
+                        : context.colors.surfaceContainerHigh,
+                  ),
                   child: Material(
-                    color: context.colors.primary,
+                    type: MaterialType.transparency,
                     shape: const CircleBorder(),
                     child: InkWell(
                       customBorder: const CircleBorder(),
@@ -807,14 +788,16 @@ class _ChatComposerState extends State<ChatComposer> {
                                 padding: const EdgeInsets.all(13),
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  color: tokens.onAccent,
+                                  color: context.colors.onSurfaceVariant,
                                 ),
                               )
                             : Icon(
                                 widget.isEditing
                                     ? Icons.check_rounded
                                     : Icons.arrow_upward_rounded,
-                                color: tokens.onAccent,
+                                color: canSend
+                                    ? tokens.onAccent
+                                    : context.colors.onSurfaceVariant,
                               ),
                       ),
                     ),
