@@ -30,37 +30,29 @@ class HelpAboutPage extends StatelessWidget {
             bottom: Insets.xxl + MediaQuery.paddingOf(context).bottom,
           ),
           children: [
-            Center(
-              child: Container(
-                width: 96,
-                height: 96,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: context.tokens.panelFill,
-                  border: Border.all(color: context.tokens.hairline),
-                  boxShadow: [
-                    BoxShadow(
-                      color: context.colors.primary.withValues(alpha: 0.3),
-                      blurRadius: 36,
-                      offset: const Offset(0, 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Insets.page + 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: Image.asset(
+                      'assets/launcher/elephant.png',
+                      width: 56,
+                      height: 56,
                     ),
-                  ],
-                ),
-                child: Image.asset('assets/launcher/elephant.png'),
-              ),
-            ),
-            const SizedBox(height: Insets.lg),
-            Text(
-              'Elephant',
-              textAlign: TextAlign.center,
-              style: context.text.headlineMedium,
-            ),
-            Text(
-              'Version $appVersion · Open source, AGPL-3.0',
-              textAlign: TextAlign.center,
-              style: context.text.bodyMedium?.copyWith(
-                color: context.colors.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: Insets.lg),
+                  Text('Elephant', style: context.text.headlineSmall),
+                  const SizedBox(height: Insets.xs),
+                  Text(
+                    'Version $appVersion · Open source, AGPL-3.0',
+                    style: context.text.bodyMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SectionLabel('Common questions'),
