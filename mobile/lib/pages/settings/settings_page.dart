@@ -12,7 +12,7 @@ import 'package:mobile/themes/theme_provider.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -20,7 +20,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 void showUserCard(BuildContext context) {
   final user = context.read<AuthState>().currentUser;
   final username = user?.username ?? '';
-  showGlassSheet(
+  showSheet(
     context,
     builder: (sheetContext) {
       final fg = sheetContext.colors.onSurface;
@@ -48,7 +48,7 @@ void showUserCard(BuildContext context) {
               ),
             ),
             const SizedBox(height: Insets.xl),
-            GlassSurface(
+            Panel(
               borderRadius: BorderRadius.circular(Radii.xl),
               padding: const EdgeInsets.all(Insets.xl),
               child: QrImageView(
@@ -70,7 +70,7 @@ void showUserCard(BuildContext context) {
               ),
             ),
             const SizedBox(height: Insets.xl),
-            GradientButton(
+            PrimaryButton(
               label: 'Copy username',
               icon: Icons.copy_rounded,
               onPressed: () {
@@ -108,7 +108,7 @@ class SettingsPage extends StatelessWidget {
           pinned: true,
           automaticallyImplyLeading: !embedded,
           backgroundColor: Colors.transparent,
-          flexibleSpace: const GlassHeaderBackground(),
+          flexibleSpace: const HeaderBackground(),
           title: const Text('You'),
           actions: [
             IconButton(
@@ -127,7 +127,7 @@ class SettingsPage extends StatelessWidget {
               Insets.page,
               0,
             ),
-            child: GlassSurface(
+            child: Panel(
               borderRadius: BorderRadius.circular(Radii.xl),
               child: Material(
                 type: MaterialType.transparency,
@@ -181,7 +181,7 @@ class SettingsPage extends StatelessWidget {
         SliverList.list(
           children: [
             const SectionLabel('Settings'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.person_outline_rounded,
@@ -212,7 +212,7 @@ class SettingsPage extends StatelessWidget {
               ],
             ),
             const SectionLabel('About'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.help_outline_rounded,

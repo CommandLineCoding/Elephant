@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:mobile/themes/app_themes.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 
-/// Small all-caps label above a group of rows.
+/// Small label above a group of rows.
 class SectionLabel extends StatelessWidget {
   final String text;
   final Widget? trailing;
@@ -21,7 +21,12 @@ class SectionLabel extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(text.toUpperCase(), style: context.text.labelSmall),
+            child: Text(
+              text,
+              style: context.text.labelMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
           ?trailing,
         ],
@@ -30,12 +35,12 @@ class SectionLabel extends StatelessWidget {
   }
 }
 
-/// A frosted card holding a column of rows separated by hairlines.
-class GlassSection extends StatelessWidget {
+/// A card holding a column of rows separated by hairlines.
+class Section extends StatelessWidget {
   final List<Widget> children;
   final EdgeInsetsGeometry margin;
 
-  const GlassSection({
+  const Section({
     super.key,
     required this.children,
     this.margin = const EdgeInsets.symmetric(horizontal: Insets.page),
@@ -48,17 +53,13 @@ class GlassSection extends StatelessWidget {
       rows.add(children[i]);
       if (i < children.length - 1) {
         rows.add(
-          Divider(
-            indent: 64,
-            endIndent: 16,
-            color: context.colors.outline.withValues(alpha: 0.6),
-          ),
+          Divider(indent: 56, endIndent: 0, color: context.tokens.hairline),
         );
       }
     }
     return Padding(
       padding: margin,
-      child: GlassSurface(
+      child: Panel(
         child: Material(
           type: MaterialType.transparency,
           child: Column(mainAxisSize: MainAxisSize.min, children: rows),
@@ -68,7 +69,9 @@ class GlassSection extends StatelessWidget {
   }
 }
 
-/// Settings-style row: tinted icon chip, title, optional subtitle and trailing.
+/// Settings-style row: icon, title, optional subtitle and trailing widget.
+/// The icon is neutral unless it carries meaning (a status, or a destructive
+/// action).
 class ElephantTile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -95,7 +98,7 @@ class ElephantTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final color = destructive
         ? context.colors.error
-        : (iconColor ?? context.colors.primary);
+        : (iconColor ?? context.colors.onSurfaceVariant);
     final chevron = showChevron && onTap != null && trailing == null;
 
     return InkWell(
@@ -103,24 +106,12 @@ class ElephantTile extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: Insets.lg,
-          vertical: 13,
+          vertical: 14,
         ),
         child: Row(
           children: [
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: color.withValues(
-                  alpha: context.theme.brightness == Brightness.dark
-                      ? 0.18
-                      : 0.12,
-                ),
-                borderRadius: BorderRadius.circular(Radii.sm),
-              ),
-              child: Icon(icon, size: 19, color: color),
-            ),
-            const SizedBox(width: 14),
+            Icon(icon, size: 22, color: color),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -128,19 +119,13 @@ class ElephantTile extends StatelessWidget {
                   Text(
                     title,
                     style: context.text.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                       color: destructive ? context.colors.error : null,
                     ),
                   ),
                   if (subtitle != null) ...[
                     const SizedBox(height: 2),
-                    Text(
-                      subtitle!,
-                      style: context.text.bodySmall?.copyWith(
-                        color: context.colors.onSurfaceVariant,
-                        height: 1.35,
-                      ),
-                    ),
+                    Text(subtitle!, style: context.text.bodySmall),
                   ],
                 ],
               ),
@@ -149,6 +134,7 @@ class ElephantTile extends StatelessWidget {
             if (chevron)
               Icon(
                 Icons.chevron_right_rounded,
+                size: 22,
                 color: context.colors.onSurfaceVariant,
               ),
           ],
@@ -184,20 +170,17 @@ class EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 84,
-              height: 84,
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                gradient: context.glass.accentGradient,
-                boxShadow: [
-                  BoxShadow(
-                    color: context.colors.primary.withValues(alpha: 0.3),
-                    blurRadius: 30,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
+                color: context.colors.surfaceContainerHigh,
               ),
-              child: Icon(icon, size: 38, color: context.glass.onAccent),
+              child: Icon(
+                icon,
+                size: 30,
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: Insets.xl),
             Text(
@@ -218,7 +201,10 @@ class EmptyState extends StatelessWidget {
               const SizedBox(height: Insets.xl),
               SizedBox(
                 width: 220,
-                child: GradientButton(label: actionLabel!, onPressed: onAction),
+                child: FilledButton(
+                  onPressed: onAction,
+                  child: Text(actionLabel!),
+                ),
               ),
             ],
           ],
@@ -254,10 +240,9 @@ class TagPill extends StatelessWidget {
           ],
           Text(
             label,
-            style: TextStyle(
+            style: context.text.labelMedium?.copyWith(
               color: c,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -266,7 +251,7 @@ class TagPill extends StatelessWidget {
   }
 }
 
-/// Unread counter in the accent gradient.
+/// Unread counter in the accent colour.
 class UnreadBadge extends StatelessWidget {
   final int count;
 
@@ -274,18 +259,18 @@ class UnreadBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AccentGradientBox(
+    return AccentBox(
       borderRadius: BorderRadius.circular(99),
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minWidth: 10),
         child: Text(
           count > 99 ? '99+' : '$count',
           textAlign: TextAlign.center,
-          style: TextStyle(
-            color: context.glass.onAccent,
-            fontSize: 11.5,
-            fontWeight: FontWeight.w800,
+          style: context.text.labelMedium?.copyWith(
+            color: context.tokens.onAccent,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
           ),
         ),
       ),
@@ -293,15 +278,15 @@ class UnreadBadge extends StatelessWidget {
   }
 }
 
-/// Search field styled for glass headers.
-class GlassSearchField extends StatelessWidget {
+/// Search field for list headers.
+class SearchField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String>? onChanged;
   final bool autofocus;
   final FocusNode? focusNode;
 
-  const GlassSearchField({
+  const SearchField({
     super.key,
     required this.controller,
     required this.hint,
@@ -327,15 +312,15 @@ class GlassSearchField extends StatelessWidget {
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(vertical: 12),
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.xl),
+              borderRadius: BorderRadius.circular(Radii.md),
               borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.xl),
+              borderRadius: BorderRadius.circular(Radii.md),
               borderSide: BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(Radii.xl),
+              borderRadius: BorderRadius.circular(Radii.md),
               borderSide: BorderSide(color: context.colors.primary, width: 1.4),
             ),
             suffixIcon: value.text.isEmpty

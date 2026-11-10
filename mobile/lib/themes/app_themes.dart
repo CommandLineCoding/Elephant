@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 enum ThemeType { frost, aura, onyx, nebula }
 
 /// Raw colors for one Elephant theme. Every screen reads these through
-/// [ThemeData.colorScheme] and the [GlassTokens] extension, never directly.
+/// [ThemeData.colorScheme] and the [ElephantTokens] extension, never directly.
+///
+/// Each theme has one accent. It marks the primary action, your own messages,
+/// unread counts and focus; everything else is neutral.
 class ElephantPalette {
   final String name;
   final String tagline;
@@ -11,13 +14,11 @@ class ElephantPalette {
   final Color background;
   final Color surface;
   final Color accent;
-  final Color accentAlt;
   final Color onAccent;
   final Color text;
   final Color muted;
   final Color outline;
   final Color incomingBubble;
-  final List<Color> ambient;
 
   const ElephantPalette({
     required this.name,
@@ -26,92 +27,68 @@ class ElephantPalette {
     required this.background,
     required this.surface,
     required this.accent,
-    required this.accentAlt,
     required this.onAccent,
     required this.text,
     required this.muted,
     required this.outline,
     required this.incomingBubble,
-    required this.ambient,
   });
 
   bool get isDark => brightness == Brightness.dark;
 }
 
-/// Theme-specific design tokens that Material's [ColorScheme] can't express:
-/// the frosted-glass surfaces, gradient accents and ambient glow behind them.
+/// Theme-specific colors that Material's [ColorScheme] can't express.
 @immutable
-class GlassTokens extends ThemeExtension<GlassTokens> {
-  final Color glassFill;
-  final Color glassBorder;
-  final Color glassStrongFill;
-  final LinearGradient accentGradient;
+class ElephantTokens extends ThemeExtension<ElephantTokens> {
+  /// Fill of cards, sheets and other raised surfaces.
+  final Color panelFill;
+
+  /// One-pixel borders and dividers.
+  final Color hairline;
   final Color onAccent;
   final Color incomingBubble;
   final Color incomingText;
   final Color readTick;
   final Color success;
   final Color warning;
-  final List<Color> ambient;
-  final double blur;
 
-  const GlassTokens({
-    required this.glassFill,
-    required this.glassBorder,
-    required this.glassStrongFill,
-    required this.accentGradient,
+  const ElephantTokens({
+    required this.panelFill,
+    required this.hairline,
     required this.onAccent,
     required this.incomingBubble,
     required this.incomingText,
     required this.readTick,
     required this.success,
     required this.warning,
-    required this.ambient,
-    this.blur = 18,
   });
 
   @override
-  GlassTokens copyWith({double? blur}) {
-    return GlassTokens(
-      glassFill: glassFill,
-      glassBorder: glassBorder,
-      glassStrongFill: glassStrongFill,
-      accentGradient: accentGradient,
+  ElephantTokens copyWith({Color? panelFill, Color? hairline}) {
+    return ElephantTokens(
+      panelFill: panelFill ?? this.panelFill,
+      hairline: hairline ?? this.hairline,
       onAccent: onAccent,
       incomingBubble: incomingBubble,
       incomingText: incomingText,
       readTick: readTick,
       success: success,
       warning: warning,
-      ambient: ambient,
-      blur: blur ?? this.blur,
     );
   }
 
   @override
-  GlassTokens lerp(ThemeExtension<GlassTokens>? other, double t) {
-    if (other is! GlassTokens) return this;
-    return GlassTokens(
-      glassFill: Color.lerp(glassFill, other.glassFill, t)!,
-      glassBorder: Color.lerp(glassBorder, other.glassBorder, t)!,
-      glassStrongFill: Color.lerp(glassStrongFill, other.glassStrongFill, t)!,
-      accentGradient: LinearGradient.lerp(
-        accentGradient,
-        other.accentGradient,
-        t,
-      )!,
+  ElephantTokens lerp(ThemeExtension<ElephantTokens>? other, double t) {
+    if (other is! ElephantTokens) return this;
+    return ElephantTokens(
+      panelFill: Color.lerp(panelFill, other.panelFill, t)!,
+      hairline: Color.lerp(hairline, other.hairline, t)!,
       onAccent: Color.lerp(onAccent, other.onAccent, t)!,
       incomingBubble: Color.lerp(incomingBubble, other.incomingBubble, t)!,
       incomingText: Color.lerp(incomingText, other.incomingText, t)!,
       readTick: Color.lerp(readTick, other.readTick, t)!,
       success: Color.lerp(success, other.success, t)!,
       warning: Color.lerp(warning, other.warning, t)!,
-      ambient: List.generate(
-        ambient.length,
-        (i) =>
-            Color.lerp(ambient[i], other.ambient[i % other.ambient.length], t)!,
-      ),
-      blur: blur + (other.blur - blur) * t,
     );
   }
 }
@@ -130,83 +107,78 @@ class Insets {
 }
 
 class Radii {
-  static const double sm = 10;
-  static const double md = 16;
-  static const double lg = 22;
-  static const double xl = 28;
-  static const double bubble = 20;
+  static const double sm = 8;
+  static const double md = 12;
+  static const double lg = 16;
+  static const double xl = 22;
+  static const double bubble = 18;
 }
 
 extension ElephantThemeX on BuildContext {
   ThemeData get theme => Theme.of(this);
   ColorScheme get colors => Theme.of(this).colorScheme;
-  GlassTokens get glass => Theme.of(this).extension<GlassTokens>()!;
+  ElephantTokens get tokens => Theme.of(this).extension<ElephantTokens>()!;
   TextTheme get text => Theme.of(this).textTheme;
 }
 
 class AppThemes {
+  /// Bundled in assets/fonts/Inter (SIL Open Font License).
+  static const String fontFamily = 'Inter';
+
   static const ElephantPalette frostPalette = ElephantPalette(
     name: 'Frost',
-    tagline: 'Crisp, cool and bright',
+    tagline: 'Light, cool and clear',
     brightness: Brightness.light,
-    background: Color(0xFFF2F5FB),
+    background: Color(0xFFF5F6F8),
     surface: Color(0xFFFFFFFF),
-    accent: Color(0xFF2F6BFF),
-    accentAlt: Color(0xFF14B8D4),
+    accent: Color(0xFF2B59E8),
     onAccent: Color(0xFFFFFFFF),
-    text: Color(0xFF0F172A),
-    muted: Color(0xFF64748B),
-    outline: Color(0xFFDCE3EE),
+    text: Color(0xFF111827),
+    muted: Color(0xFF646C7B),
+    outline: Color(0xFFE2E5EA),
     incomingBubble: Color(0xFFFFFFFF),
-    ambient: [Color(0xFF7FA6FF), Color(0xFF6FE3F0), Color(0xFFC3B5FF)],
   );
 
   static const ElephantPalette auraPalette = ElephantPalette(
     name: 'Aura',
-    tagline: 'Warm light, soft glow',
+    tagline: 'Light and warm',
     brightness: Brightness.light,
-    background: Color(0xFFFFF7F1),
+    background: Color(0xFFFAF6F0),
     surface: Color(0xFFFFFFFF),
-    accent: Color(0xFFEF6A45),
-    accentAlt: Color(0xFFF6A93B),
+    accent: Color(0xFFC2491F),
     onAccent: Color(0xFFFFFFFF),
-    text: Color(0xFF2A1A14),
-    muted: Color(0xFF8C7166),
-    outline: Color(0xFFF0DFD5),
+    text: Color(0xFF261A12),
+    muted: Color(0xFF7A665A),
+    outline: Color(0xFFEBE2D6),
     incomingBubble: Color(0xFFFFFFFF),
-    ambient: [Color(0xFFFFB38A), Color(0xFFFFD27A), Color(0xFFF7A1B5)],
   );
 
   static const ElephantPalette onyxPalette = ElephantPalette(
     name: 'Onyx',
-    tagline: 'Pure dark, quiet contrast',
+    tagline: 'Dark, black and white',
     brightness: Brightness.dark,
-    background: Color(0xFF0A0A0C),
-    surface: Color(0xFF16161A),
-    accent: Color(0xFFF2F2F4),
-    accentAlt: Color(0xFFA9A9B2),
-    onAccent: Color(0xFF0A0A0C),
-    text: Color(0xFFF4F4F6),
-    muted: Color(0xFF8E8E98),
-    outline: Color(0xFF2A2A30),
-    incomingBubble: Color(0xFF1E1E23),
-    ambient: [Color(0xFF3A3A44), Color(0xFF26262E), Color(0xFF4A4A55)],
+    background: Color(0xFF0B0B0C),
+    surface: Color(0xFF151517),
+    accent: Color(0xFFF2F2F3),
+    onAccent: Color(0xFF0B0B0C),
+    text: Color(0xFFF2F2F3),
+    muted: Color(0xFF8A8A93),
+    outline: Color(0xFF27272B),
+    incomingBubble: Color(0xFF1C1C1F),
   );
 
   static const ElephantPalette nebulaPalette = ElephantPalette(
     name: 'Nebula',
-    tagline: 'Deep space, vivid light',
+    tagline: 'Dark with a blue accent',
     brightness: Brightness.dark,
-    background: Color(0xFF0B0916),
-    surface: Color(0xFF17132B),
-    accent: Color(0xFF8B5CF6),
-    accentAlt: Color(0xFFEC4899),
+    background: Color(0xFF0E1015),
+    surface: Color(0xFF16181F),
+    accent: Color(0xFF5260EC),
     onAccent: Color(0xFFFFFFFF),
-    text: Color(0xFFEFEAFF),
-    muted: Color(0xFFA49BC8),
-    outline: Color(0xFF2C2547),
-    incomingBubble: Color(0xFF1F1A38),
-    ambient: [Color(0xFF6D3EF0), Color(0xFFD93A8C), Color(0xFF2E5BFF)],
+    text: Color(0xFFECEEF3),
+    muted: Color(0xFF8B91A1),
+    outline: Color(0xFF262932),
+    incomingBubble: Color(0xFF1D2029),
   );
 
   static ElephantPalette paletteOf(ThemeType type) {
@@ -235,9 +207,9 @@ class AppThemes {
         ).copyWith(
           primary: p.accent,
           onPrimary: p.onAccent,
-          secondary: p.accentAlt,
+          secondary: p.accent,
           onSecondary: p.onAccent,
-          tertiary: p.accentAlt,
+          tertiary: p.accent,
           surface: p.surface,
           onSurface: p.text,
           onSurfaceVariant: p.muted,
@@ -257,131 +229,128 @@ class AppThemes {
             p.surface,
           ),
           surfaceContainerHighest: Color.alphaBlend(
-            p.text.withValues(alpha: 0.08),
+            p.text.withValues(alpha: 0.09),
             p.surface,
           ),
           error: p.isDark ? const Color(0xFFFF6B7A) : const Color(0xFFD92D3A),
         );
 
-    final glass = GlassTokens(
-      glassFill: p.surface.withValues(alpha: p.isDark ? 0.58 : 0.68),
-      glassStrongFill: p.surface.withValues(alpha: p.isDark ? 0.82 : 0.88),
-      glassBorder: p.isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : Colors.white.withValues(alpha: 0.75),
-      accentGradient: LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [p.accent, p.accentAlt],
-      ),
+    final tokens = ElephantTokens(
+      panelFill: p.surface,
+      hairline: p.outline,
       onAccent: p.onAccent,
-      incomingBubble: p.isDark
-          ? p.incomingBubble.withValues(alpha: 0.86)
-          : p.incomingBubble.withValues(alpha: 0.9),
+      incomingBubble: p.incomingBubble,
       incomingText: p.text,
-      readTick: p.isDark ? const Color(0xFF7DD3FC) : const Color(0xFF0EA5E9),
-      success: p.isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
-      warning: p.isDark ? const Color(0xFFFBBF24) : const Color(0xFFD97706),
-      ambient: p.ambient,
+      readTick: p.isDark ? const Color(0xFF7DD3FC) : const Color(0xFF0B7AC4),
+      success: p.isDark ? const Color(0xFF4ADE80) : const Color(0xFF15803D),
+      warning: p.isDark ? const Color(0xFFFBBF24) : const Color(0xFFB45309),
     );
 
     final base = ThemeData(
       useMaterial3: true,
       brightness: p.brightness,
       colorScheme: scheme,
+      fontFamily: fontFamily,
     );
 
-    final textTheme = base.textTheme
-        .apply(bodyColor: p.text, displayColor: p.text)
-        .copyWith(
-          headlineMedium: base.textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w800,
-            letterSpacing: -0.6,
-            color: p.text,
-          ),
-          titleLarge: base.textTheme.titleLarge?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
-            color: p.text,
-          ),
-          titleMedium: base.textTheme.titleMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            letterSpacing: -0.1,
-            color: p.text,
-          ),
-          labelLarge: base.textTheme.labelLarge?.copyWith(
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.1,
-          ),
-          labelSmall: base.textTheme.labelSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: 0.8,
-            color: p.muted,
-          ),
-        );
+    TextStyle style(
+      double size,
+      FontWeight weight,
+      double height, {
+      double spacing = 0,
+      Color? color,
+    }) {
+      return TextStyle(
+        fontFamily: fontFamily,
+        fontSize: size,
+        fontWeight: weight,
+        height: height,
+        letterSpacing: spacing,
+        color: color ?? p.text,
+      );
+    }
+
+    // A deliberately small scale: two heading sizes, three body sizes and a
+    // caption. Weights carry the hierarchy.
+    final textTheme = base.textTheme.copyWith(
+      displaySmall: style(34, FontWeight.w700, 1.15, spacing: -1),
+      headlineMedium: style(28, FontWeight.w700, 1.2, spacing: -0.7),
+      headlineSmall: style(22, FontWeight.w700, 1.25, spacing: -0.4),
+      titleLarge: style(20, FontWeight.w600, 1.3, spacing: -0.3),
+      titleMedium: style(16, FontWeight.w600, 1.35, spacing: -0.15),
+      titleSmall: style(14, FontWeight.w600, 1.35, spacing: -0.05),
+      bodyLarge: style(16, FontWeight.w400, 1.4, spacing: -0.1),
+      bodyMedium: style(14, FontWeight.w400, 1.4),
+      bodySmall: style(12.5, FontWeight.w400, 1.35, color: p.muted),
+      labelLarge: style(14, FontWeight.w600, 1.3),
+      labelMedium: style(12, FontWeight.w500, 1.3, color: p.muted),
+      labelSmall: style(11, FontWeight.w500, 1.3, spacing: 0.1, color: p.muted),
+    );
 
     final inputBorder = OutlineInputBorder(
       borderRadius: BorderRadius.circular(Radii.md),
-      borderSide: BorderSide(color: p.outline.withValues(alpha: 0.0)),
+      borderSide: BorderSide(color: p.outline),
     );
 
     return base.copyWith(
       scaffoldBackgroundColor: p.background,
       canvasColor: p.background,
       textTheme: textTheme,
-      extensions: [glass],
-      splashFactory: InkSparkle.splashFactory,
-      dividerTheme: DividerThemeData(
-        color: p.outline.withValues(alpha: p.isDark ? 0.7 : 1),
-        thickness: 1,
-        space: 1,
-      ),
+      primaryTextTheme: textTheme,
+      extensions: [tokens],
+      splashFactory: InkRipple.splashFactory,
+      dividerTheme: DividerThemeData(color: p.outline, thickness: 1, space: 1),
       appBarTheme: AppBarTheme(
-        backgroundColor: Colors.transparent,
+        backgroundColor: p.background,
         surfaceTintColor: Colors.transparent,
         foregroundColor: p.text,
         elevation: 0,
         scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: textTheme.titleLarge?.copyWith(fontSize: 20),
+        titleTextStyle: textTheme.titleLarge,
         iconTheme: IconThemeData(color: p.text),
       ),
       iconTheme: IconThemeData(color: p.text),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: scheme.surfaceContainerHigh.withValues(
-          alpha: p.isDark ? 0.7 : 0.9,
-        ),
-        hintStyle: TextStyle(color: p.muted.withValues(alpha: 0.8)),
+        fillColor: p.surface,
+        hintStyle: TextStyle(color: p.muted.withValues(alpha: 0.85)),
         labelStyle: TextStyle(color: p.muted),
         floatingLabelStyle: TextStyle(
           color: p.accent,
           fontWeight: FontWeight.w600,
         ),
+        helperStyle: textTheme.bodySmall,
         prefixIconColor: p.muted,
         suffixIconColor: p.muted,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 16,
-          vertical: 14,
+          vertical: 15,
         ),
         border: inputBorder,
         enabledBorder: inputBorder,
         focusedBorder: inputBorder.copyWith(
-          borderSide: BorderSide(color: p.accent, width: 1.6),
+          borderSide: BorderSide(
+            color: p.isDark && p.accent.computeLuminance() > 0.8
+                ? p.muted
+                : p.accent,
+            width: 1.5,
+          ),
         ),
         errorBorder: inputBorder.copyWith(
-          borderSide: BorderSide(color: scheme.error, width: 1.2),
+          borderSide: BorderSide(color: scheme.error),
         ),
         focusedErrorBorder: inputBorder.copyWith(
-          borderSide: BorderSide(color: scheme.error, width: 1.6),
+          borderSide: BorderSide(color: scheme.error, width: 1.5),
         ),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           backgroundColor: p.accent,
           foregroundColor: p.onAccent,
-          minimumSize: const Size(64, 50),
-          textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+          minimumSize: const Size(64, 48),
+          elevation: 0,
+          textStyle: textTheme.labelLarge?.copyWith(fontSize: 15),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Radii.md),
           ),
@@ -390,9 +359,9 @@ class AppThemes {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: p.text,
-          minimumSize: const Size(64, 50),
+          minimumSize: const Size(64, 48),
           side: BorderSide(color: p.outline),
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          textStyle: textTheme.labelLarge?.copyWith(fontSize: 15),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Radii.md),
           ),
@@ -403,7 +372,7 @@ class AppThemes {
           foregroundColor: p.isDark && p.accent.computeLuminance() > 0.8
               ? p.text
               : p.accent,
-          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+          textStyle: textTheme.labelLarge,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(Radii.sm),
           ),
@@ -413,12 +382,8 @@ class AppThemes {
         iconColor: p.muted,
         textColor: p.text,
         contentPadding: const EdgeInsets.symmetric(horizontal: Insets.lg),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Radii.md),
-        ),
         titleTextStyle: textTheme.bodyLarge?.copyWith(
-          fontWeight: FontWeight.w600,
-          color: p.text,
+          fontWeight: FontWeight.w500,
         ),
         subtitleTextStyle: textTheme.bodyMedium?.copyWith(color: p.muted),
       ),
@@ -427,6 +392,7 @@ class AppThemes {
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.xl),
+          side: BorderSide(color: p.outline),
         ),
         titleTextStyle: textTheme.titleLarge,
         contentTextStyle: textTheme.bodyMedium?.copyWith(
@@ -434,7 +400,7 @@ class AppThemes {
           height: 1.45,
         ),
       ),
-      bottomSheetTheme: BottomSheetThemeData(
+      bottomSheetTheme: const BottomSheetThemeData(
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         modalBackgroundColor: Colors.transparent,
@@ -443,14 +409,12 @@ class AppThemes {
       ),
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
-        backgroundColor: p.isDark
-            ? const Color(0xFFF4F4F6)
-            : const Color(0xFF14161C),
-        contentTextStyle: TextStyle(
-          color: p.isDark ? const Color(0xFF14161C) : Colors.white,
+        backgroundColor: p.isDark ? const Color(0xFFECEEF3) : p.text,
+        contentTextStyle: textTheme.bodyMedium?.copyWith(
+          color: p.isDark ? const Color(0xFF111318) : Colors.white,
           fontWeight: FontWeight.w500,
         ),
-        actionTextColor: p.isDark ? p.accent.withValues(alpha: 1) : p.accentAlt,
+        actionTextColor: p.isDark ? p.accent : Colors.white,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.md),
         ),
@@ -459,10 +423,10 @@ class AppThemes {
       popupMenuTheme: PopupMenuThemeData(
         color: p.surface,
         surfaceTintColor: Colors.transparent,
-        elevation: 8,
-        shadowColor: Colors.black.withValues(alpha: 0.2),
+        elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.md),
+          side: BorderSide(color: p.outline),
         ),
         textStyle: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w500),
       ),
@@ -482,7 +446,7 @@ class AppThemes {
         backgroundColor: scheme.surfaceContainerHigh,
         selectedColor: p.accent.withValues(alpha: 0.16),
         side: BorderSide.none,
-        labelStyle: TextStyle(color: p.text, fontWeight: FontWeight.w600),
+        labelStyle: textTheme.labelLarge,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.xl),
         ),
@@ -491,10 +455,32 @@ class AppThemes {
         color: p.accent,
         linearTrackColor: p.accent.withValues(alpha: 0.12),
       ),
+      navigationBarTheme: NavigationBarThemeData(
+        backgroundColor: p.background,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        height: 64,
+        indicatorColor: Colors.transparent,
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => textTheme.labelMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: states.contains(WidgetState.selected) ? p.text : p.muted,
+          ),
+        ),
+        iconTheme: WidgetStateProperty.resolveWith(
+          (states) => IconThemeData(
+            size: 24,
+            color: states.contains(WidgetState.selected) ? p.text : p.muted,
+          ),
+        ),
+      ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: p.accent,
         foregroundColor: p.onAccent,
         elevation: 0,
+        focusElevation: 0,
+        hoverElevation: 0,
+        highlightElevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(Radii.lg),
         ),

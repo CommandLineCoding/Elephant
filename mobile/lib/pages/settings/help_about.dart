@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/components.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class HelpAboutPage extends StatelessWidget {
@@ -22,9 +22,8 @@ class HelpAboutPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: const GlassAppBar(title: Text('Help & about')),
-      body: AmbientBackground(
-        intensity: 0.8,
+      appBar: const ElephantAppBar(title: Text('Help & about')),
+      body: ScreenBackground(
         child: ListView(
           padding: EdgeInsets.only(
             top: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.xl,
@@ -38,8 +37,8 @@ class HelpAboutPage extends StatelessWidget {
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: context.glass.glassStrongFill,
-                  border: Border.all(color: context.glass.glassBorder),
+                  color: context.tokens.panelFill,
+                  border: Border.all(color: context.tokens.hairline),
                   boxShadow: [
                     BoxShadow(
                       color: context.colors.primary.withValues(alpha: 0.3),
@@ -65,7 +64,7 @@ class HelpAboutPage extends StatelessWidget {
               ),
             ),
             const SectionLabel('Common questions'),
-            const GlassSection(
+            const Section(
               children: [
                 _Faq(
                   question: 'Who can read my messages?',
@@ -103,18 +102,18 @@ class HelpAboutPage extends StatelessWidget {
               ],
             ),
             const SectionLabel('Known limitations'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.groups_outlined,
-                  iconColor: context.glass.warning,
+                  iconColor: context.tokens.warning,
                   title: 'Groups aren\'t end-to-end encrypted yet',
                   subtitle: 'Sender Key encryption for groups is planned.',
                   showChevron: false,
                 ),
                 ElephantTile(
                   icon: Icons.devices_outlined,
-                  iconColor: context.glass.warning,
+                  iconColor: context.tokens.warning,
                   title: 'One device per account',
                   subtitle:
                       'Signing in on a new device creates new keys; contacts will need to re-verify you.',
@@ -122,7 +121,7 @@ class HelpAboutPage extends StatelessWidget {
                 ),
                 ElephantTile(
                   icon: Icons.edit_note_rounded,
-                  iconColor: context.glass.warning,
+                  iconColor: context.tokens.warning,
                   title: 'Edits aren\'t live',
                   subtitle:
                       'Edited messages update for others when their chat next syncs.',
@@ -131,7 +130,7 @@ class HelpAboutPage extends StatelessWidget {
               ],
             ),
             const SectionLabel('Support'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.bug_report_outlined,

@@ -6,7 +6,7 @@ import 'package:mobile/services/push/push_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Turns new-message notifications on or off. They work through UnifiedPush
@@ -183,7 +183,7 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
 
     return Scaffold(
       extendBodyBehindAppBar: true,
-      appBar: GlassAppBar(
+      appBar: ElephantAppBar(
         title: const Text('Notifications'),
         actions: [
           if (_busy)
@@ -197,8 +197,7 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
             ),
         ],
       ),
-      body: AmbientBackground(
-        intensity: 0.7,
+      body: ScreenBackground(
         child: ListView(
           padding: EdgeInsets.only(
             top: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.lg,
@@ -207,18 +206,18 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
           children: [
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: GlassSurface(
+              child: Panel(
                 borderRadius: BorderRadius.circular(Radii.xl),
                 padding: const EdgeInsets.all(Insets.xl),
                 child: Column(
                   children: [
-                    AccentGradientBox(
+                    AccentBox(
                       shape: BoxShape.circle,
                       padding: const EdgeInsets.all(16),
                       child: Icon(
                         Icons.notifications_rounded,
                         size: 34,
-                        color: context.glass.onAccent,
+                        color: context.tokens.onAccent,
                       ),
                     ),
                     const SizedBox(height: Insets.lg),
@@ -244,7 +243,7 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
               ),
             ),
             const SectionLabel('Message alerts'),
-            GlassSection(
+            Section(
               children: [
                 ElephantTile(
                   icon: Icons.notifications_active_outlined,
@@ -280,7 +279,7 @@ class _NotificationsSettingsPageState extends State<NotificationsSettingsPage> {
                   Insets.page,
                   0,
                 ),
-                child: GlassSurface(
+                child: Panel(
                   borderRadius: BorderRadius.circular(Radii.lg),
                   padding: const EdgeInsets.all(Insets.lg),
                   child: Column(

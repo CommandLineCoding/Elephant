@@ -14,7 +14,7 @@ import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
@@ -94,7 +94,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
       return;
     }
 
-    final verified = await showGlassSheet<bool>(
+    final verified = await showSheet<bool>(
       context,
       title: 'Verify safety number',
       builder: (_) => _SafetyNumberSheet(
@@ -260,7 +260,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
       },
       child: Scaffold(
         extendBodyBehindAppBar: true,
-        appBar: GlassAppBar(
+        appBar: ElephantAppBar(
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_rounded),
             onPressed: _close,
@@ -278,8 +278,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
               ),
           ],
         ),
-        body: AmbientBackground(
-          intensity: 0.7,
+        body: ScreenBackground(
           child: ListView(
             padding: EdgeInsets.only(
               top:
@@ -350,7 +349,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
           const SizedBox(height: Insets.sm),
           TagPill(
             'Verified',
-            color: context.glass.success,
+            color: context.tokens.success,
             icon: Icons.verified_rounded,
           ),
         ],
@@ -395,11 +394,11 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
   List<Widget> _buildDirectSections() {
     return [
       const SectionLabel('Encryption'),
-      GlassSection(
+      Section(
         children: [
           ElephantTile(
             icon: Icons.verified_user_outlined,
-            iconColor: context.glass.success,
+            iconColor: context.tokens.success,
             title: 'Verify safety number',
             subtitle: _isVerified == true
                 ? 'You verified $_name\'s keys.'
@@ -409,14 +408,14 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
                 : TagPill(
                     _isVerified! ? 'Verified' : 'Not verified',
                     color: _isVerified!
-                        ? context.glass.success
+                        ? context.tokens.success
                         : context.colors.onSurfaceVariant,
                   ),
             onTap: _openSafetyNumber,
           ),
           ElephantTile(
             icon: Icons.restart_alt_rounded,
-            iconColor: context.glass.warning,
+            iconColor: context.tokens.warning,
             title: 'Reset secure session',
             subtitle: 'Fixes messages that won\'t decrypt.',
             onTap: _resetSession,
@@ -447,7 +446,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     return [
       if (iAmAdmin) ...[
         const SectionLabel('Settings'),
-        GlassSection(
+        Section(
           children: [
             ElephantTile(
               icon: Icons.edit_outlined,
@@ -474,7 +473,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
           child: Center(child: CircularProgressIndicator()),
         )
       else
-        GlassSection(
+        Section(
           children: [
             if (iAmAdmin)
               ElephantTile(
@@ -539,7 +538,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
         ),
       ),
       const SizedBox(height: Insets.xl),
-      GlassSection(
+      Section(
         children: [
           ElephantTile(
             icon: Icons.logout_rounded,
@@ -554,7 +553,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
   }
 
   void _openAddMembers() {
-    showGlassSheet(
+    showSheet(
       context,
       title: 'Add members',
       builder: (_) => _AddMembersSheet(groupId: widget.chatId),
@@ -578,7 +577,7 @@ class _QuickAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: GlassSurface(
+      child: Panel(
         borderRadius: BorderRadius.circular(Radii.lg),
         child: Material(
           type: MaterialType.transparency,
@@ -666,7 +665,7 @@ class _SafetyNumberSheetState extends State<_SafetyNumberSheet> {
             ),
           ),
           const SizedBox(height: Insets.xl),
-          GlassSurface(
+          Panel(
             borderRadius: BorderRadius.circular(Radii.lg),
             padding: const EdgeInsets.all(Insets.lg),
             child: QrImageView(
@@ -708,7 +707,7 @@ class _SafetyNumberSheetState extends State<_SafetyNumberSheet> {
             label: const Text('Copy'),
           ),
           const SizedBox(height: Insets.sm),
-          GlassSurface(
+          Panel(
             borderRadius: BorderRadius.circular(Radii.md),
             child: SwitchListTile(
               value: _verified,
@@ -720,7 +719,7 @@ class _SafetyNumberSheetState extends State<_SafetyNumberSheet> {
             ),
           ),
           const SizedBox(height: Insets.lg),
-          GradientButton(
+          PrimaryButton(
             label: 'Done',
             onPressed: () => Navigator.pop(context, _verified),
           ),
@@ -799,7 +798,7 @@ class _AddMembersSheetState extends State<_AddMembersSheet> {
               Insets.xl,
               Insets.sm,
             ),
-            child: GlassSearchField(
+            child: SearchField(
               controller: _search,
               hint: 'Search by name or username',
               onChanged: (value) {

@@ -4,7 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:mobile/pages/settings/appearance.dart';
 import 'package:mobile/pages/settings/server_settings.dart';
 import 'package:mobile/themes/app_themes.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../controllers/auth_state.dart';
@@ -82,9 +82,7 @@ class _LoginPageState extends State<LoginPage> {
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      body: AmbientBackground(
-        animate: true,
-        intensity: 1.2,
+      body: ScreenBackground(
         child: SafeArea(
           child: Stack(
             children: [
@@ -104,19 +102,9 @@ class _LoginPageState extends State<LoginPage> {
                           [
                                 _Brand(isRegister: isRegister),
                                 const SizedBox(height: Insets.xxl),
-                                GlassSurface(
-                                  strong: true,
+                                Panel(
                                   borderRadius: BorderRadius.circular(Radii.xl),
                                   padding: const EdgeInsets.all(Insets.xl),
-                                  shadows: [
-                                    BoxShadow(
-                                      color: Colors.black.withValues(
-                                        alpha: 0.08,
-                                      ),
-                                      blurRadius: 40,
-                                      offset: const Offset(0, 20),
-                                    ),
-                                  ],
                                   child: _buildForm(auth),
                                 ),
                                 const SizedBox(height: Insets.xl),
@@ -134,7 +122,7 @@ class _LoginPageState extends State<LoginPage> {
               Positioned(
                 top: Insets.sm,
                 right: Insets.lg,
-                child: GlassSurface(
+                child: Panel(
                   borderRadius: BorderRadius.circular(99),
                   child: IconButton(
                     tooltip: 'Appearance',
@@ -251,7 +239,7 @@ class _LoginPageState extends State<LoginPage> {
                 AuthState.validatePassword(v, isRegister: registering),
           ),
           const SizedBox(height: Insets.xl),
-          GradientButton(
+          PrimaryButton(
             label: registering ? 'Create account' : 'Sign in',
             isLoading: auth.isLoading,
             onPressed: _submit,
@@ -323,8 +311,8 @@ class _Brand extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: context.glass.glassStrongFill,
-            border: Border.all(color: context.glass.glassBorder),
+            color: context.tokens.panelFill,
+            border: Border.all(color: context.tokens.hairline),
             boxShadow: [
               BoxShadow(
                 color: context.colors.primary.withValues(alpha: 0.35),
@@ -419,7 +407,7 @@ class _ModeSwitch extends StatelessWidget {
                 : Alignment.centerLeft,
             child: FractionallySizedBox(
               widthFactor: 0.5,
-              child: AccentGradientBox(
+              child: AccentBox(
                 borderRadius: BorderRadius.circular(99),
                 child: const SizedBox.expand(),
               ),
@@ -453,7 +441,7 @@ class _ModeSwitch extends StatelessWidget {
               fontWeight: FontWeight.w700,
               fontSize: 14,
               color: selected
-                  ? context.glass.onAccent
+                  ? context.tokens.onAccent
                   : context.colors.onSurfaceVariant,
             ),
             child: Text(label),
@@ -509,7 +497,7 @@ class _OAuthButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassSurface(
+    return Panel(
       borderRadius: BorderRadius.circular(Radii.md),
       child: Material(
         type: MaterialType.transparency,
@@ -553,7 +541,7 @@ class _ServerChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: GlassSurface(
+      child: Panel(
         borderRadius: BorderRadius.circular(99),
         child: Material(
           type: MaterialType.transparency,

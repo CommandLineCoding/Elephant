@@ -14,7 +14,7 @@ import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/home_page_widgets.dart';
 import 'package:mobile/widgets/ui/components.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 
 class HomePage extends StatefulWidget {
@@ -82,7 +82,7 @@ class _HomePageState extends State<HomePage> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: Insets.lg),
-            GlassSurface(
+            Panel(
               borderRadius: BorderRadius.circular(Radii.md),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
@@ -118,9 +118,7 @@ class _HomePageState extends State<HomePage> {
     final inbox = context.watch<InboxController>();
 
     return Scaffold(
-      extendBody: true,
-      body: AmbientBackground(
-        intensity: 0.55,
+      body: ScreenBackground(
         child: IndexedStack(
           index: _tab,
           children: const [
@@ -147,7 +145,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             ),
-      bottomNavigationBar: _GlassNavBar(
+      bottomNavigationBar: _NavBar(
         index: _tab,
         unreadChats: inbox.unreadChats,
         onChanged: (i) {
@@ -314,7 +312,7 @@ class _ChatsTabState extends State<_ChatsTab> {
                 Insets.page,
                 Insets.sm,
               ),
-              child: GlassSearchField(
+              child: SearchField(
                 controller: _searchController,
                 hint: 'Search chats',
                 onChanged: (value) => setState(() => _query = value.trim()),
@@ -433,7 +431,7 @@ class _GroupsTab extends StatelessWidget {
   }
 }
 
-/// Large title that collapses into a frosted bar on scroll.
+/// Large title that collapses into a plain bar on scroll.
 class _HomeHeader extends StatelessWidget {
   final String title;
   final List<Widget>? actions;
@@ -453,7 +451,7 @@ class _HomeHeader extends StatelessWidget {
       flexibleSpace: Stack(
         fit: StackFit.expand,
         children: [
-          const GlassHeaderBackground(),
+          const HeaderBackground(),
           FlexibleSpaceBar(
             titlePadding: const EdgeInsetsDirectional.only(
               start: Insets.page,
@@ -463,8 +461,7 @@ class _HomeHeader extends StatelessWidget {
             title: Text(
               title,
               style: context.text.titleLarge?.copyWith(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -484,7 +481,7 @@ class _ConnectionBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final visible = status != ConnectionStatus.connected;
     final isOffline = status == ConnectionStatus.offline;
-    final color = isOffline ? context.colors.error : context.glass.warning;
+    final color = isOffline ? context.colors.error : context.tokens.warning;
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 250),
@@ -498,7 +495,7 @@ class _ConnectionBanner extends StatelessWidget {
                 Insets.page,
                 Insets.sm,
               ),
-              child: GlassSurface(
+              child: Panel(
                 borderRadius: BorderRadius.circular(Radii.md),
                 tint: color.withValues(alpha: 0.12),
                 padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
@@ -521,10 +518,9 @@ class _ConnectionBanner extends StatelessWidget {
                         isOffline
                             ? 'You\'re offline. Messages will send when you reconnect.'
                             : 'Connecting…',
-                        style: TextStyle(
+                        style: context.text.bodyMedium?.copyWith(
                           color: color,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
@@ -553,51 +549,23 @@ class _ComposeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          gradient: context.glass.accentGradient,
-          borderRadius: BorderRadius.circular(Radii.lg),
-          boxShadow: [
-            BoxShadow(
-              color: context.colors.primary.withValues(alpha: 0.4),
-              blurRadius: 22,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(Radii.lg),
-            onTap: onTap,
-            child: SizedBox(
-              width: 60,
-              height: 60,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 200),
-                child: Icon(
-                  icon,
-                  key: ValueKey(icon),
-                  color: context.glass.onAccent,
-                  size: 26,
-                ),
-              ),
-            ),
-          ),
-        ),
+    return FloatingActionButton(
+      tooltip: tooltip,
+      onPressed: onTap,
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 180),
+        child: Icon(icon, key: ValueKey(icon), size: 24),
       ),
     );
   }
 }
 
-class _GlassNavBar extends StatelessWidget {
+class _NavBar extends StatelessWidget {
   final int index;
   final int unreadChats;
   final ValueChanged<int> onChanged;
 
-  const _GlassNavBar({
+  const _NavBar({
     required this.index,
     required this.unreadChats,
     required this.onChanged,
@@ -611,104 +579,33 @@ class _GlassNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          Insets.page,
-          0,
-          Insets.page,
-          Insets.md,
-        ),
-        child: GlassSurface(
-          strong: true,
-          borderRadius: BorderRadius.circular(Radii.xl),
-          shadows: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 30,
-              offset: const Offset(0, 12),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: context.tokens.hairline)),
+      ),
+      child: NavigationBar(
+        selectedIndex: index,
+        onDestinationSelected: onChanged,
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        destinations: [
+          for (int i = 0; i < _items.length; i++)
+            NavigationDestination(
+              label: _items[i].$3,
+              icon: _icon(context, i, _items[i].$1),
+              selectedIcon: _icon(context, i, _items[i].$2),
             ),
-          ],
-          child: SizedBox(
-            height: 66,
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final width = constraints.maxWidth / _items.length;
-                return Stack(
-                  children: [
-                    AnimatedPositioned(
-                      duration: const Duration(milliseconds: 320),
-                      curve: Curves.easeOutCubic,
-                      left: index * width + 10,
-                      top: 8,
-                      bottom: 8,
-                      width: width - 20,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(Radii.lg),
-                          color: context.colors.primary.withValues(alpha: 0.13),
-                        ),
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        for (int i = 0; i < _items.length; i++)
-                          _navItem(context, i, width),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _navItem(BuildContext context, int i, double width) {
-    final selected = i == index;
-    final (icon, activeIcon, label) = _items[i];
-    final color = selected
-        ? context.colors.primary
-        : context.colors.onSurfaceVariant;
-    final showBadge = i == 0 && unreadChats > 0;
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => onChanged(i),
-      child: SizedBox(
-        width: width,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Badge(
-              isLabelVisible: showBadge,
-              label: Text('$unreadChats'),
-              backgroundColor: context.colors.primary,
-              textColor: context.glass.onAccent,
-              child: AnimatedScale(
-                scale: selected ? 1.08 : 1,
-                duration: const Duration(milliseconds: 220),
-                child: Icon(
-                  selected ? activeIcon : icon,
-                  color: color,
-                  size: 24,
-                ),
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11.5,
-                color: color,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget _icon(BuildContext context, int i, IconData icon) {
+    return Badge(
+      isLabelVisible: i == 0 && unreadChats > 0,
+      label: Text('$unreadChats'),
+      backgroundColor: context.colors.primary,
+      textColor: context.tokens.onAccent,
+      child: Icon(icon),
     );
   }
 }

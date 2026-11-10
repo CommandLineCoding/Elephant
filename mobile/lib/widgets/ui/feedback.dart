@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile/themes/app_themes.dart';
-import 'package:mobile/widgets/ui/glass.dart';
+import 'package:mobile/widgets/ui/surfaces.dart';
 
 void showSnack(BuildContext context, String message, {bool isError = false}) {
   final messenger = ScaffoldMessenger.maybeOf(context);
@@ -27,7 +27,7 @@ void showSnack(BuildContext context, String message, {bool isError = false}) {
 }
 
 /// Frosted bottom sheet with a grab handle and optional title.
-Future<T?> showGlassSheet<T>(
+Future<T?> showSheet<T>(
   BuildContext context, {
   required WidgetBuilder builder,
   String? title,
@@ -42,8 +42,7 @@ Future<T?> showGlassSheet<T>(
         padding: EdgeInsets.only(
           bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
         ),
-        child: GlassSurface(
-          strong: true,
+        child: Panel(
           borderRadius: const BorderRadius.vertical(
             top: Radius.circular(Radii.xl),
           ),
@@ -109,7 +108,7 @@ Future<T?> showActionSheet<T>(
   required List<SheetAction<T>> actions,
   Widget? header,
 }) {
-  return showGlassSheet<T>(
+  return showSheet<T>(
     context,
     builder: (sheetContext) => Padding(
       padding: const EdgeInsets.only(bottom: Insets.sm),
