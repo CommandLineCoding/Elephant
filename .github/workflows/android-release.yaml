@@ -78,6 +78,10 @@ jobs:
           flutter build apk --release --split-per-abi --no-tree-shake-icons
           flutter build apk --release --no-tree-shake-icons
 
+      # Native libraries must be 16 KB aligned to load on 16 KB-page devices.
+      - name: Check 16 KB page alignment
+        run: python3 mobile/tool/check_16kb_alignment.py mobile/build/app/outputs/flutter-apk/app-*release.apk
+
       - name: Rename APKs with version tag
         run: |
           mv mobile/build/app/outputs/flutter-apk/app-release.apk mobile/build/app/outputs/flutter-apk/elephant-${{ github.ref_name }}-universal.apk
