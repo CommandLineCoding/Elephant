@@ -92,6 +92,7 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(width: 8),
                   IconButton(
                     visualDensity: VisualDensity.compact,
+                    tooltip: 'Copy username',
                     icon: const Icon(Icons.copy_rounded, size: 18),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: username));
@@ -498,9 +499,10 @@ class _ConnectionBanner extends StatelessWidget {
                 Insets.page,
                 Insets.sm,
               ),
+              // A plain panel: only the icon carries the status colour, so the
+              // text and the Retry button keep full contrast.
               child: Panel(
                 borderRadius: BorderRadius.circular(Radii.md),
-                tint: color.withValues(alpha: 0.12),
                 padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
                 child: Row(
                   children: [
@@ -522,13 +524,18 @@ class _ConnectionBanner extends StatelessWidget {
                             ? 'You\'re offline. Messages will send when you reconnect.'
                             : 'Connecting…',
                         style: context.text.bodyMedium?.copyWith(
-                          color: color,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
                     ),
                     if (!isOffline)
-                      TextButton(onPressed: onRetry, child: const Text('Retry'))
+                      TextButton(
+                        onPressed: onRetry,
+                        style: TextButton.styleFrom(
+                          foregroundColor: context.colors.onSurface,
+                        ),
+                        child: const Text('Retry'),
+                      )
                     else
                       const SizedBox(height: 40),
                   ],

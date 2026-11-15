@@ -366,6 +366,7 @@ class _ChatPageState extends State<ChatPage> {
         appBar: _searchMode
             ? ElephantAppBar(
                     leading: IconButton(
+                      tooltip: 'Close search',
                       icon: const Icon(Icons.arrow_back_rounded),
                       onPressed: _closeSearch,
                     ),
@@ -411,15 +412,24 @@ class _ChatPageState extends State<ChatPage> {
                 Positioned(
                   right: Insets.lg,
                   bottom: _composerHeight + Insets.md,
-                  child: AnimatedScale(
-                    scale: _showScrollDown ? 1 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutBack,
-                    child: Panel(
-                      borderRadius: BorderRadius.circular(99),
-                      child: IconButton(
-                        icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                        onPressed: _scrollToBottom,
+                  // While hidden it is scaled to nothing, so it must also be
+                  // out of reach of taps and screen readers.
+                  child: IgnorePointer(
+                    ignoring: !_showScrollDown,
+                    child: ExcludeSemantics(
+                      excluding: !_showScrollDown,
+                      child: AnimatedScale(
+                        scale: _showScrollDown ? 1 : 0,
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutBack,
+                        child: Panel(
+                          borderRadius: BorderRadius.circular(99),
+                          child: IconButton(
+                            tooltip: 'Scroll to latest message',
+                            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                            onPressed: _scrollToBottom,
+                          ),
+                        ),
                       ),
                     ),
                   ),
