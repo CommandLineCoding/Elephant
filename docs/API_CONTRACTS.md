@@ -69,6 +69,9 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | DELETE | [/api/users/me](#4-delete-account) | Yes | Permanently delete the authenticated user's account |
 | POST | [/api/users/me/push](#5-register-a-push-endpoint) | Yes | Register a UnifiedPush endpoint for new-message pings |
 | DELETE | [/api/users/me/push](#6-remove-a-push-endpoint) | Yes | Remove a UnifiedPush endpoint |
+| POST | [/api/users/{id}/block](#7-block-a-user) | Yes | Block a user |
+| DELETE | [/api/users/{id}/block](#8-unblock-a-user) | Yes | Unblock a user |
+| GET | [/api/users/me/blocked](#9-list-blocked-users) | Yes | List the people you blocked |
 | GET | [/api/ws?token=](#1-connect-to-websocket) | Yes (query) | WebSocket upgrade endpoint |
 | WS | [Client → Server](#2-client-to-server-messages) | — | Events the client sends |
 | WS | [Server → Client](#3-server-to-client-messages) | — | Events the server pushes |
@@ -624,6 +627,80 @@ Returned even if the endpoint wasn't stored, so apps can call it freely on sign-
 { "success": true }
 ```
 
+### 7. Block a User
+
+Stops someone from reaching you. The blocked person isn't told:
+
+- Their direct messages are dropped: not stored, not delivered, no push. Over REST they still get a normal `201 Created` (see [Send Message](#1-send-message)).
+- Their typing indicators, read receipts and message edits don't reach you.
+- Neither of you sees the other's online status.
+- Group chats are not affected: you still see their messages in groups you share.
+
+Blocking someone already blocked is not an error.
+
+- **URL:** `/api/users/{id}/block`
+- **Method:** `POST`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X POST "http://HOST:PORT/api/users/<user_id>/block" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{ "success": true, "data": "User blocked" }
+```
+
+#### `400 Bad Request`
+
+`"Invalid user ID"` or `"You can't block yourself"`.
+
+#### `404 Not Found`
+
+`"User not found"`.
+
+### 8. Unblock a User
+
+Messages sent while the person was blocked are not delivered afterwards. Unblocking someone who isn't blocked is not an error.
+
+- **URL:** `/api/users/{id}/block`
+- **Method:** `DELETE`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X DELETE "http://HOST:PORT/api/users/<user_id>/block" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{ "success": true, "data": "User unblocked" }
+```
+
+#### `400 Bad Request`
+
+`"Invalid user ID"` or `"You can't block yourself"`.
+
+### 9. List Blocked Users
+
+The people you blocked, most recent first.
+
+- **URL:** `/api/users/me/blocked`
+- **Method:** `GET`
+- **Authentication Required:** `YES`
+- **curl:** `curl "http://HOST:PORT/api/users/me/blocked" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "username": "bob.1234",
+      "display_name": "Bob",
+      "blocked_at": "<Timestamp>"
+    }
+  ]
+}
+```
+
 ---
 
 ## WebSocket Endpoints
@@ -658,6 +735,8 @@ error: Unexpected server response: 401
 ### Direct vs. group targeting
 
 Every event targets **either** a user (`receiver_id`) **or** a group (`group_id`), never both. For group events, the server fans the event out to every member of the group except the sender.
+
+Direct `chat`, `typing` and `read_receipt` events, and `message_edited`, from someone the receiver has [blocked](#7-block-a-user) are dropped silently. Group events are not affected.
 
 ### Message content format (E2EE)
 
@@ -879,6 +958,8 @@ Sent to every **other** member when an admin deletes a group ([`DELETE /api/grou
 ### 1. Send Message
 
 REST fallback for direct messages. The message is stored but **not** pushed over the WebSocket.
+
+If the receiver has [blocked](#7-block-a-user) the sender, the message is dropped but the response is the same `201 Created`, so the sender can't tell.
 
 - **URL:** `/api/messages`
 - **Method:** `POST`
