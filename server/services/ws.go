@@ -96,6 +96,10 @@ func (h *WSHub) loader() contactLoader {
 // answer status requests. Presence changes are always sent using a fresh list.
 var contactCacheTTL = 20 * time.Second
 
+// contactClock tells the contact cache the time. Tests replace it to move
+// time forward without sleeping.
+var contactClock = time.Now
+
 // contactLoader returns the users someone shares a conversation or group with.
 type contactLoader func(ctx context.Context, userID string) ([]string, error)
 
@@ -206,7 +210,7 @@ func (h *WSHub) canSeeStatus(viewer *WSClient, target string) bool {
 	viewer.contactsMu.Lock()
 	defer viewer.contactsMu.Unlock()
 
-	if viewer.contacts == nil || time.Since(viewer.contactsAt) > contactCacheTTL {
+	if viewer.contacts == nil || contactClock().Sub(viewer.contactsAt) > contactCacheTTL {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
@@ -219,7 +223,7 @@ func (h *WSHub) canSeeStatus(viewer *WSClient, target string) bool {
 		for _, id := range ids {
 			viewer.contacts[strings.ToLower(id)] = struct{}{}
 		}
-		viewer.contactsAt = time.Now()
+		viewer.contactsAt = contactClock()
 	}
 
 	_, ok := viewer.contacts[strings.ToLower(target)]

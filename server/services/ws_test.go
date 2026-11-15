@@ -442,9 +442,13 @@ func TestPresenceFailsClosedWhenContactsCantBeLoaded(t *testing.T) {
 }
 
 func TestContactListIsCachedBriefly(t *testing.T) {
-	old := contactCacheTTL
-	contactCacheTTL = 80 * time.Millisecond
-	t.Cleanup(func() { contactCacheTTL = old })
+	// A clock that only moves when the test says so: on a slow machine,
+	// real time could expire the cache in the middle of the test.
+	start := time.Now()
+	var elapsed atomic.Int64
+	old := contactClock
+	contactClock = func() time.Time { return start.Add(time.Duration(elapsed.Load())) }
+	t.Cleanup(func() { contactClock = old })
 
 	var loads int32
 	setContactLoader(t, func(context.Context, string) ([]string, error) {
@@ -467,7 +471,7 @@ func TestContactListIsCachedBriefly(t *testing.T) {
 		t.Errorf("three status requests loaded contacts %d times, want 1", n)
 	}
 
-	time.Sleep(120 * time.Millisecond)
+	elapsed.Store(int64(contactCacheTTL + time.Second))
 	ask()
 	if n := atomic.LoadInt32(&loads) - base; n != 2 {
 		t.Errorf("after the cache expired it should reload, loads=%d want 2", n)
