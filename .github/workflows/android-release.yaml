@@ -48,6 +48,25 @@ jobs:
         working-directory: mobile
         run: flutter pub get --enforce-lockfile
 
+      # Native build hooks (e.g. webcrypto's) take the NDK from ANDROID_NDK_HOME
+      # and friends, which the runner points at an older NDK that links with
+      # 4 KB pages. Use the NDK Flutter builds the rest of the app with.
+      - name: Use Flutter's NDK for native build hooks
+        run: |
+          ndk=$(sed -n -E 's/.*val ndkVersion: String = "([^"]+)".*/\1/p' \
+            "$FLUTTER_ROOT/packages/flutter_tools/gradle/src/main/kotlin/FlutterExtension.kt")
+          if [ -z "$ndk" ]; then
+            echo "::error::Couldn't read Flutter's NDK version."
+            exit 1
+          fi
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;$ndk" > /dev/null
+          {
+            echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk"
+            echo "ANDROID_NDK_PATH=$ANDROID_HOME/ndk/$ndk"
+            echo "ANDROID_NDK_ROOT=$ANDROID_HOME/ndk/$ndk"
+          } >> "$GITHUB_ENV"
+          echo "Using NDK $ndk"
+
       - name: Set up release signing
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
