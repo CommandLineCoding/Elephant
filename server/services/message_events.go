@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/commandlinecoding/elephant/server/models"
 	"github.com/commandlinecoding/elephant/server/repository"
@@ -45,4 +46,29 @@ func (h *WSHub) PublishMessageEdit(ctx context.Context, msg *models.Message) {
 		return
 	}
 	h.sendToUsers(members, msg.SenderID, bytes)
+}
+
+// PublishMessagesDeleted tells the other person in a direct conversation that
+// senderID deleted every message they sent to them up to `before`, so their
+// app can remove those messages. Anyone offline sees the change when they next
+// load the conversation.
+func (h *WSHub) PublishMessagesDeleted(senderID, receiverID string, before time.Time) {
+	bytes, _ := json.Marshal(map[string]interface{}{
+		"type":        "messages_deleted",
+		"sender_id":   senderID,
+		"receiver_id": receiverID,
+		"before":      before,
+	})
+	h.sendToUser(receiverID, bytes)
+}
+
+// PublishGroupDeleted tells a deleted group's members, except the admin who
+// deleted it, so their apps can remove the group.
+func (h *WSHub) PublishGroupDeleted(groupID, deletedBy string, members []string) {
+	bytes, _ := json.Marshal(map[string]interface{}{
+		"type":       "group_deleted",
+		"group_id":   groupID,
+		"deleted_by": deletedBy,
+	})
+	h.sendToUsers(members, deletedBy, bytes)
 }

@@ -118,8 +118,9 @@ func HandleGetGroupMessages(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	uid, _ := r.Context().Value(middlewares.UserIDKey).(string)
 	repo := repository.NewGroupRepository()
-	history, err := repo.GetGroupMessages(r.Context(), groupID, before, limit)
+	history, err := repo.GetGroupMessages(r.Context(), groupID, uid, before, limit)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Failed to pull channel message history stream"})

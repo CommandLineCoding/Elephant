@@ -47,6 +47,9 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 		LEFT JOIN messages q ON m.reply_to_message_id = q.id
 		WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1))
 		  AND m.group_id IS NULL AND m.created_at < $3
+		  AND m.created_at > COALESCE(
+			(SELECT cleared_at FROM conversation_clears WHERE user_id = $1 AND peer_id = $2),
+			'-infinity')
 		ORDER BY m.created_at DESC
 		LIMIT $4;
 	`
@@ -101,6 +104,11 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 				NULL::UUID AS group_id
 			FROM messages
 			WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND group_id IS NULL
+			  AND created_at > COALESCE(
+				(SELECT cleared_at FROM conversation_clears cc
+				 WHERE cc.user_id = $1::uuid
+				   AND cc.peer_id = CASE WHEN sender_id = $1::uuid THEN receiver_id ELSE sender_id END),
+				'-infinity')
 			ORDER BY CASE WHEN sender_id = $1::uuid THEN receiver_id ELSE sender_id END, created_at DESC)
 
 			UNION ALL
@@ -116,12 +124,20 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			FROM messages m
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid
+			  AND m.created_at > COALESCE(
+				(SELECT cleared_at FROM conversation_clears cc
+				 WHERE cc.user_id = $1::uuid AND cc.group_id = m.group_id),
+				'-infinity')
 			ORDER BY m.group_id, m.created_at DESC)
 		),
 		dm_unread AS (
 			SELECT sender_id, COUNT(*) AS count
 			FROM messages
 			WHERE receiver_id = $1::uuid AND is_read = FALSE AND group_id IS NULL
+			  AND created_at > COALESCE(
+				(SELECT cleared_at FROM conversation_clears cc
+				 WHERE cc.user_id = $1::uuid AND cc.peer_id = sender_id),
+				'-infinity')
 			GROUP BY sender_id
 		),
 		group_unread AS (
@@ -129,6 +145,10 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			FROM messages m
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid AND m.created_at > gm.last_read_at AND m.sender_id != $1::uuid
+			  AND m.created_at > COALESCE(
+				(SELECT cleared_at FROM conversation_clears cc
+				 WHERE cc.user_id = $1::uuid AND cc.group_id = m.group_id),
+				'-infinity')
 			GROUP BY m.group_id
 		)
 		SELECT 
