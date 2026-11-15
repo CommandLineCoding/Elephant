@@ -330,7 +330,7 @@ func (c *WSClient) ReadPump() {
 					continue
 				}
 				Hub.sendToUsers(members, c.UserID, outboundBytes)
-			} else {
+			} else if !blockedBy(context.Background(), incoming.ReceiverID, c.UserID) {
 				Hub.sendToUser(incoming.ReceiverID, outboundBytes)
 			}
 
@@ -352,7 +352,7 @@ func (c *WSClient) ReadPump() {
 				if err == nil {
 					Hub.sendToUsers(members, c.UserID, outboundBytes)
 				}
-			} else {
+			} else if !blockedBy(context.Background(), incoming.ReceiverID, c.UserID) {
 				go func(receiverID, senderID string) {
 					err := msgRepo.MarkAsRead(context.Background(), receiverID, senderID)
 					if err != nil {
@@ -366,6 +366,12 @@ func (c *WSClient) ReadPump() {
 		case "chat":
 			incoming.SenderID = c.UserID
 			incoming.Timestamp = time.Now()
+
+			// A blocked sender's direct message is dropped: not stored, not
+			// delivered, no push. They aren't told.
+			if incoming.GroupID == "" && blockedBy(context.Background(), incoming.ReceiverID, c.UserID) {
+				continue
+			}
 
 			go func(msg models.WSMessage) {
 				query := `

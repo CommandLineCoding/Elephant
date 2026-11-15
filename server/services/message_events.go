@@ -32,6 +32,9 @@ func (h *WSHub) PublishMessageEdit(ctx context.Context, msg *models.Message) {
 	}
 
 	if msg.GroupID == "" {
+		if blockedBy(ctx, msg.ReceiverID, msg.SenderID) {
+			return
+		}
 		event["receiver_id"] = msg.ReceiverID
 		bytes, _ := json.Marshal(event)
 		h.sendToUser(msg.ReceiverID, bytes)

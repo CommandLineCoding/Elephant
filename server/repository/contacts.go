@@ -15,7 +15,8 @@ func NewContactRepository() *ContactRepository {
 // GetContactIDs returns everyone the user shares a conversation with: people
 // they have exchanged a direct message with, in either direction, and people
 // who are in a group with them. These are the only people who may see the
-// user's online status.
+// user's online status. Anyone the user blocked, or who blocked the user, is
+// left out, so neither sees the other's status.
 func (r *ContactRepository) GetContactIDs(ctx context.Context, userID string) ([]string, error) {
 	rows, err := config.DB.Query(ctx, `
 		SELECT other::text FROM (
@@ -28,7 +29,12 @@ func (r *ContactRepository) GetContactIDs(ctx context.Context, userID string) ([
 			JOIN group_members gm2 ON gm2.group_id = gm1.group_id
 			WHERE gm1.user_id = $1::uuid
 		) contacts
-		WHERE other <> $1::uuid;
+		WHERE other <> $1::uuid
+		  AND NOT EXISTS (
+			SELECT 1 FROM blocked_users b
+			WHERE (b.user_id = $1::uuid AND b.blocked_user_id = other)
+			   OR (b.user_id = other AND b.blocked_user_id = $1::uuid)
+		  );
 	`, userID)
 	if err != nil {
 		return nil, err

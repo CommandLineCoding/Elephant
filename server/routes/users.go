@@ -15,6 +15,9 @@ func UserRoute(router chi.Router) {
 	router.Delete("/me", controllers.HandleDeleteMe)
 	router.Post("/me/push", controllers.HandlePushRegister)
 	router.Delete("/me/push", controllers.HandlePushUnregister)
+	router.Get("/me/blocked", controllers.HandleListBlocked)
 	router.With(searchLimiter.Limit).Get("/search", controllers.HandleUserSearch)
 	router.Get("/{id}", controllers.HandleGetUserByID)
+	router.Post("/{id}/block", controllers.HandleBlockUser)
+	router.Delete("/{id}/block", controllers.HandleUnblockUser)
 }

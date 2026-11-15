@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -45,6 +46,12 @@ func HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 	svc := services.NewMessageService()
 	msg, err := svc.SendMessage(r.Context(), senderID, req.ReceiverID, req.Content, req.ReplyToMessageID)
+	if errors.Is(err, services.ErrDroppedForBlock) {
+		// Answer as if it was sent, so the sender can't tell they're blocked.
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: msg})
+		return
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: err.Error()})
