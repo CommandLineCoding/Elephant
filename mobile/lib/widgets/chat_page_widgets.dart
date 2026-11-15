@@ -581,6 +581,7 @@ class ComposerBanner extends StatelessWidget {
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
+            tooltip: 'Cancel',
             icon: const Icon(Icons.close_rounded, size: 20),
             onPressed: onClose,
           ),
@@ -723,7 +724,7 @@ class _ChatComposerState extends State<ChatComposer> {
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 18,
-                        vertical: 12,
+                        vertical: 13,
                       ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(Radii.xl),
@@ -781,8 +782,8 @@ class _ChatComposerState extends State<ChatComposer> {
                       customBorder: const CircleBorder(),
                       onTap: canSend ? _submit : null,
                       child: SizedBox(
-                        width: 46,
-                        height: 46,
+                        width: 48,
+                        height: 48,
                         child: _sending
                             ? Padding(
                                 padding: const EdgeInsets.all(13),

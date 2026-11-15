@@ -113,6 +113,7 @@ class ElephantTile extends StatelessWidget {
             Icon(icon, size: 22, color: color),
             const SizedBox(width: 16),
             Expanded(
+              flex: 3,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -130,7 +131,12 @@ class ElephantTile extends StatelessWidget {
                 ],
               ),
             ),
-            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
+            // May shrink (a tag ellipsizes) so large text can't push the row
+            // past the edge of the screen.
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              Flexible(flex: 2, child: trailing!),
+            ],
             if (chevron)
               Icon(
                 Icons.chevron_right_rounded,
@@ -276,11 +282,15 @@ class TagPill extends StatelessWidget {
             Icon(icon, size: 13, color: c),
             const SizedBox(width: 4),
           ],
-          Text(
-            label,
-            style: context.text.labelMedium?.copyWith(
-              color: c,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.text.labelMedium?.copyWith(
+                color: c,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -367,6 +377,7 @@ class SearchField extends StatelessWidget {
             suffixIcon: value.text.isEmpty
                 ? null
                 : IconButton(
+                    tooltip: 'Clear search',
                     icon: const Icon(Icons.close_rounded, size: 20),
                     onPressed: () {
                       controller.clear();

@@ -262,6 +262,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
         extendBodyBehindAppBar: true,
         appBar: ElephantAppBar(
           leading: IconButton(
+            tooltip: 'Back',
             icon: const Icon(Icons.arrow_back_rounded),
             onPressed: _close,
           ),
