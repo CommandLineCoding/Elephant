@@ -108,42 +108,47 @@ class ElephantTile extends StatelessWidget {
           horizontal: Insets.lg,
           vertical: 14,
         ),
-        child: Row(
-          children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(width: 16),
-            Expanded(
-              flex: 3,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: context.text.bodyLarge?.copyWith(
-                      fontWeight: FontWeight.w500,
-                      color: destructive ? context.colors.error : null,
+        child: LayoutBuilder(
+          builder: (context, box) => Row(
+            children: [
+              Icon(icon, size: 22, color: color),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: context.text.bodyLarge?.copyWith(
+                        fontWeight: FontWeight.w500,
+                        color: destructive ? context.colors.error : null,
+                      ),
                     ),
-                  ),
-                  if (subtitle != null) ...[
-                    const SizedBox(height: 2),
-                    Text(subtitle!, style: context.text.bodySmall),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(subtitle!, style: context.text.bodySmall),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-            // May shrink (a tag ellipsizes) so large text can't push the row
-            // past the edge of the screen.
-            if (trailing != null) ...[
-              const SizedBox(width: 8),
-              Flexible(flex: 2, child: trailing!),
+              // Sits at its natural width against the right edge, but never
+              // takes more than 40% of the row, so with large text a tag
+              // ellipsizes instead of pushing the row off screen.
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: box.maxWidth * 0.4),
+                  child: trailing!,
+                ),
+              ],
+              if (chevron)
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 22,
+                  color: context.colors.onSurfaceVariant,
+                ),
             ],
-            if (chevron)
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 22,
-                color: context.colors.onSurfaceVariant,
-              ),
-          ],
+          ),
         ),
       ),
     );
