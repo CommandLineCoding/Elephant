@@ -9,9 +9,10 @@ import (
 func MessageRoute(router chi.Router) {
 	router.Use(middlewares.AuthGuard)
 
-	router.Post("/", controllers.HandleSendMessage)                  // POST   /api/messages
-	router.Get("/", controllers.HandleGetChatHistory)                // GET    /api/messages?with=UUID
-	router.Get("/conversations", controllers.HandleGetConversations) // GET    /api/messages/conversations
-	router.Put("/{id}", controllers.HandleEditMessage)               // PUT    /api/messages/:id
-	router.Post("/read", controllers.HandleMarkRead)                 // POST   /api/messages/read
+	router.Post("/", controllers.HandleSendMessage)                                      // POST   /api/messages
+	router.Get("/", controllers.HandleGetChatHistory)                                    // GET    /api/messages?with=UUID
+	router.Get("/conversations", controllers.HandleGetConversations)                     // GET    /api/messages/conversations
+	router.Delete("/conversations/{userId}", controllers.HandleDeleteDirectConversation) // DELETE /api/messages/conversations/:userId?for=me|everyone
+	router.Put("/{id}", controllers.HandleEditMessage)                                   // PUT    /api/messages/:id
+	router.Post("/read", controllers.HandleMarkRead)                                     // POST   /api/messages/read
 }

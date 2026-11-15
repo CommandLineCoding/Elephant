@@ -77,6 +77,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/api/messages/conversations](#3-conversations) | Yes | Inbox: latest message and unread count per chat |
 | PUT | [/api/messages/{id}](#4-edit-message) | Yes | Edit your own message (15-minute window) |
 | POST | [/api/messages/read](#5-mark-direct-messages-read) | Yes | Mark a sender's messages as read |
+| DELETE | [/api/messages/conversations/{userId}?for=me\|everyone](#6-delete-a-direct-conversation) | Yes | Delete a direct conversation for you, or your messages for both people |
 | POST | [/api/groups](#1-create-group) | Yes | Create a group |
 | GET | [/api/groups](#2-list-my-groups) | Yes | List the groups you belong to |
 | GET | [/api/groups/{id}](#3-get-group-by-id) | Member | Get group details |
@@ -86,6 +87,8 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | PATCH | [/api/groups/{id}](#7-update-group-details) | Admin | Rename a group |
 | POST | [/api/groups/{id}/members](#8-add-member-to-group) | Admin | Add a member |
 | DELETE | [/api/groups/{id}/members/{userId}](#9-remove-member-from-group) | Admin | Remove a member |
+| DELETE | [/api/groups/{id}/history](#10-clear-group-history) | Member | Clear a group's messages for you only |
+| DELETE | [/api/groups/{id}](#11-delete-group) | Admin | Delete a group, its members and messages |
 | POST | [/api/e2ee/keys](#1-upload-prekey-bundle) | Yes | Upload identity key, signed prekey and one-time prekeys |
 | GET | [/api/e2ee/bundle/{userId}?device_id=](#2-fetch-prekey-bundle) | Yes | Fetch a user's prekey bundle (consumes one one-time prekey) |
 | POST | [/api/e2ee/verify](#3-set-contact-verification) | Yes | Mark a contact's identity key as verified or unverified |
@@ -819,6 +822,33 @@ Sent when someone edits a message ([`PUT /api/messages/{id}`](#4-edit-message)),
 
 A group edit carries `group_id` instead of `receiver_id`. `content` is exactly what the editor sent, so for E2EE direct messages it is ciphertext that the receiver decrypts like any other message. Someone who isn't connected doesn't receive the event; they get the edited message (with `edited_at`) the next time they load the conversation. Edits never trigger a push notification.
 
+#### 7. Messages Deleted
+
+Sent to the **other** person in a direct chat when someone deletes the conversation for everyone ([`DELETE /api/messages/conversations/{userId}?for=everyone`](#6-delete-a-direct-conversation)). Every message `sender_id` sent to `receiver_id` up to `before` is gone; the app should remove its local copies. The receiver's own messages are not affected.
+
+```json
+{
+  "type": "messages_deleted",
+  "sender_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "receiver_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "before": "<Timestamp>"
+}
+```
+
+Someone who isn't connected doesn't receive the event; the messages are simply missing the next time they load the conversation.
+
+#### 8. Group Deleted
+
+Sent to every **other** member when an admin deletes a group ([`DELETE /api/groups/{id}`](#11-delete-group)). The app should remove the group and its messages.
+
+```json
+{
+  "type": "group_deleted",
+  "group_id": "gggggggg-gggg-gggg-gggg-gggggggggggg",
+  "deleted_by": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+}
+```
+
 ---
 
 ## Messages Endpoints
@@ -1060,6 +1090,40 @@ Marks every unread message that `sender_id` sent to you as read. This is the RES
 #### `400 Bad Request`
 
 `"Invalid payload layout"` or `"Sender identification missing"`.
+
+### 6. Delete a Direct Conversation
+
+- **`for=me`** (the default): hides the conversation's current messages from you only. They disappear from your history, inbox and unread counts. The other person keeps everything, and the conversation comes back for you when a new message arrives.
+- **`for=everyone`**: also deletes every message **you** sent in the conversation, for both people, and sends the other person a [`messages_deleted`](#7-messages-deleted) event. Their messages are never deleted by you.
+
+Both return `cleared_at`: the app should delete its local copies of the conversation's messages up to that time.
+
+- **URL:** `/api/messages/conversations/{userId}?for=me|everyone`
+- **Method:** `DELETE`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X DELETE "http://HOST:PORT/api/messages/conversations/<user_id>?for=everyone" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "cleared_at": "<Timestamp>",
+    "deleted": 2
+  }
+}
+```
+
+`deleted` is how many of your messages were removed for both people (always `0` for `for=me`).
+
+#### `400 Bad Request`
+
+`"Invalid user ID"`, `"You can't have a conversation with yourself"`, or `"'for' must be 'me' or 'everyone'"`.
+
+#### `404 Not Found`
+
+`"User not found"`.
 
 ---
 
@@ -1357,6 +1421,49 @@ Returned when the user doesn't exist:
   "error": "Failed to drop target user from channel"
 }
 ```
+
+### 10. Clear Group History
+
+"Delete for me" for a group: hides the group's current messages from you only. You stay a member and see new messages as usual. The response has the same `cleared_at` as [deleting a direct conversation](#6-delete-a-direct-conversation).
+
+- **URL:** `/api/groups/{id}/history`
+- **Method:** `DELETE`
+- **Authentication Required:** `YES` (member)
+- **curl:** `curl -X DELETE "http://HOST:PORT/api/groups/{id}/history" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "cleared_at": "<Timestamp>",
+    "deleted": 0
+  }
+}
+```
+
+### 11. Delete Group
+
+Deletes the group with all its members and messages, for everyone, and sends the other members a [`group_deleted`](#8-group-deleted) event. Members who only want to stop seeing it can [leave](#6-leave-group) instead.
+
+- **URL:** `/api/groups/{id}`
+- **Method:** `DELETE`
+- **Authentication Required:** `YES` (admin)
+- **curl:** `curl -X DELETE "http://HOST:PORT/api/groups/{id}" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{
+  "success": true,
+  "data": "Group deleted"
+}
+```
+
+#### `403 Forbidden`
+
+Returned to members who aren't admins.
 
 ---
 

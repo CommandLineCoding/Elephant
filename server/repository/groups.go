@@ -103,7 +103,9 @@ func (r *GroupRepository) GetGroupMembers(ctx context.Context, groupID string) (
 	return members, nil
 }
 
-func (r *GroupRepository) GetGroupMessages(ctx context.Context, groupID string, before time.Time, limit int) ([]models.Message, error) {
+// GetGroupMessages returns a page of a group's messages, skipping any the
+// reader cleared for themselves.
+func (r *GroupRepository) GetGroupMessages(ctx context.Context, groupID, readerID string, before time.Time, limit int) ([]models.Message, error) {
 	query := `
 		SELECT 
 			m.id, m.sender_id, m.content, m.created_at, m.edited_at, m.reply_to_message_id,
@@ -111,10 +113,14 @@ func (r *GroupRepository) GetGroupMessages(ctx context.Context, groupID string, 
 		FROM messages m
 		LEFT JOIN messages q ON m.reply_to_message_id = q.id
 		WHERE m.group_id = $1::uuid AND m.created_at < $2
+		  AND m.created_at > COALESCE(
+			(SELECT cleared_at FROM conversation_clears
+			 WHERE user_id = $4::uuid AND group_id = $1::uuid),
+			'-infinity')
 		ORDER BY m.created_at DESC
 		LIMIT $3;
 	`
-	rows, err := config.DB.Query(ctx, query, groupID, before, limit)
+	rows, err := config.DB.Query(ctx, query, groupID, before, limit, readerID)
 	if err != nil {
 		return nil, err
 	}
