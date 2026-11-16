@@ -28,7 +28,9 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    context.read<AuthState>().refreshRegistrationStatus();
+    context.read<AuthState>()
+      ..refreshRegistrationStatus()
+      ..loadSignInHistory();
   }
 
   @override
@@ -107,7 +109,10 @@ class _LoginPageState extends State<LoginPage> {
                           ),
                         ),
                         const SizedBox(height: Insets.xxl),
-                        _Heading(isRegister: registering),
+                        _Heading(
+                          isRegister: registering,
+                          returning: auth.hasSignedInBefore,
+                        ),
                         const SizedBox(height: Insets.xl),
                         _buildForm(auth),
                         const SizedBox(height: Insets.xl),
@@ -321,7 +326,10 @@ class _TopBar extends StatelessWidget {
 class _Heading extends StatelessWidget {
   final bool isRegister;
 
-  const _Heading({required this.isRegister});
+  /// Someone has signed in on this device before.
+  final bool returning;
+
+  const _Heading({required this.isRegister, required this.returning});
 
   @override
   Widget build(BuildContext context) {
@@ -336,7 +344,9 @@ class _Heading extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isRegister ? 'Create your account' : 'Welcome back',
+            isRegister
+                ? 'Create your account'
+                : (returning ? 'Welcome back' : 'Sign in to Elephant'),
             style: context.text.headlineMedium,
           ),
           const SizedBox(height: Insets.sm),

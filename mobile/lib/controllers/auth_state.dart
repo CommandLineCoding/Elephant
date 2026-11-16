@@ -41,6 +41,21 @@ class AuthState extends ChangeNotifier {
   /// everything as before.
   bool get registrationClosed => _registrationClosed;
 
+  bool _signedInBefore = false;
+
+  /// Whether someone has signed in on this device before, so the sign-in
+  /// screen can say "Welcome back" only to returning users.
+  bool get hasSignedInBefore => _signedInBefore;
+
+  /// Loads [hasSignedInBefore]. The device remembers the last user until
+  /// their account is deleted, so it survives signing out.
+  Future<void> loadSignInHistory() async {
+    final before = await _storage.read(key: "last_user_id") != null;
+    if (before == _signedInBefore) return;
+    _signedInBefore = before;
+    notifyListeners();
+  }
+
   final Dio _healthClient;
 
   /// [healthClient] is for tests; the app uses the default.
