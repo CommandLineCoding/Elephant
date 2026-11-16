@@ -58,10 +58,26 @@ void main() {
     expect(chat.historyError, "Couldn't load messages");
     expect(chat.isChatHistoryLoading, isFalse);
 
-    chat.hasMoreMessages = false;
-    await chat.retryHistory();
-    expect(chat.hasMoreMessages, isTrue, reason: 'Try again resets paging');
+    // Scrolling up must not replace it with "Couldn't load older messages".
+    chat.activeChat = [
+      Message(
+        id: 'cached',
+        senderId: 'u2',
+        receiverId: 'me',
+        content: 'cached',
+        createdAt: DateTime.now(),
+        isRead: true,
+      ),
+    ];
+    await chat.loadMoreMessages();
     expect(chat.historyError, "Couldn't load messages");
+
+    // Try again really loads again: a stale error is replaced by the new
+    // attempt's (which fails too, with no server).
+    chat.historyError = 'stale';
+    await chat.retryHistory();
+    expect(chat.historyError, "Couldn't load messages");
+    expect(chat.hasMoreMessages, isFalse, reason: 'no paging after a failure');
   });
 
   Future<_RetryCounter> showChat(

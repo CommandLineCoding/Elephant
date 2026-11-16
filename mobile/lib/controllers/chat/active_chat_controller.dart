@@ -147,6 +147,9 @@ class ActiveChatController extends ChangeNotifier {
       debugPrint("Chat history fetch failed: $e");
       if (requestId == _currentRequestId && currentChatUserId == targetUid) {
         historyError = "Couldn't load messages";
+        // Don't page further back until Try again: an older page would fail
+        // too, and replace this error with a misleading one.
+        hasMoreMessages = false;
       }
     } finally {
       if (currentChatUserId == targetUid) {
