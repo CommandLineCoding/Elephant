@@ -8,6 +8,7 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/group.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
+import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -188,6 +189,13 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     if (mounted) _close(ChatDetailsResult.left);
   }
 
+  Future<void> _deleteGroup() async {
+    final deleted = await confirmAndDeleteGroup(
+      context,
+      groupId: widget.chatId,
+      name: _name,
+    );
+    if (deleted && mounted) _close(ChatDetailsResult.left);
   /// Replaces this profile with the direct chat with this person.
   void _openDirectChat() {
     Navigator.pushReplacement(
@@ -588,6 +596,15 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
             showChevron: false,
             onTap: _leave,
           ),
+          if (iAmAdmin)
+            ElephantTile(
+              icon: Icons.delete_forever_outlined,
+              title: 'Delete group',
+              subtitle: 'For every member',
+              destructive: true,
+              showChevron: false,
+              onTap: _deleteGroup,
+            ),
         ],
       ),
     ];

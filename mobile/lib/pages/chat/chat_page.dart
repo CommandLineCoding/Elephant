@@ -11,6 +11,7 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
+import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/services/ws_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -286,6 +287,18 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  Future<void> _onMenu(String value) async {
+    if (value == 'delete') {
+      final deleted = await confirmAndDeleteChat(
+        context,
+        chatId: widget.chatUserId,
+        title: _title,
+        isGroup: widget.isGroup,
+      );
+      if (deleted && mounted) Navigator.pop(context);
+    }
+  }
+
   // --- Details & search ---
 
   Future<void> _openDetails() async {
@@ -408,6 +421,19 @@ class _ChatPageState extends State<ChatPage> {
                     tooltip: 'Search',
                     icon: const Icon(Icons.search_rounded),
                     onPressed: () => setState(() => _searchMode = true),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'More',
+                    icon: const Icon(Icons.more_vert_rounded),
+                    onSelected: _onMenu,
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          widget.isGroup ? 'Clear chat' : 'Delete chat',
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(width: Insets.xs),
                 ],

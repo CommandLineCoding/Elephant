@@ -8,6 +8,9 @@ import '../../services/api_services.dart';
 import '../../services/db_services.dart';
 import '../../services/ws_service.dart';
 
+/// How [InboxController.deleteConversation] deletes a chat.
+enum ChatDeletion { forMe, forEveryone, wholeGroup }
+
 class InboxController extends ChangeNotifier {
   final ApiService _api = ApiService();
   List<InboxItem> inbox = [];
@@ -253,6 +256,46 @@ class InboxController extends ChangeNotifier {
     inbox[index] = inbox[index].copyWith(title: newTitle);
     notifyListeners();
     _saveItem(inbox[index]);
+  }
+
+  /// Deletes a conversation through the server, then locally.
+  ///
+  /// - [ChatDeletion.forMe]: hides the chat's messages from you (a group stays
+  ///   joined). It comes back when a new message arrives.
+  /// - [ChatDeletion.forEveryone] (direct chats): also deletes every message
+  ///   you sent in it, for both people. Theirs are never deleted.
+  /// - [ChatDeletion.wholeGroup] (group admins): deletes the group.
+  ///
+  /// Returns an error message, or null on success.
+  Future<String?> deleteConversation(
+    String chatId, {
+    required bool isGroup,
+    required ChatDeletion how,
+  }) async {
+    try {
+      if (how == ChatDeletion.wholeGroup) {
+        await _api.deleteGroup(chatId);
+        await removeChat(chatId);
+        return null;
+      }
+      final res = isGroup
+          ? await _api.clearGroupHistory(chatId)
+          : await _api.deleteConversation(
+              chatId,
+              forEveryone: how == ChatDeletion.forEveryone,
+            );
+      final clearedAt =
+          DateTime.tryParse(ApiService.dataMap(res.data)['cleared_at'] ?? '') ??
+          DateTime.now();
+      inbox.removeWhere((item) => item.id == chatId);
+      notifyListeners();
+      await DatabaseHelper.instance.deleteMessagesUpTo(chatId, clearedAt);
+      final db = await DatabaseHelper.instance.database;
+      await db.delete('inbox', where: 'id = ?', whereArgs: [chatId]);
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(e, fallback: "Couldn't delete the chat.");
+    }
   }
 
   Future<void> removeChat(String chatId) async {
