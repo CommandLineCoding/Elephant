@@ -105,6 +105,24 @@ class ApiService {
 
   Future<Response> deleteAccount() => _dio.delete("/users/me");
 
+  /// Deletes a direct conversation for you, or with [forEveryone] also the
+  /// messages you sent in it, for both people.
+  Future<Response> deleteConversation(
+    String userId, {
+    required bool forEveryone,
+  }) => _dio.delete(
+    "/messages/conversations/$userId",
+    queryParameters: {'for': forEveryone ? 'everyone' : 'me'},
+  );
+
+  /// Clears a group's messages for you only.
+  Future<Response> clearGroupHistory(String groupId) =>
+      _dio.delete("/groups/$groupId/history");
+
+  /// Deletes a group for everyone (admins only).
+  Future<Response> deleteGroup(String groupId) =>
+      _dio.delete("/groups/$groupId");
+
   // --- Push notifications (UnifiedPush) ---
 
   Future<Response> registerPushEndpoint(String endpoint) =>

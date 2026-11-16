@@ -235,6 +235,23 @@ class DatabaseHelper {
     );
   }
 
+  /// Removes a chat's cached messages created at or before [upTo], or only
+  /// those [fromSender] sent. Messages that arrived later are kept.
+  Future<void> deleteMessagesUpTo(
+    String chatId,
+    DateTime upTo, {
+    String? fromSender,
+  }) async {
+    final db = await instance.database;
+    await db.delete(
+      'messages',
+      where:
+          'chat_id = ? AND created_at <= ?'
+          '${fromSender == null ? '' : ' AND sender_id = ? COLLATE NOCASE'}',
+      whereArgs: [chatId, upTo.millisecondsSinceEpoch, ?fromSender],
+    );
+  }
+
   /// Deletes every cached conversation, message and queued send.
   Future<void> wipeChatData() async {
     final db = await instance.database;

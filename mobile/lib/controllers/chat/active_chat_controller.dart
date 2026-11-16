@@ -47,6 +47,28 @@ class ActiveChatController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes [senderId]'s messages up to [upTo] from the open chat, after they
+  /// deleted them for everyone.
+  void removeMessagesFrom(String senderId, DateTime upTo) {
+    // Compare IDs directly: isFrom() also matches our own "me" messages.
+    final sender = senderId.trim().toLowerCase();
+    final before = activeChat.length;
+    activeChat = activeChat
+        .where(
+          (m) =>
+              !(m.senderId.trim().toLowerCase() == sender &&
+                  !m.createdAt.isAfter(upTo)),
+        )
+        .toList();
+    if (activeChat.length != before) notifyListeners();
+  }
+
+  /// Empties the open chat, e.g. after its group was deleted.
+  void clearOpenChat() {
+    activeChat = [];
+    notifyListeners();
+  }
+
   bool _isMine(Message msg) => msg.isFrom(_myId);
 
   /// Plaintext byte budget for the open chat.
