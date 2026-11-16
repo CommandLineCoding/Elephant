@@ -27,12 +27,18 @@ class ChatDetailsPage extends StatefulWidget {
   final String? username;
   final String chatId;
 
+  /// Opened as a group member's profile rather than from their chat: Message
+  /// opens the direct chat instead of going back, and Search (which searches
+  /// the chat behind this page) is hidden.
+  final bool openedFromGroup;
+
   const ChatDetailsPage({
     super.key,
     required this.isGroup,
     required this.chatName,
     required this.chatId,
     this.username,
+    this.openedFromGroup = false,
   });
 
   @override
@@ -182,6 +188,20 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     if (mounted) _close(ChatDetailsResult.left);
   }
 
+  /// Replaces this profile with the direct chat with this person.
+  void _openDirectChat() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage(
+          chatUserId: widget.chatId,
+          displayName: _name,
+          username: widget.username,
+        ),
+      ),
+    );
+  }
+
   Future<void> _memberActions(GroupMember member, bool iAmAdmin) async {
     final myId = context.read<AuthState>().currentUser?.id.toLowerCase();
     final isSelf = member.userId.toLowerCase() == myId;
@@ -200,6 +220,11 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
       ),
       actions: [
         const SheetAction(
+          icon: Icons.person_outline_rounded,
+          label: 'View profile',
+          value: 'profile',
+        ),
+        const SheetAction(
           icon: Icons.chat_bubble_outline_rounded,
           label: 'Send message',
           value: 'message',
@@ -215,7 +240,20 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     );
     if (!mounted || action == null) return;
 
-    if (action == 'message') {
+    if (action == 'profile') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatDetailsPage(
+            isGroup: false,
+            chatName: member.displayName,
+            chatId: member.userId,
+            username: member.username,
+            openedFromGroup: true,
+          ),
+        ),
+      );
+    } else if (action == 'message') {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -371,14 +409,16 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
           _QuickAction(
             icon: Icons.chat_bubble_outline_rounded,
             label: 'Message',
-            onTap: () => _close(),
+            onTap: widget.openedFromGroup ? _openDirectChat : () => _close(),
           ),
-          const SizedBox(width: Insets.md),
-          _QuickAction(
-            icon: Icons.search_rounded,
-            label: 'Search',
-            onTap: () => _close(ChatDetailsResult.search),
-          ),
+          if (!widget.openedFromGroup) ...[
+            const SizedBox(width: Insets.md),
+            _QuickAction(
+              icon: Icons.search_rounded,
+              label: 'Search',
+              onTap: () => _close(ChatDetailsResult.search),
+            ),
+          ],
           if (iAmAdmin) ...[
             const SizedBox(width: Insets.md),
             _QuickAction(
