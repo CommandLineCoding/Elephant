@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:mobile/core/chat_markdown.dart';
+import 'package:mobile/core/links.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
@@ -215,6 +216,9 @@ class ChatBubble extends StatelessWidget {
                 data: prepareChatMarkdown(message.content),
                 extensionSet: chatMarkdownExtensions,
                 softLineBreak: true,
+                onTapLink: (_, href, _) {
+                  if (href != null) confirmAndOpenLink(context, href);
+                },
                 styleSheet: _markdownStyle(context, textColor),
               ),
             const SizedBox(height: 3),
