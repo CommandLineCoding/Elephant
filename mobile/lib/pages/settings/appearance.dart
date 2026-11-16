@@ -11,7 +11,8 @@ class AppearanceSettings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final current = context.watch<ThemeProvider>().currentTheme;
+    final themes = context.watch<ThemeProvider>();
+    final current = themes.currentTheme;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -23,6 +24,25 @@ class AppearanceSettings extends StatelessWidget {
             bottom: Insets.xxl + MediaQuery.paddingOf(context).bottom,
           ),
           children: [
+            const SizedBox(height: Insets.md),
+            Section(
+              children: [
+                ElephantTile(
+                  icon: Icons.brightness_auto_outlined,
+                  title: 'Match system',
+                  subtitle:
+                      'Frost when your phone is in light mode, Nebula in dark mode',
+                  showChevron: false,
+                  trailing: Switch(
+                    value: themes.followsSystem,
+                    onChanged: (on) {
+                      HapticFeedback.selectionClick();
+                      on ? themes.followSystem() : themes.setTheme(current);
+                    },
+                  ),
+                ),
+              ],
+            ),
             const SectionLabel('Theme'),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
