@@ -105,6 +105,9 @@ class ApiService {
 
   Future<Response> deleteAccount() => _dio.delete("/users/me");
 
+  Future<Response> updateMe({required String displayName}) =>
+      _dio.patch("/users/me", data: {"display_name": displayName});
+
   // --- Push notifications (UnifiedPush) ---
 
   Future<Response> registerPushEndpoint(String endpoint) =>

@@ -178,6 +178,26 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Changes the signed-in user's display name. Returns an error message, or
+  /// null on success. The new name shows everywhere in the app straight away.
+  Future<String?> updateDisplayName(String name) async {
+    final error = validateDisplayName(name);
+    if (error != null) return error;
+    try {
+      final res = await ApiService().updateMe(displayName: name.trim());
+      final userData = ApiService.dataMap(res.data);
+      _currentUser = UserModel.fromJson(userData);
+      await _authService.saveUserProfile(jsonEncode(userData));
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't change your display name.",
+      );
+    }
+  }
+
   Future<String?> checkAutoLogin() async {
     _token = await _authService.getToken();
 
