@@ -365,15 +365,57 @@ class ActiveChatController extends ChangeNotifier {
 
   /// Sends a message. Returns an error to show the user, or null on success.
   Future<String?> sendTextMessage(String text, {Message? replyingTo}) async {
-    final cleanContent = text.trim();
     final targetId = currentChatUserId;
-    if (targetId == null || cleanContent.isEmpty) return null;
+    if (targetId == null) return null;
+    final (error, _) = await sendTo(
+      targetId,
+      isGroup: isCurrentChatGroup,
+      text: text,
+      replyingTo: replyingTo,
+    );
+    return error;
+  }
 
-    if (utf8.encode(cleanContent).length > messageByteLimit) {
-      return 'Message is too long.';
+  /// Forwards [text] to each chat in [targets] (chat ID → is a group) as a
+  /// new message: encrypted separately for each direct chat, never a copy of
+  /// someone's ciphertext. Returns the chats it couldn't be sent to, with why.
+  Future<Map<String, String>> forward(
+    String text,
+    Map<String, bool> targets,
+  ) async {
+    final failed = <String, String>{};
+    for (final MapEntry(key: chatId, value: isGroup) in targets.entries) {
+      // One chat failing mustn't stop the others.
+      try {
+        final (error, _) = await sendTo(chatId, isGroup: isGroup, text: text);
+        if (error != null) failed[chatId] = error;
+      } catch (e) {
+        debugPrint("Forward to $chatId failed: $e");
+        failed[chatId] = "Couldn't send the message.";
+      }
+    }
+    return failed;
+  }
+
+  /// Encrypts (for a direct chat), queues and sends [text] to [targetId]. If
+  /// that chat is open, the message appears in it straight away. Returns an
+  /// error to show, or the message that was queued.
+  Future<(String?, Message?)> sendTo(
+    String targetId, {
+    required bool isGroup,
+    required String text,
+    Message? replyingTo,
+  }) async {
+    final cleanContent = text.trim();
+    if (cleanContent.isEmpty) return (null, null);
+
+    final byteLimit = isGroup
+        ? ServerLimits.maxGroupMessageBytes
+        : ServerLimits.maxDirectMessageBytes;
+    if (utf8.encode(cleanContent).length > byteLimit) {
+      return ('Message is too long.', null);
     }
 
-    final isGroup = isCurrentChatGroup;
     String securePayload;
     if (isGroup) {
       securePayload = MessageEnvelope.plain(cleanContent);
@@ -382,7 +424,10 @@ class ActiveChatController extends ChangeNotifier {
         targetId,
       );
       if (!sessionReady) {
-        return "This contact hasn't set up encryption yet. Try again once they've opened Elephant.";
+        return (
+          "This contact hasn't set up encryption yet. Try again once they've opened Elephant.",
+          null,
+        );
       }
       try {
         securePayload = await SignalService().encryptDirect(
@@ -391,7 +436,10 @@ class ActiveChatController extends ChangeNotifier {
         );
       } catch (e) {
         debugPrint("Encryption failed: $e");
-        return "Couldn't encrypt this message. Try resetting the secure session.";
+        return (
+          "Couldn't encrypt this message. Try resetting the secure session.",
+          null,
+        );
       }
     }
 
@@ -404,7 +452,7 @@ class ActiveChatController extends ChangeNotifier {
       replyToMessageId: replyingTo?.id,
     );
     if (WebSocketService.frameSize(frame) > ServerLimits.maxWsFrameBytes) {
-      return 'Message is too long.';
+      return ('Message is too long.', null);
     }
 
     final optimisticMsg = Message(
@@ -426,8 +474,10 @@ class ActiveChatController extends ChangeNotifier {
       syncStatus: 'pending',
     );
 
-    activeChat = [...activeChat, optimisticMsg];
-    notifyListeners();
+    if (currentChatUserId == targetId) {
+      activeChat = [...activeChat, optimisticMsg];
+      notifyListeners();
+    }
 
     try {
       await DatabaseHelper.instance.insertMessage(
@@ -451,7 +501,7 @@ class ActiveChatController extends ChangeNotifier {
     } catch (e) {
       debugPrint("Immediate send failed, message stays queued: $e");
     }
-    return null;
+    return (null, optimisticMsg);
   }
 
   /// Edits one of our messages via `PUT /api/messages/{id}`. Returns an error
