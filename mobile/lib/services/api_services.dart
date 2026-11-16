@@ -115,6 +115,14 @@ class ApiService {
     queryParameters: {'for': forEveryone ? 'everyone' : 'me'},
   );
 
+  Future<Response> blockUser(String userId) =>
+      _dio.post("/users/$userId/block");
+
+  Future<Response> unblockUser(String userId) =>
+      _dio.delete("/users/$userId/block");
+
+  Future<Response> listBlockedUsers() => _dio.get("/users/me/blocked");
+
   /// Clears a group's messages for you only.
   Future<Response> clearGroupHistory(String groupId) =>
       _dio.delete("/groups/$groupId/history");

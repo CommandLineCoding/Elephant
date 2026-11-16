@@ -8,7 +8,9 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/group.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
+import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
+import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -444,6 +446,33 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
             height: 1.5,
           ),
         ),
+      ),
+      const SizedBox(height: Insets.xl),
+      ListenableBuilder(
+        listenable: BlockedUsers.instance,
+        builder: (context, _) {
+          final blocked = BlockedUsers.instance.isBlocked(widget.chatId);
+          return Section(
+            children: [
+              ElephantTile(
+                icon: Icons.block_rounded,
+                title: blocked ? 'Unblock $_name' : 'Block $_name',
+                destructive: !blocked,
+                showChevron: false,
+                onTap: blocked
+                    ? () => unblock(context, widget.chatId, _name)
+                    : () => confirmAndBlock(
+                        context,
+                        BlockedUser(
+                          id: widget.chatId,
+                          username: widget.username ?? '',
+                          displayName: _name,
+                        ),
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     ];
   }
