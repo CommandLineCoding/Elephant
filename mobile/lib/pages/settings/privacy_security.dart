@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/pages/settings/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -120,6 +121,20 @@ class _PrivacySecuritySettingsPageState
                   title: 'Messages on this device',
                   subtitle: 'Stored in an encrypted database',
                   showChevron: false,
+                ),
+              ],
+            ),
+            const SectionLabel('People'),
+            Section(
+              children: [
+                ElephantTile(
+                  icon: Icons.block_rounded,
+                  title: 'Blocked users',
+                  subtitle: 'People who can\'t send you direct messages',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BlockedUsersPage()),
+                  ),
                 ),
               ],
             ),

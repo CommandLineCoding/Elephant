@@ -13,6 +13,7 @@ func UserRoute(router chi.Router) {
 
 	router.Get("/me", controllers.HandleGetMe)
 	router.Delete("/me", controllers.HandleDeleteMe)
+	router.Patch("/me", controllers.HandleUpdateMe)
 	router.Post("/me/push", controllers.HandlePushRegister)
 	router.Delete("/me/push", controllers.HandlePushUnregister)
 	router.Get("/me/blocked", controllers.HandleListBlocked)

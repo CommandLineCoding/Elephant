@@ -4,12 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile/core/links.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/active_chat_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
+import 'package:mobile/services/blocked_users.dart';
+import 'package:mobile/pages/chat/forward_page.dart';
+import 'package:mobile/pages/chat/block_user.dart';
+import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/services/ws_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -225,6 +230,7 @@ class _ChatPageState extends State<ChatPage> {
     HapticFeedback.mediumImpact();
     final isLocked = message.content.startsWith(MessageEnvelope.lockedPrefix);
     final canEdit = !isLocked && message.canEdit(_auth.currentUser?.id);
+    final links = isLocked ? const <String>[] : linksIn(message.content);
 
     final action = await showActionSheet<String>(
       context,
@@ -250,6 +256,17 @@ class _ChatPageState extends State<ChatPage> {
             label: 'Copy text',
             value: 'copy',
           ),
+        if (!isLocked)
+          const SheetAction(
+            icon: Icons.shortcut_rounded,
+            label: 'Forward',
+            value: 'forward',
+        if (links.isNotEmpty)
+          SheetAction(
+            icon: Icons.link_rounded,
+            label: links.length == 1 ? 'Copy link' : 'Copy links',
+            value: 'copy-links',
+          ),
         if (canEdit)
           const SheetAction(
             icon: Icons.edit_outlined,
@@ -264,13 +281,49 @@ class _ChatPageState extends State<ChatPage> {
       case 'reply':
         _startReply(message);
         break;
+      case 'forward':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ForwardPage(text: message.content)),
+        );
+        break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: message.content));
+        if (mounted) showSnack(context, 'Copied');
+        break;
+      case 'copy-links':
+        await Clipboard.setData(ClipboardData(text: links.join('\n')));
         if (mounted) showSnack(context, 'Copied');
         break;
       case 'edit':
         _startEdit(message);
         break;
+    }
+  }
+
+  bool get _isBlocked =>
+      !widget.isGroup && BlockedUsers.instance.isBlocked(widget.chatUserId);
+
+  Future<void> _onMenu(String value) async {
+    if (value == 'block') {
+      await confirmAndBlock(
+        context,
+        BlockedUser(
+          id: widget.chatUserId,
+          username: widget.username ?? '',
+          displayName: _title,
+        ),
+      );
+    } else if (value == 'unblock') {
+      await unblock(context, widget.chatUserId, _title);
+    } else if (value == 'delete') {
+      final deleted = await confirmAndDeleteChat(
+        context,
+        chatId: widget.chatUserId,
+        title: _title,
+        isGroup: widget.isGroup,
+      );
+      if (deleted && mounted) Navigator.pop(context);
     }
   }
 
@@ -349,6 +402,13 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: BlockedUsers.instance,
+      builder: (context, _) => _buildPage(context),
+    );
+  }
+
+  Widget _buildPage(BuildContext context) {
     final chat = context.watch<ActiveChatController>();
     final group = context.watch<GroupDetailsController>();
     final messages = chat.currentChatUserId == widget.chatUserId
@@ -397,6 +457,24 @@ class _ChatPageState extends State<ChatPage> {
                     icon: const Icon(Icons.search_rounded),
                     onPressed: () => setState(() => _searchMode = true),
                   ),
+                  PopupMenuButton<String>(
+                    tooltip: 'More',
+                    icon: const Icon(Icons.more_vert_rounded),
+                    onSelected: _onMenu,
+                    itemBuilder: (_) => [
+                      if (!widget.isGroup)
+                        PopupMenuItem(
+                          value: _isBlocked ? 'unblock' : 'block',
+                          child: Text(_isBlocked ? 'Unblock' : 'Block'),
+                        ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Text(
+                          widget.isGroup ? 'Clear chat' : 'Delete chat',
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(width: Insets.xs),
                 ],
               ),
@@ -408,6 +486,20 @@ class _ChatPageState extends State<ChatPage> {
               ),
               if (_searchMode)
                 Positioned.fill(top: topInset, child: _buildSearchResults()),
+              // With cached messages on screen, a failed load is a slim bar
+              // under the header rather than replacing the chat.
+              if (!_searchMode &&
+                  chat.historyError != null &&
+                  messages.isNotEmpty)
+                Positioned(
+                  top: topInset + Insets.sm,
+                  left: Insets.md,
+                  right: Insets.md,
+                  child: _HistoryErrorBar(
+                    message: chat.historyError!,
+                    onRetry: chat.retryHistory,
+                  ),
+                ),
               if (!_searchMode)
                 Positioned(
                   right: Insets.lg,
@@ -445,30 +537,36 @@ class _ChatPageState extends State<ChatPage> {
                         setState(() => _composerHeight = size.height);
                       }
                     },
-                    child: ChatComposer(
-                      controller: _composer,
-                      focusNode: _composerFocus,
-                      onSend: _send,
-                      byteLimit: chat.messageByteLimit,
-                      isEditing: _editing != null,
-                      onTypingChanged: chat.sendTypingNotification,
-                      banner: _editing != null
-                          ? ComposerBanner(
-                              icon: Icons.edit_outlined,
-                              title: 'Editing message',
-                              body: _editing!.content,
-                              onClose: _cancelBanner,
-                            )
-                          : _replyingTo != null
-                          ? ComposerBanner(
-                              icon: Icons.reply_rounded,
-                              title:
-                                  'Replying to ${_nameOf(_replyingTo!.senderId)}',
-                              body: _replyingTo!.content,
-                              onClose: _cancelBanner,
-                            )
-                          : null,
-                    ),
+                    child: _isBlocked
+                        ? BlockedBanner(
+                            displayName: _title,
+                            onUnblock: () =>
+                                unblock(context, widget.chatUserId, _title),
+                          )
+                        : ChatComposer(
+                            controller: _composer,
+                            focusNode: _composerFocus,
+                            onSend: _send,
+                            byteLimit: chat.messageByteLimit,
+                            isEditing: _editing != null,
+                            onTypingChanged: chat.sendTypingNotification,
+                            banner: _editing != null
+                                ? ComposerBanner(
+                                    icon: Icons.edit_outlined,
+                                    title: 'Editing message',
+                                    body: _editing!.content,
+                                    onClose: _cancelBanner,
+                                  )
+                                : _replyingTo != null
+                                ? ComposerBanner(
+                                    icon: Icons.reply_rounded,
+                                    title:
+                                        'Replying to ${_nameOf(_replyingTo!.senderId)}',
+                                    body: _replyingTo!.content,
+                                    onClose: _cancelBanner,
+                                  )
+                                : null,
+                          ),
                   ),
                 ),
             ],
@@ -488,6 +586,14 @@ class _ChatPageState extends State<ChatPage> {
         padding: EdgeInsets.only(top: topInset, bottom: _composerHeight),
         child: chat.isChatHistoryLoading
             ? const Center(child: CircularProgressIndicator())
+            : chat.historyError != null
+            ? EmptyState(
+                icon: Icons.cloud_off_rounded,
+                title: chat.historyError!,
+                message: 'Check your connection and try again.',
+                actionLabel: 'Try again',
+                onAction: chat.retryHistory,
+              )
             : SingleChildScrollView(
                 child: Column(
                   children: [
@@ -762,6 +868,48 @@ class _SwipeToReplyState extends State<_SwipeToReply>
             ),
           ),
           Transform.translate(offset: Offset(_offset, 0), child: widget.child),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Couldn't load messages · Try again", shown over the top of a chat whose
+/// cached messages are still visible.
+class _HistoryErrorBar extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _HistoryErrorBar({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Panel(
+      borderRadius: BorderRadius.circular(Radii.md),
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.cloud_off_rounded,
+            size: 18,
+            color: context.colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: context.text.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: context.colors.onSurface,
+            ),
+            child: const Text('Try again'),
+          ),
         ],
       ),
     );

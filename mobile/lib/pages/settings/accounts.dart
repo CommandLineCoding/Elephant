@@ -120,6 +120,26 @@ class AccountsSettings extends StatelessWidget {
     showSnack(context, '$label copied');
   }
 
+  Future<void> _editDisplayName(BuildContext context, String current) async {
+    final name = await promptText(
+      context,
+      title: 'Display name',
+      message: 'This is how others see you.',
+      initialValue: current,
+      hint: 'Your name',
+      maxLength: 100,
+    );
+    if (name == null || name == current || !context.mounted) return;
+    final error = await context.read<AuthState>().updateDisplayName(name);
+    if (context.mounted) {
+      showSnack(
+        context,
+        error ?? 'Display name updated',
+        isError: error != null,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthState>().currentUser;
@@ -175,7 +195,14 @@ class AccountsSettings extends StatelessWidget {
                   icon: Icons.badge_outlined,
                   title: user?.displayName ?? '—',
                   subtitle: 'Display name',
-                  showChevron: false,
+                  trailing: Icon(
+                    Icons.edit_outlined,
+                    size: 20,
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                  onTap: user == null
+                      ? null
+                      : () => _editDisplayName(context, user.displayName),
                 ),
                 if (user?.email != null)
                   ElephantTile(

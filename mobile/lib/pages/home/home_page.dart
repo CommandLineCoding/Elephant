@@ -6,11 +6,13 @@ import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/inbox_item.dart';
+import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
+import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/push/push_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/home_page_widgets.dart';
@@ -41,6 +43,7 @@ class _HomePageState extends State<HomePage> {
     PushService.instance.chatToOpen.addListener(_openRequestedChat);
     ProfileLinks.instance.pending.addListener(_openProfileLink);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openProfileLink());
+    BlockedUsers.instance.load();
     _inbox.addListener(_openRequestedChat);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openRequestedChat());
   }
@@ -249,6 +252,12 @@ Future<void> _showConversationActions(
         label: item.isGroup ? 'Group info' : 'Contact & encryption',
         value: 'info',
       ),
+      SheetAction(
+        icon: Icons.delete_outline_rounded,
+        label: item.isGroup ? 'Clear chat' : 'Delete chat',
+        value: 'delete',
+        destructive: true,
+      ),
     ],
   );
   if (!context.mounted || action == null) return;
@@ -256,6 +265,14 @@ Future<void> _showConversationActions(
   switch (action) {
     case 'open':
       openConversation(context, item);
+      break;
+    case 'delete':
+      await confirmAndDeleteChat(
+        context,
+        chatId: item.id,
+        title: item.title.isEmpty ? (item.username ?? '') : item.title,
+        isGroup: item.isGroup,
+      );
       break;
     case 'read':
       await context.read<InboxController>().markReadFor(item);

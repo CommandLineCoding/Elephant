@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:mobile/services/api_services.dart';
+import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/db_services.dart';
 import 'package:mobile/services/push/push_prefs.dart';
 import 'package:mobile/services/push/push_service.dart';
@@ -41,6 +42,21 @@ class AuthState extends ChangeNotifier {
   /// False until it says so, so an older server or a failed check shows
   /// everything as before.
   bool get registrationClosed => _registrationClosed;
+
+  bool _signedInBefore = false;
+
+  /// Whether someone has signed in on this device before, so the sign-in
+  /// screen can say "Welcome back" only to returning users.
+  bool get hasSignedInBefore => _signedInBefore;
+
+  /// Loads [hasSignedInBefore]. The device remembers the last user until
+  /// their account is deleted, so it survives signing out.
+  Future<void> loadSignInHistory() async {
+    final before = await _storage.read(key: "last_user_id") != null;
+    if (before == _signedInBefore) return;
+    _signedInBefore = before;
+    notifyListeners();
+  }
 
   final Dio _healthClient;
 
@@ -165,6 +181,26 @@ class AuthState extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  /// Changes the signed-in user's display name. Returns an error message, or
+  /// null on success. The new name shows everywhere in the app straight away.
+  Future<String?> updateDisplayName(String name) async {
+    final error = validateDisplayName(name);
+    if (error != null) return error;
+    try {
+      final res = await ApiService().updateMe(displayName: name.trim());
+      final userData = ApiService.dataMap(res.data);
+      _currentUser = UserModel.fromJson(userData);
+      await _authService.saveUserProfile(jsonEncode(userData));
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't change your display name.",
+      );
+    }
   }
 
   Future<String?> checkAutoLogin() async {
@@ -311,6 +347,7 @@ class AuthState extends ChangeNotifier {
   Future<void> logout() async {
     // Needs the token, so before it's dropped.
     await PushService.instance.onSigningOut();
+    BlockedUsers.instance.clear();
     _token = null;
     _currentUser = null;
     await _authService.logout();
@@ -341,6 +378,7 @@ class AuthState extends ChangeNotifier {
 
   void logoutSilently() {
     if (_token != null) {
+      BlockedUsers.instance.clear();
       _token = null;
       _currentUser = null;
       _errorMessage = "Your session expired. Please sign in again.";

@@ -111,7 +111,8 @@ class SettingsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthState>().currentUser;
-    final palette = context.watch<ThemeProvider>().palette;
+    final themes = context.watch<ThemeProvider>();
+    final palette = themes.palette;
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
@@ -218,7 +219,9 @@ class SettingsPage extends StatelessWidget {
                 ElephantTile(
                   icon: Icons.palette_outlined,
                   title: 'Appearance',
-                  subtitle: palette.name,
+                  subtitle: themes.followsSystem
+                      ? '${palette.name}, matching your phone'
+                      : palette.name,
                   onTap: () => _push(context, const AppearanceSettings()),
                 ),
               ],

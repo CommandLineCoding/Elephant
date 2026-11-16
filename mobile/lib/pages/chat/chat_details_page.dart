@@ -8,6 +8,9 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/group.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
+import 'package:mobile/pages/chat/block_user.dart';
+import 'package:mobile/pages/chat/delete_chat.dart';
+import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -27,12 +30,18 @@ class ChatDetailsPage extends StatefulWidget {
   final String? username;
   final String chatId;
 
+  /// Opened as a group member's profile rather than from their chat: Message
+  /// opens the direct chat instead of going back, and Search (which searches
+  /// the chat behind this page) is hidden.
+  final bool openedFromGroup;
+
   const ChatDetailsPage({
     super.key,
     required this.isGroup,
     required this.chatName,
     required this.chatId,
     this.username,
+    this.openedFromGroup = false,
   });
 
   @override
@@ -182,6 +191,27 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     if (mounted) _close(ChatDetailsResult.left);
   }
 
+  Future<void> _deleteGroup() async {
+    final deleted = await confirmAndDeleteGroup(
+      context,
+      groupId: widget.chatId,
+      name: _name,
+    );
+    if (deleted && mounted) _close(ChatDetailsResult.left);
+  /// Replaces this profile with the direct chat with this person.
+  void _openDirectChat() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage(
+          chatUserId: widget.chatId,
+          displayName: _name,
+          username: widget.username,
+        ),
+      ),
+    );
+  }
+
   Future<void> _memberActions(GroupMember member, bool iAmAdmin) async {
     final myId = context.read<AuthState>().currentUser?.id.toLowerCase();
     final isSelf = member.userId.toLowerCase() == myId;
@@ -200,6 +230,11 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
       ),
       actions: [
         const SheetAction(
+          icon: Icons.person_outline_rounded,
+          label: 'View profile',
+          value: 'profile',
+        ),
+        const SheetAction(
           icon: Icons.chat_bubble_outline_rounded,
           label: 'Send message',
           value: 'message',
@@ -215,7 +250,20 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     );
     if (!mounted || action == null) return;
 
-    if (action == 'message') {
+    if (action == 'profile') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatDetailsPage(
+            isGroup: false,
+            chatName: member.displayName,
+            chatId: member.userId,
+            username: member.username,
+            openedFromGroup: true,
+          ),
+        ),
+      );
+    } else if (action == 'message') {
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -371,14 +419,16 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
           _QuickAction(
             icon: Icons.chat_bubble_outline_rounded,
             label: 'Message',
-            onTap: () => _close(),
+            onTap: widget.openedFromGroup ? _openDirectChat : () => _close(),
           ),
-          const SizedBox(width: Insets.md),
-          _QuickAction(
-            icon: Icons.search_rounded,
-            label: 'Search',
-            onTap: () => _close(ChatDetailsResult.search),
-          ),
+          if (!widget.openedFromGroup) ...[
+            const SizedBox(width: Insets.md),
+            _QuickAction(
+              icon: Icons.search_rounded,
+              label: 'Search',
+              onTap: () => _close(ChatDetailsResult.search),
+            ),
+          ],
           if (iAmAdmin) ...[
             const SizedBox(width: Insets.md),
             _QuickAction(
@@ -434,6 +484,33 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
             height: 1.5,
           ),
         ),
+      ),
+      const SizedBox(height: Insets.xl),
+      ListenableBuilder(
+        listenable: BlockedUsers.instance,
+        builder: (context, _) {
+          final blocked = BlockedUsers.instance.isBlocked(widget.chatId);
+          return Section(
+            children: [
+              ElephantTile(
+                icon: Icons.block_rounded,
+                title: blocked ? 'Unblock $_name' : 'Block $_name',
+                destructive: !blocked,
+                showChevron: false,
+                onTap: blocked
+                    ? () => unblock(context, widget.chatId, _name)
+                    : () => confirmAndBlock(
+                        context,
+                        BlockedUser(
+                          id: widget.chatId,
+                          username: widget.username ?? '',
+                          displayName: _name,
+                        ),
+                      ),
+              ),
+            ],
+          );
+        },
       ),
     ];
   }
@@ -548,6 +625,15 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
             showChevron: false,
             onTap: _leave,
           ),
+          if (iAmAdmin)
+            ElephantTile(
+              icon: Icons.delete_forever_outlined,
+              title: 'Delete group',
+              subtitle: 'For every member',
+              destructive: true,
+              showChevron: false,
+              onTap: _deleteGroup,
+            ),
         ],
       ),
     ];

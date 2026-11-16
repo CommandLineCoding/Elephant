@@ -80,6 +80,53 @@ class ChatEventHandler {
       case 'message_edited':
         await _handleMessageEdited(data);
         break;
+
+      case 'messages_deleted':
+        await _handleMessagesDeleted(data);
+        break;
+
+      case 'group_deleted':
+        await _handleGroupDeleted(data);
+        break;
+    }
+  }
+
+  /// The other person in a direct chat deleted the messages they sent us, up
+  /// to `before`.
+  Future<void> _handleMessagesDeleted(Map<String, dynamic> data) async {
+    final senderId = data['sender_id']?.toString() ?? '';
+    final before = DateTime.tryParse(data['before']?.toString() ?? '');
+    if (senderId.isEmpty || before == null) return;
+    if (_id(senderId) == currentUserId.trim().toLowerCase()) return;
+
+    final chatId = _id(senderId)!;
+    // Update the screen first: a cache error shouldn't leave deleted messages
+    // on show.
+    if (_isOpen(chatId)) {
+      activeChatController.removeMessagesFrom(senderId, before);
+    }
+    try {
+      await DatabaseHelper.instance.deleteMessagesUpTo(
+        chatId,
+        before,
+        fromSender: senderId,
+      );
+    } catch (e) {
+      debugPrint("Couldn't remove deleted messages from the cache: $e");
+    }
+    // The chat's last message may have been one of them.
+    await inboxController.loadInbox();
+  }
+
+  /// An admin deleted a group we're in.
+  Future<void> _handleGroupDeleted(Map<String, dynamic> data) async {
+    final groupId = _id(data['group_id']);
+    if (groupId == null) return;
+    if (_isOpen(groupId)) activeChatController.clearOpenChat();
+    try {
+      await inboxController.removeChat(groupId);
+    } catch (e) {
+      debugPrint("Couldn't remove a deleted group from the cache: $e");
     }
   }
 
