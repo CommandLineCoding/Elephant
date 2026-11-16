@@ -261,6 +261,7 @@ class _ChatPageState extends State<ChatPage> {
             icon: Icons.shortcut_rounded,
             label: 'Forward',
             value: 'forward',
+          ),
         if (links.isNotEmpty)
           SheetAction(
             icon: Icons.link_rounded,
