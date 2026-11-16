@@ -58,6 +58,7 @@ func main() {
 
 	// routes mapping using sub-groups
 	routes.ApiRoute(app.Group("/api"))
+	routes.LinkRoutes(app.Mux)
 
 	// starting the server
 	config.Run()

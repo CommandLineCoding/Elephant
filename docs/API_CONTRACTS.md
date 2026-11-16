@@ -58,6 +58,8 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | Method | Endpoint | Auth | Description |
 |---|---|---|---|
 | GET | [/api/health](#health-endpoint) | No | Health check (server + database status) |
+| GET | [/u/{username}](#profile-links) | No | Profile link page for people without the app |
+| GET | [/.well-known/assetlinks.json](#profile-links) | No | Android app-link declaration |
 | POST | [/api/auth/register](#1-register-user) | No | Register a new user |
 | POST | [/api/auth/login](#2-login-user) | No | Log in and receive a token pair |
 | POST | [/api/auth/refresh](#3-refresh) | No | Rotate a refresh token for a new token pair |
@@ -139,6 +141,15 @@ Returned when the database ping fails.
   "error": "Database engine unreachable"
 }
 ```
+
+---
+
+## Profile Links
+
+Served at the root, outside `/api`.
+
+- **`GET /u/{username}`**: a small HTML page for someone who opens a profile link (`https://<host>/u/alex.4821`) without the app: the username, an **Open in Elephant** link (`elephant://u/alex.4821`) and where to get the app. Anything that isn't a full username (`name.1234`) gives `404`. With the app installed, Android opens the chat instead.
+- **`GET /.well-known/assetlinks.json`**: tells Android that the Elephant app (`in.commandlinecoding.elephant`) may open `https://<host>/u/…` links directly. The certificate fingerprints come from `APP_LINK_FINGERPRINTS`. The app only claims https links for `elephant.commandlinecoding.in`, so on other servers profile links use the `elephant://u/<username>` form.
 
 ---
 
