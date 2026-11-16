@@ -198,6 +198,8 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
       name: _name,
     );
     if (deleted && mounted) _close(ChatDetailsResult.left);
+  }
+
   /// Replaces this profile with the direct chat with this person.
   void _openDirectChat() {
     Navigator.pushReplacement(
