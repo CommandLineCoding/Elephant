@@ -420,6 +420,20 @@ class _ChatPageState extends State<ChatPage> {
               ),
               if (_searchMode)
                 Positioned.fill(top: topInset, child: _buildSearchResults()),
+              // With cached messages on screen, a failed load is a slim bar
+              // under the header rather than replacing the chat.
+              if (!_searchMode &&
+                  chat.historyError != null &&
+                  messages.isNotEmpty)
+                Positioned(
+                  top: topInset + Insets.sm,
+                  left: Insets.md,
+                  right: Insets.md,
+                  child: _HistoryErrorBar(
+                    message: chat.historyError!,
+                    onRetry: chat.retryHistory,
+                  ),
+                ),
               if (!_searchMode)
                 Positioned(
                   right: Insets.lg,
@@ -500,6 +514,14 @@ class _ChatPageState extends State<ChatPage> {
         padding: EdgeInsets.only(top: topInset, bottom: _composerHeight),
         child: chat.isChatHistoryLoading
             ? const Center(child: CircularProgressIndicator())
+            : chat.historyError != null
+            ? EmptyState(
+                icon: Icons.cloud_off_rounded,
+                title: chat.historyError!,
+                message: 'Check your connection and try again.',
+                actionLabel: 'Try again',
+                onAction: chat.retryHistory,
+              )
             : SingleChildScrollView(
                 child: Column(
                   children: [
@@ -774,6 +796,48 @@ class _SwipeToReplyState extends State<_SwipeToReply>
             ),
           ),
           Transform.translate(offset: Offset(_offset, 0), child: widget.child),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Couldn't load messages · Try again", shown over the top of a chat whose
+/// cached messages are still visible.
+class _HistoryErrorBar extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _HistoryErrorBar({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Panel(
+      borderRadius: BorderRadius.circular(Radii.md),
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.cloud_off_rounded,
+            size: 18,
+            color: context.colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: context.text.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: context.colors.onSurface,
+            ),
+            child: const Text('Try again'),
+          ),
         ],
       ),
     );
