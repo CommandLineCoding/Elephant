@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile/core/links.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/active_chat_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
@@ -225,6 +226,7 @@ class _ChatPageState extends State<ChatPage> {
     HapticFeedback.mediumImpact();
     final isLocked = message.content.startsWith(MessageEnvelope.lockedPrefix);
     final canEdit = !isLocked && message.canEdit(_auth.currentUser?.id);
+    final links = isLocked ? const <String>[] : linksIn(message.content);
 
     final action = await showActionSheet<String>(
       context,
@@ -250,6 +252,12 @@ class _ChatPageState extends State<ChatPage> {
             label: 'Copy text',
             value: 'copy',
           ),
+        if (links.isNotEmpty)
+          SheetAction(
+            icon: Icons.link_rounded,
+            label: links.length == 1 ? 'Copy link' : 'Copy links',
+            value: 'copy-links',
+          ),
         if (canEdit)
           const SheetAction(
             icon: Icons.edit_outlined,
@@ -266,6 +274,10 @@ class _ChatPageState extends State<ChatPage> {
         break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: message.content));
+        if (mounted) showSnack(context, 'Copied');
+        break;
+      case 'copy-links':
+        await Clipboard.setData(ClipboardData(text: links.join('\n')));
         if (mounted) showSnack(context, 'Copied');
         break;
       case 'edit':
