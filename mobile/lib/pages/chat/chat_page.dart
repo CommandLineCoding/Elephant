@@ -11,6 +11,7 @@ import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
 import 'package:mobile/services/blocked_users.dart';
+import 'package:mobile/pages/chat/forward_page.dart';
 import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
@@ -253,6 +254,12 @@ class _ChatPageState extends State<ChatPage> {
             label: 'Copy text',
             value: 'copy',
           ),
+        if (!isLocked)
+          const SheetAction(
+            icon: Icons.shortcut_rounded,
+            label: 'Forward',
+            value: 'forward',
+          ),
         if (canEdit)
           const SheetAction(
             icon: Icons.edit_outlined,
@@ -266,6 +273,12 @@ class _ChatPageState extends State<ChatPage> {
     switch (action) {
       case 'reply':
         _startReply(message);
+        break;
+      case 'forward':
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => ForwardPage(text: message.content)),
+        );
         break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: message.content));
