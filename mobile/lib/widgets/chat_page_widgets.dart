@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:mobile/core/chat_markdown.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
@@ -211,7 +212,8 @@ class ChatBubble extends StatelessWidget {
               )
             else
               MarkdownBody(
-                data: message.content,
+                data: prepareChatMarkdown(message.content),
+                extensionSet: chatMarkdownExtensions,
                 softLineBreak: true,
                 styleSheet: _markdownStyle(context, textColor),
               ),
