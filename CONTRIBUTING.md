@@ -44,7 +44,7 @@ flutter pub get
 flutter run
 ```
 
-On the sign-in screen, tap the server chip at the bottom (it says **Elephant Cloud**) and point the app at your local server:
+On the sign-in screen, tap **Server** at the bottom (it says **Elephant Cloud**) and point the app at your local server:
 
 | Where the app runs | Host | Port | Use HTTPS/WSS |
 |---|---|---|---|

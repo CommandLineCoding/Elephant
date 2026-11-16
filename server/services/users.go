@@ -116,3 +116,33 @@ func (s *UserService) Search(ctx context.Context, query string, page, limit int)
 
 	return s.repo.SearchUsers(ctx, query, limit, offset)
 }
+
+// MaxDisplayNameLength is the most characters a display name may have (the
+// users.display_name column is VARCHAR(100)).
+const MaxDisplayNameLength = 100
+
+// ErrInvalidDisplayName is wrapped by every display name validation failure.
+var ErrInvalidDisplayName = errors.New("invalid display name")
+
+// NormalizeDisplayName trims a display name and checks it has 1 to
+// MaxDisplayNameLength characters.
+func NormalizeDisplayName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("%w: display name cannot be empty", ErrInvalidDisplayName)
+	}
+	if utf8.RuneCountInString(name) > MaxDisplayNameLength {
+		return "", fmt.Errorf("%w: display name must be at most %d characters", ErrInvalidDisplayName, MaxDisplayNameLength)
+	}
+	return name, nil
+}
+
+// UpdateDisplayName changes the user's display name. Other people see it the
+// next time their app loads the user's profile.
+func (s *UserService) UpdateDisplayName(ctx context.Context, userID, name string) (*models.User, error) {
+	name, err := NormalizeDisplayName(name)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.UpdateDisplayName(ctx, userID, name)
+}

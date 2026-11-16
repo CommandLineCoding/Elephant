@@ -55,3 +55,24 @@ func TestUserRepository_create_and_search(t *testing.T) {
 	}
 
 }
+
+func TestUpdateDisplayName(t *testing.T) {
+	ctx := context.Background()
+	id := contactTestUser(t, "rename")
+	repo := NewUserRepository()
+
+	user, err := repo.UpdateDisplayName(ctx, id, "New Name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if user.ID != id || user.DisplayName != "New Name" || user.Username == "" {
+		t.Errorf("unexpected updated user: %+v", user)
+	}
+	if got, _ := repo.FindByID(ctx, id); got == nil || got.DisplayName != "New Name" {
+		t.Errorf("the new name wasn't stored: %+v", got)
+	}
+
+	if _, err := repo.UpdateDisplayName(ctx, "00000000-0000-4000-8000-000000000000", "x"); err == nil {
+		t.Error("updating a user who doesn't exist should fail")
+	}
+}

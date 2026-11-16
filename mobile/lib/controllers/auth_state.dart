@@ -42,6 +42,21 @@ class AuthState extends ChangeNotifier {
   /// everything as before.
   bool get registrationClosed => _registrationClosed;
 
+  bool _signedInBefore = false;
+
+  /// Whether someone has signed in on this device before, so the sign-in
+  /// screen can say "Welcome back" only to returning users.
+  bool get hasSignedInBefore => _signedInBefore;
+
+  /// Loads [hasSignedInBefore]. The device remembers the last user until
+  /// their account is deleted, so it survives signing out.
+  Future<void> loadSignInHistory() async {
+    final before = await _storage.read(key: "last_user_id") != null;
+    if (before == _signedInBefore) return;
+    _signedInBefore = before;
+    notifyListeners();
+  }
+
   final Dio _healthClient;
 
   /// [healthClient] is for tests; the app uses the default.
@@ -162,6 +177,26 @@ class AuthState extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+  /// Changes the signed-in user's display name. Returns an error message, or
+  /// null on success. The new name shows everywhere in the app straight away.
+  Future<String?> updateDisplayName(String name) async {
+    final error = validateDisplayName(name);
+    if (error != null) return error;
+    try {
+      final res = await ApiService().updateMe(displayName: name.trim());
+      final userData = ApiService.dataMap(res.data);
+      _currentUser = UserModel.fromJson(userData);
+      await _authService.saveUserProfile(jsonEncode(userData));
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't change your display name.",
+      );
+    }
   }
 
   Future<String?> checkAutoLogin() async {

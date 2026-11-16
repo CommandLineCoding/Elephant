@@ -67,6 +67,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/api/users/{id}](#2-get-user-by-id) | Yes | Get a user by ID |
 | GET | [/api/users/search?q=&page=&limit=](#3-search-users) | Yes | Search users by username or display name (rate limited) |
 | DELETE | [/api/users/me](#4-delete-account) | Yes | Permanently delete the authenticated user's account |
+| PATCH | [/api/users/me](#10-update-display-name) | Yes | Change your display name |
 | POST | [/api/users/me/push](#5-register-a-push-endpoint) | Yes | Register a UnifiedPush endpoint for new-message pings |
 | DELETE | [/api/users/me/push](#6-remove-a-push-endpoint) | Yes | Remove a UnifiedPush endpoint |
 | POST | [/api/users/{id}/block](#7-block-a-user) | Yes | Block a user |
@@ -700,6 +701,43 @@ The people you blocked, most recent first.
   ]
 }
 ```
+
+### 10. Update Display Name
+
+Changes your display name. It is trimmed, and must have 1 to 100 characters (counted as characters, not bytes). Other people see the new name the next time their app loads your profile.
+
+- **URL:** `/api/users/me`
+- **Method:** `PATCH`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X PATCH "http://HOST:PORT/api/users/me" -H "Content-Type: application/json" -H "Authorization: Bearer <access_token>" -d '{ "display_name": "Maya Chen" }'`
+
+#### Request Body
+
+```json
+{
+  "display_name": "Maya Chen"
+}
+```
+
+#### `200 OK`
+
+The updated user, as in [User ME](#1-user-me).
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "username": "maya.2723",
+    "display_name": "Maya Chen",
+    "created_at": "<Timestamp>"
+  }
+}
+```
+
+#### `400 Bad Request`
+
+`"Expected a display_name"`, `"display name cannot be empty"` or `"display name must be at most 100 characters"`.
 
 ---
 
