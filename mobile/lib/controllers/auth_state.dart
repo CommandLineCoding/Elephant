@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import 'package:mobile/models/user.dart';
 import '../core/constants.dart';
+import '../core/profile_links.dart';
 import '../services/auth_service.dart';
 
 class AuthState extends ChangeNotifier {
@@ -140,6 +141,9 @@ class AuthState extends ChangeNotifier {
   void _handleIncomingUri(Uri uri) {
     if (uri.scheme == 'elephant' && uri.host == 'oauth-callback') {
       handleOAuthCallback(uri);
+    } else {
+      // A profile link waits until someone is signed in.
+      ProfileLinks.instance.open(uri);
     }
   }
 

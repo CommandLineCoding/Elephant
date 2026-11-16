@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile/services/api_services.dart';
+import 'package:mobile/core/profile_links.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
@@ -37,6 +39,8 @@ class _HomePageState extends State<HomePage> {
     // A tapped notification asks for a chat. The inbox may still be loading
     // (when the tap started the app), so also try again as it changes.
     PushService.instance.chatToOpen.addListener(_openRequestedChat);
+    ProfileLinks.instance.pending.addListener(_openProfileLink);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openProfileLink());
     _inbox.addListener(_openRequestedChat);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openRequestedChat());
   }
@@ -44,8 +48,49 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     PushService.instance.chatToOpen.removeListener(_openRequestedChat);
+    ProfileLinks.instance.pending.removeListener(_openProfileLink);
     _inbox.removeListener(_openRequestedChat);
     super.dispose();
+  }
+
+  /// Opens the chat a profile link points to, looking the user up by their
+  /// exact username.
+  Future<void> _openProfileLink() async {
+    final username = ProfileLinks.instance.pending.value;
+    if (username == null || !mounted) return;
+    ProfileLinks.instance.pending.value = null;
+
+    final me = context.read<AuthState>().currentUser;
+    if (me != null && me.username.toLowerCase() == username) {
+      showSnack(context, "That's your own profile link");
+      return;
+    }
+    Map? user;
+    try {
+      final res = await ApiService().searchUsers(username);
+      user = ApiService.dataList(res.data).cast<Map>().firstWhere(
+        (u) => u['username']?.toString().toLowerCase() == username,
+        orElse: () => {},
+      );
+    } catch (e) {
+      debugPrint("Profile link lookup failed: $e");
+    }
+    if (!mounted) return;
+    if (user == null || user.isEmpty) {
+      showSnack(context, "Couldn't find @$username", isError: true);
+      return;
+    }
+    final name = user['display_name']?.toString() ?? '';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage(
+          chatUserId: user!['id'].toString(),
+          displayName: name.isEmpty ? username : name,
+          username: username,
+        ),
+      ),
+    );
   }
 
   void _openRequestedChat() {

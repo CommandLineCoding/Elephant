@@ -50,6 +50,12 @@ var (
 	// PUSH_ALLOW_PRIVATE_ENDPOINTS: allow UnifiedPush endpoints on private/loopback
 	// addresses over plain HTTP, e.g. a self-hosted ntfy on your LAN. Default "false".
 	PUSH_ALLOW_PRIVATE_ENDPOINTS string
+
+	// APP_LINK_FINGERPRINTS: SHA-256 fingerprints (comma-separated) of the
+	// certificates Android app builds are signed with, published in
+	// /.well-known/assetlinks.json so https profile links open the app
+	// directly. Defaults to the key GitHub releases are signed with.
+	APP_LINK_FINGERPRINTS string
 )
 
 func init() {
@@ -99,6 +105,8 @@ func init() {
 
 	REGISTRATION = getEnv("REGISTRATION", "open")
 	PUSH_ALLOW_PRIVATE_ENDPOINTS = getEnv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "false")
+	APP_LINK_FINGERPRINTS = getEnv("APP_LINK_FINGERPRINTS",
+		"ED:08:4D:C4:C9:06:E1:BB:75:13:80:32:81:2E:BE:0B:A2:2B:A7:8D:A7:3A:26:B8:69:D3:50:53:C0:AB:5F:1D")
 }
 
 func getEnv(key, fallback string) string {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile/core/profile_links.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/core/constants.dart';
 import 'package:mobile/pages/settings/accounts.dart';
@@ -20,6 +21,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 void showUserCard(BuildContext context) {
   final user = context.read<AuthState>().currentUser;
   final username = user?.username ?? '';
+  final link = ProfileLinks.linkFor(username).toString();
   showSheet(
     context,
     builder: (sheetContext) {
@@ -52,7 +54,7 @@ void showUserCard(BuildContext context) {
               borderRadius: BorderRadius.circular(Radii.xl),
               padding: const EdgeInsets.all(Insets.xl),
               child: QrImageView(
-                data: username,
+                data: link,
                 size: 200,
                 eyeStyle: QrEyeStyle(eyeShape: QrEyeShape.circle, color: fg),
                 dataModuleStyle: QrDataModuleStyle(
@@ -63,7 +65,8 @@ void showUserCard(BuildContext context) {
             ),
             const SizedBox(height: Insets.lg),
             Text(
-              'Friends can search for this username to message you.',
+              'Friends can scan this or open your link to message you, or '
+              'search for your username.',
               textAlign: TextAlign.center,
               style: sheetContext.text.bodySmall?.copyWith(
                 color: sheetContext.colors.onSurfaceVariant,
@@ -71,13 +74,22 @@ void showUserCard(BuildContext context) {
             ),
             const SizedBox(height: Insets.xl),
             PrimaryButton(
-              label: 'Copy username',
-              icon: Icons.copy_rounded,
+              label: 'Copy profile link',
+              icon: Icons.link_rounded,
+              onPressed: () {
+                Clipboard.setData(ClipboardData(text: link));
+                Navigator.pop(sheetContext);
+                showSnack(context, 'Profile link copied');
+              },
+            ),
+            const SizedBox(height: Insets.sm),
+            TextButton(
               onPressed: () {
                 Clipboard.setData(ClipboardData(text: username));
                 Navigator.pop(sheetContext);
                 showSnack(context, 'Username copied');
               },
+              child: const Text('Copy username'),
             ),
           ],
         ),
