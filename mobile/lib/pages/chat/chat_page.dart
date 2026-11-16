@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:mobile/core/links.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/active_chat_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
@@ -226,6 +227,7 @@ class _ChatPageState extends State<ChatPage> {
     HapticFeedback.mediumImpact();
     final isLocked = message.content.startsWith(MessageEnvelope.lockedPrefix);
     final canEdit = !isLocked && message.canEdit(_auth.currentUser?.id);
+    final links = isLocked ? const <String>[] : linksIn(message.content);
 
     final action = await showActionSheet<String>(
       context,
@@ -251,6 +253,12 @@ class _ChatPageState extends State<ChatPage> {
             label: 'Copy text',
             value: 'copy',
           ),
+        if (links.isNotEmpty)
+          SheetAction(
+            icon: Icons.link_rounded,
+            label: links.length == 1 ? 'Copy link' : 'Copy links',
+            value: 'copy-links',
+          ),
         if (canEdit)
           const SheetAction(
             icon: Icons.edit_outlined,
@@ -267,6 +275,10 @@ class _ChatPageState extends State<ChatPage> {
         break;
       case 'copy':
         await Clipboard.setData(ClipboardData(text: message.content));
+        if (mounted) showSnack(context, 'Copied');
+        break;
+      case 'copy-links':
+        await Clipboard.setData(ClipboardData(text: links.join('\n')));
         if (mounted) showSnack(context, 'Copied');
         break;
       case 'edit':
@@ -434,6 +446,20 @@ class _ChatPageState extends State<ChatPage> {
               ),
               if (_searchMode)
                 Positioned.fill(top: topInset, child: _buildSearchResults()),
+              // With cached messages on screen, a failed load is a slim bar
+              // under the header rather than replacing the chat.
+              if (!_searchMode &&
+                  chat.historyError != null &&
+                  messages.isNotEmpty)
+                Positioned(
+                  top: topInset + Insets.sm,
+                  left: Insets.md,
+                  right: Insets.md,
+                  child: _HistoryErrorBar(
+                    message: chat.historyError!,
+                    onRetry: chat.retryHistory,
+                  ),
+                ),
               if (!_searchMode)
                 Positioned(
                   right: Insets.lg,
@@ -514,6 +540,14 @@ class _ChatPageState extends State<ChatPage> {
         padding: EdgeInsets.only(top: topInset, bottom: _composerHeight),
         child: chat.isChatHistoryLoading
             ? const Center(child: CircularProgressIndicator())
+            : chat.historyError != null
+            ? EmptyState(
+                icon: Icons.cloud_off_rounded,
+                title: chat.historyError!,
+                message: 'Check your connection and try again.',
+                actionLabel: 'Try again',
+                onAction: chat.retryHistory,
+              )
             : SingleChildScrollView(
                 child: Column(
                   children: [
@@ -788,6 +822,48 @@ class _SwipeToReplyState extends State<_SwipeToReply>
             ),
           ),
           Transform.translate(offset: Offset(_offset, 0), child: widget.child),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Couldn't load messages · Try again", shown over the top of a chat whose
+/// cached messages are still visible.
+class _HistoryErrorBar extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _HistoryErrorBar({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Panel(
+      borderRadius: BorderRadius.circular(Radii.md),
+      padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+      child: Row(
+        children: [
+          Icon(
+            Icons.cloud_off_rounded,
+            size: 18,
+            color: context.colors.onSurfaceVariant,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: context.text.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: onRetry,
+            style: TextButton.styleFrom(
+              foregroundColor: context.colors.onSurface,
+            ),
+            child: const Text('Try again'),
+          ),
         ],
       ),
     );

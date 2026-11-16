@@ -83,13 +83,13 @@ class HelpAboutPage extends StatelessWidget {
                   question: 'Can I edit a message?',
                   answer:
                       'Yes. Long-press your message within 15 minutes of sending it and tap Edit. The other '
-                      'person sees the change the next time their chat refreshes.',
+                      'person sees the change straight away.',
                 ),
                 _Faq(
                   question: 'Can I use my own server?',
                   answer:
-                      'Yes. Sign out, then tap the server chip on the sign-in screen and enter your host and '
-                      'port. Setup instructions are in the GitHub repository.',
+                      'Yes. Sign out, then tap Server at the bottom of the sign-in screen and enter your host '
+                      'and port. Setup instructions are in the GitHub repository.',
                 ),
               ],
             ),
@@ -114,9 +114,9 @@ class HelpAboutPage extends StatelessWidget {
                 ElephantTile(
                   icon: Icons.edit_note_rounded,
                   iconColor: context.tokens.warning,
-                  title: 'Edits aren\'t live',
+                  title: 'Edits on older servers',
                   subtitle:
-                      'Edited messages update for others when their chat next syncs.',
+                      'Servers older than 0.3.3 show edits to others only when their chat next loads.',
                   showChevron: false,
                 ),
               ],

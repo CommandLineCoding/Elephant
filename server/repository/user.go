@@ -189,3 +189,17 @@ func (r *UserRepository) DeleteUser(ctx context.Context, id string) error {
 	}
 	return nil
 }
+
+// UpdateDisplayName sets a user's display name and returns the updated user.
+func (r *UserRepository) UpdateDisplayName(ctx context.Context, id, displayName string) (*models.User, error) {
+	var user models.User
+	err := config.DB.QueryRow(ctx, `
+		UPDATE users SET display_name = $2
+		WHERE id = $1::uuid
+		RETURNING id, username, display_name, created_at;
+	`, id, displayName).Scan(&user.ID, &user.Username, &user.DisplayName, &user.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}

@@ -122,6 +122,8 @@ class ApiService {
   /// Deletes a group for everyone (admins only).
   Future<Response> deleteGroup(String groupId) =>
       _dio.delete("/groups/$groupId");
+  Future<Response> updateMe({required String displayName}) =>
+      _dio.patch("/users/me", data: {"display_name": displayName});
 
   // --- Push notifications (UnifiedPush) ---
 
