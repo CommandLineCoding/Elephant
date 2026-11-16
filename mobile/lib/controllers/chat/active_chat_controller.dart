@@ -22,6 +22,10 @@ class ActiveChatController extends ChangeNotifier {
 
   bool isLoadingMore = false;
   bool hasMoreMessages = true;
+
+  /// Set when loading the chat's history failed, either the latest page or
+  /// an older one. Cached messages stay visible; [retryHistory] tries again.
+  String? historyError;
   int _currentRequestId = 0;
   List<Message> activeChat = [];
   String? currentChatUserId;
@@ -66,6 +70,7 @@ class ActiveChatController extends ChangeNotifier {
       hasMoreMessages = true;
       chatOpenCount = 0;
     }
+    historyError = null;
 
     chatOpenCount++;
     currentChatUserId = targetUid;
@@ -118,12 +123,27 @@ class ActiveChatController extends ChangeNotifier {
       if (!isGroup) _ws.sendRequestStatus(targetId: targetUid);
     } catch (e) {
       debugPrint("Chat history fetch failed: $e");
+      if (requestId == _currentRequestId && currentChatUserId == targetUid) {
+        historyError = "Couldn't load messages";
+      }
     } finally {
       if (currentChatUserId == targetUid) {
         isChatHistoryLoading = false;
         notifyListeners();
       }
     }
+  }
+
+  /// Clears the error, resets paging and loads the chat's latest page
+  /// again. Older pages load again as the user scrolls up.
+  Future<void> retryHistory() async {
+    final target = currentChatUserId;
+    if (target == null) return;
+    historyError = null;
+    hasMoreMessages = true;
+    isChatHistoryLoading = activeChat.isEmpty;
+    notifyListeners();
+    await openChat(target, isGroup: isCurrentChatGroup);
   }
 
   Future<void> loadMoreMessages() async {
@@ -164,9 +184,13 @@ class ActiveChatController extends ChangeNotifier {
       await _cache(targetUid, older);
     } catch (e) {
       debugPrint("Failed to load older messages: $e");
-      // Stop paging until the chat is reopened; otherwise the rebuild below
-      // re-triggers this from the scroll listener in a tight retry loop.
+      // Stop paging until Try again (or the chat is reopened); otherwise the
+      // rebuild below re-triggers this from the scroll listener in a tight
+      // retry loop.
       hasMoreMessages = false;
+      if (currentChatUserId == targetUid) {
+        historyError = "Couldn't load older messages";
+      }
     } finally {
       isLoadingMore = false;
       notifyListeners();
