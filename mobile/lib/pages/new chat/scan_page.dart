@@ -125,6 +125,11 @@ class _ScanPageState extends State<ScanPage> {
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
+        // The app theme sets its own title style and icon colour, which
+        // would win over foregroundColor and draw dark-on-black.
+        iconTheme: const IconThemeData(color: Colors.white),
+        titleTextStyle: context.text.titleLarge?.copyWith(color: Colors.white),
+        systemOverlayStyle: SystemUiOverlayStyle.light,
         title: const Text('Scan a code'),
       ),
       body: _error != null
