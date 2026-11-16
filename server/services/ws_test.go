@@ -451,8 +451,10 @@ func TestContactListIsCachedBriefly(t *testing.T) {
 	t.Cleanup(func() { contactClock = old })
 
 	var loads int32
-	setContactLoader(t, func(context.Context, string) ([]string, error) {
-		atomic.AddInt32(&loads, 1)
+	setContactLoader(t, func(_ context.Context, userID string) ([]string, error) {
+		if userID == "cache-bob" {
+			atomic.AddInt32(&loads, 1)
+		}
 		return []string{"cache-alice"}, nil
 	})
 	bob := connect(t, "cache-bob")
@@ -465,6 +467,9 @@ func TestContactListIsCachedBriefly(t *testing.T) {
 		bob.statusFor("cache-alice", 2*time.Second)
 	}
 	ask()
+	// Another user's presence change (e.g. a previous test's client closing)
+	// also loads contacts through the hub; only bob's loads count here.
+	Hub.broadcastStatus("someone-from-another-test", false)
 	ask()
 	ask()
 	if n := atomic.LoadInt32(&loads) - base; n != 1 {
