@@ -10,6 +10,7 @@ import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
+import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/push/push_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/home_page_widgets.dart';
@@ -38,6 +39,7 @@ class _HomePageState extends State<HomePage> {
     // A tapped notification asks for a chat. The inbox may still be loading
     // (when the tap started the app), so also try again as it changes.
     PushService.instance.chatToOpen.addListener(_openRequestedChat);
+    BlockedUsers.instance.load();
     _inbox.addListener(_openRequestedChat);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openRequestedChat());
   }

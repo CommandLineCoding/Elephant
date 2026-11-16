@@ -11,6 +11,8 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
+import 'package:mobile/services/blocked_users.dart';
+import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/services/ws_service.dart';
@@ -287,8 +289,22 @@ class _ChatPageState extends State<ChatPage> {
     }
   }
 
+  bool get _isBlocked =>
+      !widget.isGroup && BlockedUsers.instance.isBlocked(widget.chatUserId);
+
   Future<void> _onMenu(String value) async {
-    if (value == 'delete') {
+    if (value == 'block') {
+      await confirmAndBlock(
+        context,
+        BlockedUser(
+          id: widget.chatUserId,
+          username: widget.username ?? '',
+          displayName: _title,
+        ),
+      );
+    } else if (value == 'unblock') {
+      await unblock(context, widget.chatUserId, _title);
+    } else if (value == 'delete') {
       final deleted = await confirmAndDeleteChat(
         context,
         chatId: widget.chatUserId,
@@ -374,6 +390,13 @@ class _ChatPageState extends State<ChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: BlockedUsers.instance,
+      builder: (context, _) => _buildPage(context),
+    );
+  }
+
+  Widget _buildPage(BuildContext context) {
     final chat = context.watch<ActiveChatController>();
     final group = context.watch<GroupDetailsController>();
     final messages = chat.currentChatUserId == widget.chatUserId
@@ -427,6 +450,11 @@ class _ChatPageState extends State<ChatPage> {
                     icon: const Icon(Icons.more_vert_rounded),
                     onSelected: _onMenu,
                     itemBuilder: (_) => [
+                      if (!widget.isGroup)
+                        PopupMenuItem(
+                          value: _isBlocked ? 'unblock' : 'block',
+                          child: Text(_isBlocked ? 'Unblock' : 'Block'),
+                        ),
                       PopupMenuItem(
                         value: 'delete',
                         child: Text(
@@ -497,30 +525,36 @@ class _ChatPageState extends State<ChatPage> {
                         setState(() => _composerHeight = size.height);
                       }
                     },
-                    child: ChatComposer(
-                      controller: _composer,
-                      focusNode: _composerFocus,
-                      onSend: _send,
-                      byteLimit: chat.messageByteLimit,
-                      isEditing: _editing != null,
-                      onTypingChanged: chat.sendTypingNotification,
-                      banner: _editing != null
-                          ? ComposerBanner(
-                              icon: Icons.edit_outlined,
-                              title: 'Editing message',
-                              body: _editing!.content,
-                              onClose: _cancelBanner,
-                            )
-                          : _replyingTo != null
-                          ? ComposerBanner(
-                              icon: Icons.reply_rounded,
-                              title:
-                                  'Replying to ${_nameOf(_replyingTo!.senderId)}',
-                              body: _replyingTo!.content,
-                              onClose: _cancelBanner,
-                            )
-                          : null,
-                    ),
+                    child: _isBlocked
+                        ? BlockedBanner(
+                            displayName: _title,
+                            onUnblock: () =>
+                                unblock(context, widget.chatUserId, _title),
+                          )
+                        : ChatComposer(
+                            controller: _composer,
+                            focusNode: _composerFocus,
+                            onSend: _send,
+                            byteLimit: chat.messageByteLimit,
+                            isEditing: _editing != null,
+                            onTypingChanged: chat.sendTypingNotification,
+                            banner: _editing != null
+                                ? ComposerBanner(
+                                    icon: Icons.edit_outlined,
+                                    title: 'Editing message',
+                                    body: _editing!.content,
+                                    onClose: _cancelBanner,
+                                  )
+                                : _replyingTo != null
+                                ? ComposerBanner(
+                                    icon: Icons.reply_rounded,
+                                    title:
+                                        'Replying to ${_nameOf(_replyingTo!.senderId)}',
+                                    body: _replyingTo!.content,
+                                    onClose: _cancelBanner,
+                                  )
+                                : null,
+                          ),
                   ),
                 ),
             ],
