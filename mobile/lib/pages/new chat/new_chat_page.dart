@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:mobile/pages/new%20chat/scan_page.dart';
 import 'package:mobile/controllers/chat/chat_search_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/user.dart';
@@ -65,6 +66,14 @@ class _NewChatPageState extends State<NewChatPage> {
       appBar: ElephantAppBar(
         title: const Text('New message'),
         actions: [
+          IconButton(
+            tooltip: 'Scan a code',
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const ScanPage()),
+            ),
+          ),
           IconButton(
             tooltip: 'My QR code',
             icon: const Icon(Icons.qr_code_rounded),
