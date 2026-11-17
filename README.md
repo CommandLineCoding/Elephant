@@ -184,12 +184,13 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `STUN_URLS` | Comma-separated STUN servers for calls. Set it empty for none (calls then only connect on the same network) | `stun:stun.cloudflare.com:3478` |
 | `TURN_URLS`, `TURN_SECRET` | Your own [coturn](#calls-and-turn) relay: its URLs (e.g. `turn:turn.example.org:3478?transport=udp,turn:turn.example.org:3478?transport=tcp`) and its `static-auth-secret` | — |
 | `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN` | Use [Cloudflare's TURN service](https://developers.cloudflare.com/realtime/turn/) instead of your own relay. Takes precedence over `TURN_URLS` | — |
+| `TURN_USERNAME`, `TURN_PASSWORD` | A hosted TURN service with a fixed login, with its URLs in `TURN_URLS`. Used when `TURN_SECRET` isn't set | — |
 
 See [.env.example](.env.example) for a starting template. With [compose.dev.yaml](compose.dev.yaml), `POSTGRES_PORT` sets the **host** port that the database is published on (on `127.0.0.1` only); the default compose file doesn't publish it at all. The server always connects to `db:5432` inside the network.
 
 ### Calls and TURN
 
-Voice calls connect the two phones directly when they can. On mobile data they often can't, and the audio has to go through a TURN relay. The relay only ever sees encrypted audio. The server hands the app short-lived TURN credentials at the start of each call (`GET /api/calls/ice-servers`). There are two ways to provide a relay:
+Voice calls connect the two phones directly when they can. On mobile data they often can't, and the audio has to go through a TURN relay. The relay only ever sees encrypted audio. The server hands the app TURN credentials at the start of each call (`GET /api/calls/ice-servers`). There are three ways to provide a relay:
 
 - **Cloudflare TURN.** Create a TURN key in the Cloudflare dashboard (Realtime → TURN) and set `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN`. Cloudflare's free tier covers 1,000 GB of relayed traffic a month; a relayed hour of voice is roughly 20–45 MB.
 - **Your own coturn.** It needs UDP, so it can't run on HTTP-only hosts such as Render. Set `TURN_SECRET` (a long random string), `TURN_EXTERNAL_IP` (your server's public IP) and `TURN_URLS` in `.env`, then start it with the `calls` profile:
@@ -200,7 +201,9 @@ Voice calls connect the two phones directly when they can. On mobile data they o
 
   Open these ports in your firewall: `3478/udp` and `3478/tcp` (STUN and TURN), and `49160-49200/udp` (relayed audio, about 40 simultaneous relayed calls). coturn runs on the host's network and refuses to relay into private address ranges, so it can't be used to reach your internal network.
 
-With neither, calls use STUN only. That's enough on most Wi-Fi and home networks, but many calls on mobile data won't connect.
+- **A hosted TURN service with a fixed login.** Some have free plans with no card and no charges beyond the free allowance, for example [Metered Open Relay](https://metered.ca/tools/openrelay/) (20 GB a month). Sign up, then set `TURN_URLS` to the URLs it gives you (comma-separated) and `TURN_USERNAME`/`TURN_PASSWORD` to its username and password. Every signed-in user receives the same login, so someone could reuse it against your allowance; when it runs out, calls fall back to connecting directly.
+
+With none of these, calls use STUN only. That's enough on most Wi-Fi and home networks, but many calls on mobile data won't connect.
 
 ## API
 

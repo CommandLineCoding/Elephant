@@ -16,6 +16,42 @@ import (
 	"github.com/commandlinecoding/elephant/server/env"
 )
 
+// setStaticTURN sets a fixed TURN login for one test.
+func setStaticTURN(t *testing.T, user, pass string) {
+	t.Helper()
+	oldUser, oldPass := env.TURN_USERNAME, env.TURN_PASSWORD
+	env.TURN_USERNAME, env.TURN_PASSWORD = user, pass
+	t.Cleanup(func() { env.TURN_USERNAME, env.TURN_PASSWORD = oldUser, oldPass })
+}
+
+func TestTURNWithAFixedLogin(t *testing.T) {
+	setICEEnv(t, "stun:stun.example.org:3478", "turn:relay.example.org:80,turns:relay.example.org:443?transport=tcp", "", "", "")
+	setStaticTURN(t, "elephant", "pa55")
+	got := ICEServers(context.Background(), "u1")
+	want := []ICEServer{
+		{URLs: []string{"stun:stun.example.org:3478"}},
+		{URLs: []string{"turn:relay.example.org:80", "turns:relay.example.org:443?transport=tcp"}, Username: "elephant", Credential: "pa55"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v\nwant %+v", got, want)
+	}
+
+	// Without a password there's no TURN.
+	setStaticTURN(t, "elephant", "")
+	if got := ICEServers(context.Background(), "u1"); len(got) != 1 {
+		t.Errorf("a login without a password gave %+v", got)
+	}
+}
+
+func TestCoturnSecretWinsOverAFixedLogin(t *testing.T) {
+	setICEEnv(t, "", "turn:turn.example.org:3478", "s3cret", "", "")
+	setStaticTURN(t, "elephant", "pa55")
+	got := ICEServers(context.Background(), "u1")
+	if len(got) != 1 || got[0].Username == "elephant" {
+		t.Errorf("got %+v, want coturn credentials", got)
+	}
+}
+
 // setICEEnv sets the call settings for one test.
 func setICEEnv(t *testing.T, stun, turnURLs, turnSecret, cfKey, cfToken string) {
 	t.Helper()
