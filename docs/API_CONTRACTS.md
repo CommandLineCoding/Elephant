@@ -75,6 +75,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | POST | [/api/users/{id}/block](#7-block-a-user) | Yes | Block a user |
 | DELETE | [/api/users/{id}/block](#8-unblock-a-user) | Yes | Unblock a user |
 | GET | [/api/users/me/blocked](#9-list-blocked-users) | Yes | List the people you blocked |
+| GET | [/api/calls/ice-servers](#ice-servers) | Yes | STUN/TURN servers and credentials for a call (rate limited) |
 | GET | [/api/ws?token=](#1-connect-to-websocket) | Yes (query) | WebSocket upgrade endpoint |
 | WS | [Client → Server](#2-client-to-server-messages) | — | Events the client sends |
 | WS | [Server → Client](#3-server-to-client-messages) | — | Events the server pushes |
@@ -750,6 +751,54 @@ The updated user, as in [User ME](#1-user-me).
 #### `400 Bad Request`
 
 `"Expected a display_name"`, `"display name cannot be empty"` or `"display name must be at most 100 characters"`.
+
+---
+
+## Calls Endpoints
+
+### ICE Servers
+
+The STUN and TURN servers to use for a call, with TURN credentials that expire after `ttl` seconds. Ask each time a call starts.
+
+- **URL:** `/api/calls/ice-servers`
+- **Method:** `GET`
+- **Authentication Required:** `YES`
+- **Rate limit:** a burst of 5, then one every 5 seconds.
+
+#### `200 OK`
+
+`ice_servers` can be passed straight to WebRTC as `iceServers`. STUN entries have no `username` or `credential`. The list may be empty if the server has no STUN or TURN configured.
+
+```json
+{
+  "success": true,
+  "data": {
+    "ice_servers": [
+      { "urls": ["stun:stun.cloudflare.com:3478"] },
+      {
+        "urls": [
+          "turn:turn.example.org:3478?transport=udp",
+          "turn:turn.example.org:3478?transport=tcp"
+        ],
+        "username": "1794976213:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "credential": "q1E3c3l0Yq0p4c9mJb0n0o5hY8w="
+      }
+    ],
+    "ttl": 86400
+  }
+}
+```
+
+If the server can't get TURN credentials (e.g. Cloudflare is unreachable), it answers `200` with STUN only.
+
+#### `429 Too Many Requests`
+
+```json
+{
+  "success": false,
+  "error": "Rate limit exceeded. Too many call setup requests."
+}
+```
 
 ---
 

@@ -180,8 +180,26 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `GITHUB_REDIRECT_URL` | GitHub OAuth callback URL, e.g. `https://HOST/api/auth/github/callback` | — |
 | `REGISTRATION` | `open` lets anyone create an account. `closed` refuses new accounts (username sign-up and new Google/GitHub accounts); existing users can still sign in. Any other value stops the server from starting | `open` |
 | `PUSH_ALLOW_PRIVATE_ENDPOINTS` | Let users register [UnifiedPush](https://unifiedpush.org) endpoints on private or loopback addresses over plain HTTP, e.g. a self-hosted ntfy on your LAN. Off by default so the server can't be pointed at your internal network | `false` |
+| `STUN_URLS` | Comma-separated STUN servers for calls. Set it empty for none (calls then only connect on the same network) | `stun:stun.cloudflare.com:3478` |
+| `TURN_URLS`, `TURN_SECRET` | Your own [coturn](#calls-and-turn) relay: its URLs (e.g. `turn:turn.example.org:3478?transport=udp,turn:turn.example.org:3478?transport=tcp`) and its `static-auth-secret` | — |
+| `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN` | Use [Cloudflare's TURN service](https://developers.cloudflare.com/realtime/turn/) instead of your own relay. Takes precedence over `TURN_URLS` | — |
 
 See [.env.example](.env.example) for a starting template. With [compose.dev.yaml](compose.dev.yaml), `POSTGRES_PORT` sets the **host** port that the database is published on (on `127.0.0.1` only); the default compose file doesn't publish it at all. The server always connects to `db:5432` inside the network.
+
+### Calls and TURN
+
+Voice calls connect the two phones directly when they can. On mobile data they often can't, and the audio has to go through a TURN relay. The relay only ever sees encrypted audio. The server hands the app short-lived TURN credentials at the start of each call (`GET /api/calls/ice-servers`). There are two ways to provide a relay:
+
+- **Cloudflare TURN.** Create a TURN key in the Cloudflare dashboard (Realtime → TURN) and set `CLOUDFLARE_TURN_KEY_ID` and `CLOUDFLARE_TURN_API_TOKEN`. Cloudflare's free tier covers 1,000 GB of relayed traffic a month; a relayed hour of voice is roughly 20–45 MB.
+- **Your own coturn.** It needs UDP, so it can't run on HTTP-only hosts such as Render. Set `TURN_SECRET` (a long random string), `TURN_EXTERNAL_IP` (your server's public IP) and `TURN_URLS` in `.env`, then start it with the `calls` profile:
+
+  ```bash
+  docker compose --profile calls up -d
+  ```
+
+  Open these ports in your firewall: `3478/udp` and `3478/tcp` (STUN and TURN), and `49160-49200/udp` (relayed audio, about 40 simultaneous relayed calls). coturn runs on the host's network and refuses to relay into private address ranges, so it can't be used to reach your internal network.
+
+With neither, calls use STUN only. That's enough on most Wi-Fi and home networks, but many calls on mobile data won't connect.
 
 ## API
 
