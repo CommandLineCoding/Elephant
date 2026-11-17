@@ -66,6 +66,7 @@ class PushService with WidgetsBindingObserver {
 
   bool _background = false;
   bool _checking = false;
+  bool _checkingCall = false;
 
   Future<void> init(List<String> args) async {
     _background = args.contains(backgroundArg);
@@ -214,12 +215,18 @@ class PushService with WidgetsBindingObserver {
   /// A ping: the server has something for us.
   Future<void> _onMessage(PushMessage message, String instance) async {
     // The ping's content is not used, whether or not it decrypted.
-    if (_checking) return;
 
-    // When the app is open it is connected live and shows messages itself.
+    // When the app is open it is connected live and shows messages and calls
+    // itself.
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       return;
     }
+
+    // A call sends the same ping as a message, so ask every time. This runs
+    // even while an unread check is in progress: a call can't wait.
+    unawaited(_checkForCall());
+
+    if (_checking) return;
 
     _checking = true;
     try {
@@ -228,6 +235,24 @@ class PushService with WidgetsBindingObserver {
       debugPrint('Could not check for new messages: $e');
     } finally {
       _checking = false;
+    }
+  }
+
+  Future<void> _checkForCall() async {
+    if (_checkingCall) return;
+    _checkingCall = true;
+    try {
+      final call = await ApiService().pendingCall();
+      if (call == null) return;
+      await _notifier.showIncomingCall(
+        call.id,
+        call.callerName,
+        showName: await PushPrefs.showNames(),
+      );
+    } catch (e) {
+      debugPrint('Could not check for a call: $e');
+    } finally {
+      _checkingCall = false;
     }
   }
 

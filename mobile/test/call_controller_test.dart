@@ -386,4 +386,34 @@ void main() {
       'Voice call · No answer',
     );
   });
+
+  test('a call missed while the app was closed is logged', () async {
+    final h = Harness();
+    await h.receive({
+      'type': 'call_missed',
+      'call_id': 'm1',
+      'sender_id': 'BOB',
+      'at': '2026-11-17T10:37:12Z',
+    });
+    final entry = h.log.entries.single;
+    expect(entry.chatId, 'bob');
+    expect(entry.isMissed, isTrue);
+    expect(entry.startedAt, DateTime.utc(2026, 11, 17, 10, 37, 12).toLocal());
+    expect(h.call.phase, CallPhase.idle);
+  });
+
+  test('the call log keeps one entry per call', () {
+    final log = CallLog();
+    CallLogEntry entry(CallOutcome o) => CallLogEntry(
+      id: 'same',
+      chatId: 'bob',
+      outgoing: false,
+      outcome: o,
+      startedAt: DateTime(2026),
+    );
+    // The database isn't available in tests; the list updates first.
+    log.add(entry(CallOutcome.missed)).ignore();
+    log.add(entry(CallOutcome.missed)).ignore();
+    expect(log.entriesFor('bob'), hasLength(1));
+  });
 }

@@ -132,7 +132,7 @@ class CallLog extends ChangeNotifier {
 
   Future<void> add(CallLogEntry entry) async {
     final id = entry.chatId.toLowerCase();
-    _byChat[id] = [...entriesFor(id), entry]
+    _byChat[id] = [...entriesFor(id).where((e) => e.id != entry.id), entry]
       ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     notifyListeners();
     try {

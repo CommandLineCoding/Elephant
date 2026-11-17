@@ -14,6 +14,10 @@ class CallSounds {
 
   Future<void> stop() => _invoke('stopTones');
 
+  /// Lets the app show over the lock screen (while the call screen is open),
+  /// so a call can be answered without unlocking.
+  Future<void> overLockScreen(bool on) => _invoke('overLockScreen', {'on': on});
+
   Future<void> inCall(bool on, {String name = ''}) =>
       _invoke('inCall', {'on': on, 'name': name});
 

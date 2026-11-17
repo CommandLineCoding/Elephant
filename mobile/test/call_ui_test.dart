@@ -72,6 +72,8 @@ void main() {
 
       expect(find.text('Name of bob'), findsOneWidget);
       expect(find.text('Incoming voice call'), findsOneWidget);
+      // It can be answered without unlocking the phone.
+      expect(h.sounds.calls, contains('overLockScreen true'));
       expect(find.text('End-to-end encrypted'), findsOneWidget);
 
       await tester.tap(find.bySemanticsLabel('Accept'));
@@ -106,6 +108,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(CallPage), findsNothing);
       expect(find.text('open'), findsOneWidget);
+      // Closed, it goes back behind the lock screen.
+      expect(h.sounds.calls.last, 'overLockScreen false');
     });
 
     testWidgets('in a call: timer, mute, speaker, hang up', (tester) async {
