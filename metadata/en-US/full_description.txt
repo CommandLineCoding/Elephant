@@ -7,12 +7,13 @@ Elephant is a privacy-first, open-source messenger. Direct messages are end-to-e
 <li>Group chats with admin and member roles</li>
 <li>Real-time delivery with typing indicators, read receipts and online status (shared only with people you chat with)</li>
 <li>Notifications for new messages through UnifiedPush, without Google services. A notification can say who wrote, but never what was said</li>
-<li>Replies with quoted messages, Markdown formatting, and editing your messages for 15 minutes after sending, with edits shown live</li>
+<li>Replies with quoted messages, forwarding, Markdown formatting, and editing your messages for 15 minutes after sending, with edits shown live</li>
 <li>Messages stored on your device in an encrypted database (SQLCipher)</li>
 <li>Messages written offline are queued and sent when you reconnect</li>
-<li>Find people by username and share yours as a QR code</li>
+<li>Find people by username, by scanning their QR code, or from their profile link</li>
+<li>Delete a chat just for you or for everyone, and block people from messaging you</li>
 <li>Sign in with a username and password, or optionally with Google or GitHub</li>
-<li>A calm, flat design in four themes: Frost, Aura, Onyx and Nebula</li>
+<li>A calm, flat design in four themes: Frost, Aura, Onyx and Nebula, or follow your phone's light or dark mode</li>
 <li>Delete your account and its messages from the server at any time</li>
 </ul>
 
@@ -23,6 +24,7 @@ Elephant connects to the public server at elephant.commandlinecoding.in by defau
 <ul>
 <li>Group messages are encrypted in transit (TLS) but are not end-to-end encrypted yet.</li>
 <li>Google and GitHub sign-in are optional and open in your browser. A username and password account needs no third-party service.</li>
+<li>The camera is only used to scan QR codes.</li>
 <li>No ads, analytics or trackers.</li>
 </ul>
 

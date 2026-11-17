@@ -1,0 +1,8 @@
+- New: delete a chat, just for you or for everyone
+- New: block people, and see who you've blocked in Privacy
+- New: forward a message to other chats
+- New: scan someone's QR code or open their profile link to start a chat
+- Change your display name, and let the theme follow your phone
+- Links ask before opening, and can be copied from a message
+- Ordinary text no longer turns into Markdown by accident
+- Shows an error with Try again if a chat's messages can't load
