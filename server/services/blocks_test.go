@@ -9,22 +9,30 @@ import (
 // The hub tests run without a database, so by default nobody has blocked
 // anyone. The real lookup is tested in the repository package.
 func init() {
-	blockedBy = func(context.Context, string, string) bool { return false }
+	blockLookup = func(context.Context, string, string) bool { return false }
+}
+
+func setBlockLookup(f func(context.Context, string, string) bool) {
+	blockLookupLock.Lock()
+	defer blockLookupLock.Unlock()
+	blockLookup = f
 }
 
 // setBlocks makes blockedBy answer from a fixed list of blocker->sender pairs.
 func setBlocks(t *testing.T, pairs ...[2]string) {
 	t.Helper()
-	old := blockedBy
-	blockedBy = func(_ context.Context, recipient, sender string) bool {
+	blockLookupLock.RLock()
+	old := blockLookup
+	blockLookupLock.RUnlock()
+	setBlockLookup(func(_ context.Context, recipient, sender string) bool {
 		for _, p := range pairs {
 			if p[0] == recipient && p[1] == sender {
 				return true
 			}
 		}
 		return false
-	}
-	t.Cleanup(func() { blockedBy = old })
+	})
+	t.Cleanup(func() { setBlockLookup(old) })
 }
 
 func TestBlockedSenderCantReachYou(t *testing.T) {

@@ -89,7 +89,7 @@ func TestPushClientRefusesPrivateAddresses(t *testing.T) {
 
 	// srv listens on 127.0.0.1.
 	strict := &PushService{client: newPushClient(false)}
-	if _, err := strict.send(context.Background(), srv.URL); !errors.Is(err, errBlockedAddress) {
+	if _, err := strict.send(context.Background(), srv.URL, messagePingTTL); !errors.Is(err, errBlockedAddress) {
 		t.Errorf("connecting to loopback should be blocked, got %v", err)
 	}
 	if atomic.LoadInt32(&hits) != 0 {
@@ -98,12 +98,12 @@ func TestPushClientRefusesPrivateAddresses(t *testing.T) {
 
 	// A hostname that resolves to loopback is blocked as well.
 	_, port, _ := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
-	if _, err := strict.send(context.Background(), "http://localhost:"+port); !errors.Is(err, errBlockedAddress) {
+	if _, err := strict.send(context.Background(), "http://localhost:"+port, messagePingTTL); !errors.Is(err, errBlockedAddress) {
 		t.Errorf("a name resolving to loopback should be blocked, got %v", err)
 	}
 
 	lenient := &PushService{client: newPushClient(true)}
-	if _, err := lenient.send(context.Background(), srv.URL); err != nil {
+	if _, err := lenient.send(context.Background(), srv.URL, messagePingTTL); err != nil {
 		t.Errorf("loopback should be reachable when private endpoints are allowed: %v", err)
 	}
 	if atomic.LoadInt32(&hits) != 1 {
@@ -111,7 +111,7 @@ func TestPushClientRefusesPrivateAddresses(t *testing.T) {
 	}
 
 	// Cloud metadata is never reachable, whatever the setting.
-	if _, err := lenient.send(context.Background(), "http://169.254.169.254/latest/meta-data"); !errors.Is(err, errBlockedAddress) {
+	if _, err := lenient.send(context.Background(), "http://169.254.169.254/latest/meta-data", messagePingTTL); !errors.Is(err, errBlockedAddress) {
 		t.Errorf("the metadata address must always be blocked, got %v", err)
 	}
 }
@@ -128,7 +128,7 @@ func TestPushClientDoesNotFollowRedirects(t *testing.T) {
 	t.Cleanup(redirector.Close)
 
 	p := &PushService{client: newPushClient(true)}
-	gone, err := p.send(context.Background(), redirector.URL)
+	gone, err := p.send(context.Background(), redirector.URL, messagePingTTL)
 
 	if atomic.LoadInt32(&targetHits) != 0 {
 		t.Error("the redirect was followed")
@@ -150,7 +150,7 @@ func TestPushSendInterpretsStatusCodes(t *testing.T) {
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
 		p := &PushService{client: newPushClient(true)}
-		gone, err := p.send(context.Background(), srv.URL)
+		gone, err := p.send(context.Background(), srv.URL, messagePingTTL)
 		srv.Close()
 
 		if gone != want.gone || (err != nil) != want.failed {
@@ -169,7 +169,7 @@ func TestPushErrorsDoNotLeakTheEndpoint(t *testing.T) {
 	_ = l.Close() // nothing is listening any more
 
 	p := &PushService{client: newPushClient(true)}
-	_, err = p.send(context.Background(), "http://"+addr+"/up-secret-topic-123")
+	_, err = p.send(context.Background(), "http://"+addr+"/up-secret-topic-123", messagePingTTL)
 	if err == nil {
 		t.Fatal("expected a connection error")
 	}
