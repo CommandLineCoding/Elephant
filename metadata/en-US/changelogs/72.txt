@@ -1,0 +1,5 @@
+- New: voice calls with the people you chat with. Call setup is end-to-end encrypted
+- Calls ring even when Elephant is closed (with notifications on), and can be answered from the lock screen
+- Mute and speaker, and calls keep going when you switch apps
+- Calls, including missed ones, show in the chat
+- The app now asks for the microphone, when you make or answer your first call
