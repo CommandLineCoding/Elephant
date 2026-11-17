@@ -132,31 +132,38 @@ services:
     tmpfs:
       - /tmp
       - /var/lib/coturn
-    command:
-      - -n
-      - --log-file=stdout
-      - --pidfile=/tmp/turnserver.pid
-      - --no-tls
-      - --fingerprint
-      - --use-auth-secret
-      - --static-auth-secret=${TURN_SECRET:?set TURN_SECRET in .env to run coturn}
-      - --realm=${TURN_REALM:-elephant}
-      - --listening-port=3478
-      - --min-port=49160
-      - --max-port=49200
-      - --external-ip=${TURN_EXTERNAL_IP:?set TURN_EXTERNAL_IP in .env to your server's public IP}
-      # Only relay to the internet, never into the host's own networks.
-      - --no-multicast-peers
-      - --denied-peer-ip=0.0.0.0-0.255.255.255
-      - --denied-peer-ip=10.0.0.0-10.255.255.255
-      - --denied-peer-ip=100.64.0.0-100.127.255.255
-      - --denied-peer-ip=127.0.0.0-127.255.255.255
-      - --denied-peer-ip=169.254.0.0-169.254.255.255
-      - --denied-peer-ip=172.16.0.0-172.31.255.255
-      - --denied-peer-ip=192.168.0.0-192.168.255.255
-      - --denied-peer-ip=::1
-      - --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff
-      - --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
+    environment:
+      TURN_SECRET: ${TURN_SECRET:-}
+      TURN_EXTERNAL_IP: ${TURN_EXTERNAL_IP:-}
+      TURN_REALM: ${TURN_REALM:-elephant}
+    # The settings are checked here, when coturn starts, rather than with
+    # ${VAR:?}, which would stop `docker compose up` for everyone. Without a
+    # secret coturn would be an open relay, so it refuses to start.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        if [ -z "$$TURN_SECRET" ] || [ -z "$$TURN_EXTERNAL_IP" ]; then
+          echo "Set TURN_SECRET and TURN_EXTERNAL_IP in .env to run coturn." >&2
+          exit 1
+        fi
+        # Only relay to the internet, never into the host's own networks.
+        exec turnserver -n --log-file=stdout --pidfile=/tmp/turnserver.pid \
+          --no-tls --fingerprint \
+          --use-auth-secret --static-auth-secret="$$TURN_SECRET" \
+          --realm="$$TURN_REALM" --external-ip="$$TURN_EXTERNAL_IP" \
+          --listening-port=3478 --min-port=49160 --max-port=49200 \
+          --no-multicast-peers \
+          --denied-peer-ip=0.0.0.0-0.255.255.255 \
+          --denied-peer-ip=10.0.0.0-10.255.255.255 \
+          --denied-peer-ip=100.64.0.0-100.127.255.255 \
+          --denied-peer-ip=127.0.0.0-127.255.255.255 \
+          --denied-peer-ip=169.254.0.0-169.254.255.255 \
+          --denied-peer-ip=172.16.0.0-172.31.255.255 \
+          --denied-peer-ip=192.168.0.0-192.168.255.255 \
+          --denied-peer-ip=::1 \
+          --denied-peer-ip=fc00::-fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff \
+          --denied-peer-ip=fe80::-febf:ffff:ffff:ffff:ffff:ffff:ffff:ffff
     restart: unless-stopped
 
 volumes:
