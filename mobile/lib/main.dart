@@ -18,6 +18,12 @@ import 'controllers/chat/chat_search_controller.dart';
 import 'controllers/chat/group_details_controller.dart';
 import 'controllers/chat/inbox_controller.dart';
 import 'services/chat/chat_event_handler.dart';
+import 'controllers/call/call_controller.dart';
+import 'pages/call/call_page.dart';
+import 'services/calls/call_wiring.dart';
+
+/// Lets an incoming call open the call screen from anywhere in the app.
+final appNavigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,6 +46,12 @@ Future<void> main(List<String> args) async {
     ..currentUserIdProvider = currentUserId
     ..onMessageEdited = inboxController.updatePreviewForEdit;
 
+  final callController = createCallController(inboxController);
+  CallController.instance = callController;
+  callController.onIncoming = () {
+    appNavigatorKey.currentState?.push(CallPage.route(callController));
+  };
+
   runApp(
     MultiProvider(
       providers: [
@@ -48,6 +60,7 @@ Future<void> main(List<String> args) async {
         ChangeNotifierProvider(create: (_) => GroupController()),
         ChangeNotifierProvider.value(value: inboxController),
         ChangeNotifierProvider.value(value: activeChatController),
+        ChangeNotifierProvider.value(value: callController),
         ChangeNotifierProvider(create: (_) => ChatSearchController()),
         ChangeNotifierProvider(create: (_) => GroupDetailsController()),
         ChangeNotifierProvider(
@@ -72,6 +85,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Elephant',
+      navigatorKey: appNavigatorKey,
       debugShowCheckedModeBanner: false,
       theme: context.watch<ThemeProvider>().themeData,
       themeAnimationDuration: const Duration(milliseconds: 350),

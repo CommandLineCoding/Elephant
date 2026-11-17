@@ -14,6 +14,10 @@ import 'package:mobile/models/message.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/pages/chat/forward_page.dart';
 import 'package:mobile/pages/chat/block_user.dart';
+import 'package:mobile/controllers/call/call_controller.dart';
+import 'package:mobile/pages/call/call_page.dart';
+import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/widgets/call_log_row.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/services/ws_service.dart';
@@ -74,6 +78,7 @@ class _ChatPageState extends State<ChatPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _chat.openChat(widget.chatUserId, isGroup: widget.isGroup);
+      if (!widget.isGroup) CallLog.instance.load(widget.chatUserId);
       context.read<InboxController>().clearUnread(widget.chatUserId);
       if (widget.isGroup) {
         context.read<GroupDetailsController>().fetchGroupMembers(
@@ -128,7 +133,7 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _jumpToMessage(String messageId) {
-    final messages = _chat.activeChat;
+    final messages = _shown;
     final index = messages.indexWhere((m) => m.id == messageId);
     if (index == -1 || !_scroll.isAttached) {
       showSnack(context, 'That message is further back than what\'s loaded.');
@@ -404,17 +409,74 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: BlockedUsers.instance,
+      listenable: Listenable.merge([BlockedUsers.instance, CallLog.instance]),
       builder: (context, _) => _buildPage(context),
     );
+  }
+
+  /// What the list shows: the messages, with this chat's calls in between.
+  List<Message> _shown = const [];
+  final Map<String, CallLogEntry> _callRows = {};
+
+  /// Adds the chat's calls to [messages] as placeholder rows (see
+  /// [_isCallRow]). While older messages are still to load, calls from before
+  /// the oldest loaded message wait for them, so they land in the right place.
+  List<Message> _withCalls(List<Message> messages, bool hasMore) {
+    _callRows.clear();
+    if (widget.isGroup) return messages;
+    final calls = CallLog.instance.entriesFor(widget.chatUserId);
+    if (calls.isEmpty) return messages;
+
+    final from = hasMore && messages.isNotEmpty
+        ? messages.first.createdAt
+        : null;
+    final rows = <Message>[];
+    for (final call in calls) {
+      if (from != null && call.startedAt.isBefore(from)) continue;
+      final id = 'call:${call.id}';
+      _callRows[id] = call;
+      rows.add(
+        Message(
+          id: id,
+          senderId: call.outgoing ? 'me' : widget.chatUserId,
+          receiverId: '',
+          content: '',
+          createdAt: call.startedAt,
+          isRead: true,
+          syncStatus: _callRowStatus,
+        ),
+      );
+    }
+    return [...messages, ...rows]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  }
+
+  static const _callRowStatus = 'call';
+
+  bool _isCallRow(Message? m) => m?.syncStatus == _callRowStatus;
+
+  Future<void> _startCall() async {
+    final calls = CallController.instance;
+    // A second tap while the call screen opens mustn't open another.
+    if (calls == null || !(ModalRoute.of(context)?.isCurrent ?? true)) return;
+    if (calls.isActive) {
+      Navigator.of(context).push(CallPage.route(calls));
+      return;
+    }
+    Navigator.of(context).push(CallPage.route(calls));
+    final error = await calls.call(widget.chatUserId, widget.displayName);
+    if (error != null && mounted) showSnack(context, error, isError: true);
   }
 
   Widget _buildPage(BuildContext context) {
     final chat = context.watch<ActiveChatController>();
     final group = context.watch<GroupDetailsController>();
-    final messages = chat.currentChatUserId == widget.chatUserId
-        ? chat.activeChat
-        : const <Message>[];
+    final messages = _shown = _withCalls(
+      chat.currentChatUserId == widget.chatUserId
+          ? chat.activeChat
+          : const <Message>[],
+      chat.hasMoreMessages,
+    );
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 6;
 
     return PopScope(
@@ -453,6 +515,12 @@ class _ChatPageState extends State<ChatPage> {
                     chat.isPeerTyping || (!widget.isGroup && chat.isPeerOnline),
                 onTitleTap: _openDetails,
                 actions: [
+                  if (!widget.isGroup && !_isBlocked)
+                    IconButton(
+                      tooltip: 'Voice call',
+                      icon: const Icon(Icons.call_outlined),
+                      onPressed: _startCall,
+                    ),
                   IconButton(
                     tooltip: 'Search',
                     icon: const Icon(Icons.search_rounded),
@@ -666,8 +734,23 @@ class _ChatPageState extends State<ChatPage> {
         final next = i < messages.length - 1 ? messages[i + 1] : null;
         final isMe = _isMine(msg);
 
+        if (_isCallRow(msg)) {
+          final newDay =
+              prev == null ||
+              DaySeparator.label(prev.createdAt) !=
+                  DaySeparator.label(msg.createdAt);
+          return Column(
+            key: ValueKey(msg.id),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (newDay) DaySeparator(date: msg.createdAt),
+              CallLogRow(entry: _callRows[msg.id]!, onCallBack: _startCall),
+            ],
+          );
+        }
+
         bool sameRun(Message? other) {
-          if (other == null) return false;
+          if (other == null || _isCallRow(other)) return false;
           return _isMine(other) == isMe &&
               (isMe ||
                   other.senderId.toLowerCase() == msg.senderId.toLowerCase()) &&

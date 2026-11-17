@@ -65,6 +65,10 @@ class ServerLimits {
   /// The server closes any WebSocket whose inbound frame exceeds 4096 bytes.
   static const int maxWsFrameBytes = 4096;
 
+  /// Call setup (`call_offer`, `call_answer`, `call_ice`) may use up to 64 KB,
+  /// on servers that support calls.
+  static const int maxCallFrameBytes = 64 * 1024;
+
   /// Plaintext budget per message. Signal ciphertext, base64 and the JSON
   /// envelope grow a direct message ~1.5x on the wire; 2400 bytes encrypts to
   /// ~3.6 KB (checked by test/frame_budget_test.dart).

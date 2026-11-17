@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/services/chat/chat_event_handler.dart';
 import 'package:mobile/services/chat/chat_sync_service.dart';
 import '../../services/ws_service.dart';
@@ -163,6 +164,8 @@ class ChatConnectionController extends ChangeNotifier
         eventHandler.activeChatController.syncActiveChatSilently();
       }
     } else if (state == AppLifecycleState.paused) {
+      // A call goes on in the background, and needs the connection to end.
+      if (CallController.instance?.isActive ?? false) return;
       _isPaused = true;
       disconnectWebSocket();
     }
