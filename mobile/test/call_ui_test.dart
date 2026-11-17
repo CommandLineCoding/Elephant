@@ -251,6 +251,21 @@ void main() {
     });
   });
 
+  test("deleting a chat forgets its calls", () async {
+    CallLog.instance.debugSet('u-bob', [
+      CallLogEntry(
+        id: 'c1',
+        chatId: 'u-bob',
+        outgoing: true,
+        outcome: CallOutcome.cancelled,
+        startedAt: DateTime(2026),
+      ),
+    ]);
+    // The database isn't available in tests; the calls go from memory first.
+    InboxController().removeChat('u-bob').ignore();
+    expect(CallLog.instance.entriesFor('u-bob'), isEmpty);
+  });
+
   group('decrypting call setup', () {
     test('refuses anything sent in the clear', () async {
       expect(

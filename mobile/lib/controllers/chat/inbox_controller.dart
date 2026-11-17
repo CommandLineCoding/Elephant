@@ -5,6 +5,7 @@ import '../../core/message_envelope.dart';
 import '../../models/group.dart';
 import '../../models/inbox_item.dart';
 import '../../services/api_services.dart';
+import '../../services/calls/call_log.dart';
 import '../../services/db_services.dart';
 import '../../services/ws_service.dart';
 
@@ -301,6 +302,7 @@ class InboxController extends ChangeNotifier {
   Future<void> removeChat(String chatId) async {
     inbox.removeWhere((item) => item.id == chatId);
     notifyListeners();
+    CallLog.instance.forget(chatId);
     await DatabaseHelper.instance.deleteChat(chatId);
   }
 
