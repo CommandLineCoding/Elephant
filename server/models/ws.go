@@ -11,4 +11,6 @@ type WSMessage struct {
 	MessageID        string    `json:"message_id,omitempty"`
 	ReplyToMessageID string    `json:"reply_to_message_id,omitempty"`
 	Timestamp        time.Time `json:"timestamp,omitempty"`
+	CallID           string    `json:"call_id,omitempty"`
+	Reason           string    `json:"reason,omitempty"`
 }

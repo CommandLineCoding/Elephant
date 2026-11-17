@@ -78,6 +78,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/api/ws?token=](#1-connect-to-websocket) | Yes (query) | WebSocket upgrade endpoint |
 | WS | [Client → Server](#2-client-to-server-messages) | — | Events the client sends |
 | WS | [Server → Client](#3-server-to-client-messages) | — | Events the server pushes |
+| WS | [Calls](#4-calls) | — | 1:1 voice call signalling |
 | POST | [/api/messages](#1-send-message) | Yes | Send a direct message (REST fallback, no live delivery) |
 | GET | [/api/messages?with=&before=&limit=](#2-direct-message-history) | Yes | Paginated direct message history |
 | GET | [/api/messages/conversations](#3-conversations) | Yes | Inbox: latest message and unread count per chat |
@@ -776,7 +777,7 @@ error: Unexpected server response: 401
 #### Connection behaviour
 
 - The server sends a WebSocket ping every 54 seconds. A connection that hasn't sent a pong (or any message) within 60 seconds is closed.
-- The maximum inbound frame size is **4096 bytes**. Larger frames close the connection, so keep encrypted payloads small.
+- The maximum inbound frame size is **4096 bytes**, except `call_offer`, `call_answer` and `call_ice`, which may be up to **64 KB**. A larger frame closes the connection, and any other event over 4096 bytes is ignored.
 - Each user has one live connection. A new connection for the same user replaces the previous one in the hub.
 - Unknown `type` values (e.g. an application-level `ping`) and malformed JSON are ignored.
 - The server never echoes a sent event back to the sender.
@@ -976,6 +977,71 @@ Sent to every **other** member when an admin deletes a group ([`DELETE /api/grou
   "deleted_by": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 }
 ```
+
+### 4. Calls
+
+One-to-one voice calls use WebRTC. The server relays the messages that set a call up; the audio goes directly between the two phones (or through a TURN relay), never through this server.
+
+Every call event carries a `call_id`, a UUID the caller generates. The server sets `sender_id` on everything it relays.
+
+The `content` of `call_offer`, `call_answer` and `call_ice` is the SDP or ICE candidate, encrypted by the app with the Signal session in the same [envelope](#message-content-format-e2ee) as a direct message. The server relays it without reading it.
+
+#### Events
+
+| Event | Sent by | Relayed to | Fields |
+|---|---|---|---|
+| `call_offer` | caller | callee | `call_id`, `receiver_id` (when sending), `content` |
+| `call_ring` | callee | caller | `call_id`: the callee's phone is ringing |
+| `call_answer` | callee | caller | `call_id`, `content` |
+| `call_ice` | either person | the other | `call_id`, `content` |
+| `call_hangup` | either person, or the server | the other, or both | `call_id`, `reason` |
+| `call_busy` | the server | caller | `call_id`: the callee is already in a call |
+
+Start a call:
+
+```json
+{
+  "type": "call_offer",
+  "call_id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+  "receiver_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "content": "<content>"
+}
+```
+
+The callee receives:
+
+```json
+{
+  "type": "call_offer",
+  "call_id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+  "sender_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "content": "<content>"
+}
+```
+
+Other events only need `call_id` (plus `content` or `reason`). The server knows who else is in the call.
+
+```json
+{ "type": "call_hangup", "call_id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", "reason": "declined" }
+```
+
+#### Hang-up reasons
+
+| `reason` | Meaning |
+|---|---|
+| `ended` | Someone hung up. This is the default when a client sends no reason or an unknown one. |
+| `declined` | The callee declined before answering. |
+| `timeout` | Nobody answered within 60 seconds. Sent to both people. |
+| `unavailable` | The call couldn't start: the callee isn't connected, you don't share a chat or group, you've blocked them, or you're already in a call. |
+| `disconnected` | The other person's connection dropped and didn't come back. A ringing call ends at once. An answered call is given 30 seconds, because a phone switching networks reconnects while the audio may carry on. |
+
+#### Rules
+
+- You can only call people you share a chat or a group with.
+- One call per person at a time. Calling someone who's in a call gets `call_busy`.
+- If the callee has [blocked](#7-block-a-user) the caller, the call isn't delivered and ends with `timeout` after 60 seconds, as if nobody answered. The caller isn't told about the block.
+- `call_ring`, `call_answer`, `call_ice` and `call_hangup` from anyone outside the call are ignored, as is `call_answer` from the caller.
+- There is no push notification for calls yet: the callee must have the app open.
 
 ---
 

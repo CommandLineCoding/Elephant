@@ -265,6 +265,7 @@ func (h *WSHub) Run() {
 			client.Close()
 			if current {
 				go h.broadcastStatus(client.UserID, false)
+				go calls.dropped(client.UserID)
 			}
 		}
 	}
@@ -284,7 +285,7 @@ func (c *WSClient) ReadPump() {
 		c.Close()
 	}()
 
-	c.Conn.SetReadLimit(4096)
+	c.Conn.SetReadLimit(maxSignalSize)
 	_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	c.Conn.SetPongHandler(func(string) error {
 		_ = c.Conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -301,6 +302,13 @@ func (c *WSClient) ReadPump() {
 
 		var incoming models.WSMessage
 		if err := json.Unmarshal(bytes, &incoming); err != nil {
+			continue
+		}
+		// Only call setup may use the larger limit.
+		if len(bytes) > maxMessageSize && !isCallSignal(incoming.Type) {
+			continue
+		}
+		if handleCallMessage(c, incoming) {
 			continue
 		}
 
