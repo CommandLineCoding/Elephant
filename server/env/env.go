@@ -56,6 +56,17 @@ var (
 	// /.well-known/assetlinks.json so https profile links open the app
 	// directly. Defaults to the key GitHub releases are signed with.
 	APP_LINK_FINGERPRINTS string
+
+	// Calls. STUN_URLS: comma-separated STUN servers (default Cloudflare's free
+	// one; set it empty for none). TURN relays calls that can't connect
+	// directly, from either Cloudflare (CLOUDFLARE_TURN_KEY_ID and
+	// CLOUDFLARE_TURN_API_TOKEN) or your own coturn (TURN_URLS and TURN_SECRET,
+	// coturn's static-auth-secret).
+	STUN_URLS                 string
+	TURN_URLS                 string
+	TURN_SECRET               string
+	CLOUDFLARE_TURN_KEY_ID    string
+	CLOUDFLARE_TURN_API_TOKEN string
 )
 
 func init() {
@@ -107,6 +118,12 @@ func init() {
 	PUSH_ALLOW_PRIVATE_ENDPOINTS = getEnv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "false")
 	APP_LINK_FINGERPRINTS = getEnv("APP_LINK_FINGERPRINTS",
 		"ED:08:4D:C4:C9:06:E1:BB:75:13:80:32:81:2E:BE:0B:A2:2B:A7:8D:A7:3A:26:B8:69:D3:50:53:C0:AB:5F:1D")
+
+	STUN_URLS = getEnv("STUN_URLS", "stun:stun.cloudflare.com:3478")
+	TURN_URLS = getEnv("TURN_URLS", "")
+	TURN_SECRET = getEnv("TURN_SECRET", "")
+	CLOUDFLARE_TURN_KEY_ID = getEnv("CLOUDFLARE_TURN_KEY_ID", "")
+	CLOUDFLARE_TURN_API_TOKEN = getEnv("CLOUDFLARE_TURN_API_TOKEN", "")
 }
 
 func getEnv(key, fallback string) string {
