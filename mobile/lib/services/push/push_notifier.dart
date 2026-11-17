@@ -36,6 +36,17 @@ List<InboxItem> chatsToNotify(
   );
 }
 
+/// Text for an incoming call. With names hidden, it doesn't say who.
+({String title, String body}) callNotificationText(
+  String callerName, {
+  required bool showName,
+}) {
+  if (!showName || callerName.isEmpty) {
+    return (title: 'Incoming voice call', body: 'Tap to answer in Elephant');
+  }
+  return (title: callerName, body: 'Incoming voice call · Tap to answer');
+}
+
 /// What a notification's tap hands back to the app.
 String chatPayload(InboxItem chat) =>
     jsonEncode({'id': chat.id, 'group': chat.isGroup});
@@ -53,6 +64,8 @@ String? chatIdFromPayload(String? payload) {
 /// Shows and clears local notifications.
 class PushNotifier {
   static const channelId = 'messages';
+  static const callChannelId = 'incoming_calls';
+  static const _callNotificationId = 7002;
   static const _icon = 'ic_stat_notify';
 
   final FlutterLocalNotificationsPlugin _plugin =
@@ -71,6 +84,18 @@ class PushNotifier {
         'Messages',
         description: 'Alerts for new messages',
         importance: Importance.high,
+      ),
+    );
+    await _android?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        callChannelId,
+        'Incoming calls',
+        description: 'Rings when someone calls while Elephant is closed',
+        importance: Importance.max,
+        sound: UriAndroidNotificationSound(
+          'content://settings/system/ringtone',
+        ),
+        audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
       ),
     );
   }
@@ -125,6 +150,47 @@ class PushNotifier {
       );
     } catch (e) {
       debugPrint('Could not show a notification: $e');
+    }
+  }
+
+  /// Rings for a call while the app is closed. Opening it (or the screen
+  /// coming on, where full-screen notifications are allowed) starts the app,
+  /// which connects and shows the call. It stops after the minute a call
+  /// rings for.
+  Future<void> showIncomingCall(
+    String callId,
+    String callerName, {
+    required bool showName,
+  }) async {
+    final text = callNotificationText(callerName, showName: showName);
+    try {
+      await _plugin.show(
+        id: _callNotificationId,
+        title: text.title,
+        body: text.body,
+        payload: jsonEncode({'call': callId}),
+        notificationDetails: NotificationDetails(
+          android: AndroidNotificationDetails(
+            callChannelId,
+            'Incoming calls',
+            channelDescription:
+                'Rings when someone calls while Elephant is closed',
+            importance: Importance.max,
+            priority: Priority.max,
+            category: AndroidNotificationCategory.call,
+            fullScreenIntent: true,
+            ongoing: true,
+            autoCancel: true,
+            timeoutAfter: 60000,
+            audioAttributesUsage: AudioAttributesUsage.notificationRingtone,
+            // FLAG_INSISTENT: the ringtone repeats until answered or gone.
+            additionalFlags: Int32List.fromList([4]),
+            visibility: NotificationVisibility.private,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Could not show the incoming call: $e');
     }
   }
 

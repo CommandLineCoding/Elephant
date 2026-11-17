@@ -2,6 +2,33 @@ import 'package:dio/dio.dart';
 import '../core/constants.dart';
 import 'auth_service.dart';
 
+/// A call ringing for us while the app wasn't connected.
+class PendingCall {
+  final String id;
+  final String callerId;
+  final String callerName;
+
+  const PendingCall({
+    required this.id,
+    required this.callerId,
+    required this.callerName,
+  });
+
+  /// Reads `GET /api/calls/pending`; null when nothing is ringing.
+  static PendingCall? fromResponse(dynamic body) {
+    if (body is! Map || body['data'] is! Map) return null;
+    final data = body['data'] as Map;
+    final id = data['call_id']?.toString() ?? '';
+    final caller = data['caller_id']?.toString() ?? '';
+    if (id.isEmpty || caller.isEmpty) return null;
+    return PendingCall(
+      id: id,
+      callerId: caller,
+      callerName: data['caller_display_name']?.toString() ?? '',
+    );
+  }
+}
+
 /// HTTP client for the Elephant REST API (see docs/API_CONTRACTS.md).
 class ApiService {
   static final ApiService _instance = ApiService._internal();
@@ -122,6 +149,18 @@ class ApiService {
       _dio.delete("/users/$userId/block");
 
   Future<Response> listBlockedUsers() => _dio.get("/users/me/blocked");
+
+  /// The call ringing for us, if any (asked when a push wakes the app). Null
+  /// when nothing is ringing, or the server doesn't support it.
+  Future<PendingCall?> pendingCall() async {
+    try {
+      final response = await _dio.get("/calls/pending");
+      return PendingCall.fromResponse(response.data);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
 
   /// STUN/TURN servers for a call, or null if the server doesn't support
   /// calls (it answers 404).

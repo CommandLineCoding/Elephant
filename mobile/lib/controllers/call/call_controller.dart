@@ -274,7 +274,25 @@ class CallController extends ChangeNotifier {
         if (_isCurrent(id) && outgoing) _finish('Busy', CallOutcome.busy);
       case 'call_hangup':
         if (_isCurrent(id)) _onRemoteHangup(data['reason']?.toString());
+      case 'call_missed':
+        await _onMissed(id, data);
     }
+  }
+
+  /// A call that rang out, or was given up, while this app wasn't connected.
+  Future<void> _onMissed(String id, Map<String, dynamic> data) async {
+    final from = data['sender_id']?.toString().toLowerCase();
+    if (from == null || from.isEmpty) return;
+    final at = DateTime.tryParse(data['at']?.toString() ?? '')?.toLocal();
+    await log.add(
+      CallLogEntry(
+        id: id,
+        chatId: from,
+        outgoing: false,
+        outcome: CallOutcome.missed,
+        startedAt: at ?? DateTime.now(),
+      ),
+    );
   }
 
   Future<void> _onOffer(String id, Map<String, dynamic> data) async {

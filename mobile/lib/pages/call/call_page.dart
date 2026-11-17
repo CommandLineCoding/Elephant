@@ -36,6 +36,8 @@ class _CallPageState extends State<CallPage> {
   void initState() {
     super.initState();
     _call.addListener(_onChange);
+    // Answering shouldn't need unlocking the phone.
+    _call.sounds.overLockScreen(true);
     // The call may already have failed to start.
     WidgetsBinding.instance.addPostFrameCallback((_) => _onChange());
     // Redraws the call timer.
@@ -48,6 +50,8 @@ class _CallPageState extends State<CallPage> {
   void dispose() {
     _ticker?.cancel();
     _call.removeListener(_onChange);
+    // Leaving the call screen puts the app back behind the lock screen.
+    _call.sounds.overLockScreen(false);
     super.dispose();
   }
 

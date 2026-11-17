@@ -74,6 +74,8 @@ class FakeSounds extends CallSounds {
   @override
   Future<void> inCall(bool on, {String name = ''}) async =>
       calls.add('inCall $on');
+  @override
+  Future<void> overLockScreen(bool on) async => calls.add('overLockScreen $on');
 }
 
 /// A call log that only keeps entries in memory.
