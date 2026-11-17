@@ -49,13 +49,17 @@ class WebSocketService {
   }
 
   /// Sends a frame. Returns false when disconnected or when the frame would
-  /// exceed the server's 4096-byte limit (which would close the socket).
+  /// exceed the server's limit (which would close the socket): 4096 bytes, or
+  /// 64 KB for call setup.
   bool emit(Map<String, dynamic> payload) {
     if (!_isConnected || _channel == null) return false;
 
     payload.removeWhere((_, value) => value == null);
     final encoded = jsonEncode(payload);
-    if (utf8.encode(encoded).length > ServerLimits.maxWsFrameBytes) {
+    final limit = _isCallSignal(payload['type'])
+        ? ServerLimits.maxCallFrameBytes
+        : ServerLimits.maxWsFrameBytes;
+    if (utf8.encode(encoded).length > limit) {
       debugPrint(
         "WS: frame of type ${payload['type']} exceeds the server limit",
       );
@@ -71,6 +75,9 @@ class WebSocketService {
       return false;
     }
   }
+
+  static bool _isCallSignal(Object? type) =>
+      type == 'call_offer' || type == 'call_answer' || type == 'call_ice';
 
   static int frameSize(Map<String, dynamic> payload) {
     payload.removeWhere((_, value) => value == null);

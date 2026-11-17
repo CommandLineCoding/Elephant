@@ -123,6 +123,22 @@ class ApiService {
 
   Future<Response> listBlockedUsers() => _dio.get("/users/me/blocked");
 
+  /// STUN/TURN servers for a call, or null if the server doesn't support
+  /// calls (it answers 404).
+  Future<List<Map<String, dynamic>>?> iceServers() async {
+    try {
+      final response = await _dio.get("/calls/ice-servers");
+      final servers = dataMap(response.data)['ice_servers'];
+      return [
+        for (final s in (servers is List ? servers : const []))
+          if (s is Map) Map<String, dynamic>.from(s),
+      ];
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
   /// Clears a group's messages for you only.
   Future<Response> clearGroupHistory(String groupId) =>
       _dio.delete("/groups/$groupId/history");

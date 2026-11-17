@@ -88,7 +88,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 2,
+      version: 3,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -99,9 +99,26 @@ class DatabaseHelper {
     if (oldVersion < 2) {
       await db.execute('ALTER TABLE messages ADD COLUMN edited_at INTEGER');
     }
+    if (oldVersion < 3) await _createCallLog(db);
+  }
+
+  /// Calls made and received, shown in the chat. Only kept on this device.
+  Future<void> _createCallLog(Database db) async {
+    await db.execute('''
+      CREATE TABLE call_log (
+        id TEXT PRIMARY KEY,
+        chat_id TEXT NOT NULL,
+        outgoing INTEGER NOT NULL,
+        outcome TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        duration_seconds INTEGER NOT NULL
+      )
+    ''');
+    await db.execute('CREATE INDEX call_log_chat ON call_log (chat_id)');
   }
 
   Future _createDB(Database db, int version) async {
+    await _createCallLog(db);
     await db.execute('''
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -227,6 +244,7 @@ class DatabaseHelper {
   Future<void> deleteChat(String chatId) async {
     final db = await instance.database;
     await db.delete('messages', where: 'chat_id = ?', whereArgs: [chatId]);
+    await db.delete('call_log', where: 'chat_id = ?', whereArgs: [chatId]);
     await db.delete('inbox', where: 'id = ?', whereArgs: [chatId]);
     await db.delete(
       'group_members',
@@ -256,6 +274,7 @@ class DatabaseHelper {
   Future<void> wipeChatData() async {
     final db = await instance.database;
     await db.delete('messages');
+    await db.delete('call_log');
     await db.delete('inbox');
     await db.delete('action_queue');
     await db.delete('group_members');

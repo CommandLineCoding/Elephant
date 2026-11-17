@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/controllers/chat/active_chat_controller.dart';
@@ -46,7 +47,12 @@ class ChatEventHandler {
   }
 
   Future<void> handleIncomingEvent(Map<String, dynamic> data) async {
-    switch (data['type']) {
+    final type = data['type'];
+    if (type is String && type.startsWith('call_')) {
+      await CallController.instance?.handleEvent(data);
+      return;
+    }
+    switch (type) {
       case 'user_status':
         final userId = _id(data['user_id']);
         if (!activeChatController.isCurrentChatGroup && _isOpen(userId)) {

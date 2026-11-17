@@ -5,6 +5,8 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/blocked_users.dart';
+import 'package:mobile/controllers/call/call_controller.dart';
+import 'package:mobile/services/calls/call_log.dart';
 import 'package:mobile/services/db_services.dart';
 import 'package:mobile/services/push/push_prefs.dart';
 import 'package:mobile/services/push/push_service.dart';
@@ -348,6 +350,8 @@ class AuthState extends ChangeNotifier {
     // Needs the token, so before it's dropped.
     await PushService.instance.onSigningOut();
     BlockedUsers.instance.clear();
+    CallController.instance?.hangUp();
+    CallLog.instance.clear();
     _token = null;
     _currentUser = null;
     await _authService.logout();
@@ -379,6 +383,8 @@ class AuthState extends ChangeNotifier {
   void logoutSilently() {
     if (_token != null) {
       BlockedUsers.instance.clear();
+      CallController.instance?.hangUp();
+      CallLog.instance.clear();
       _token = null;
       _currentUser = null;
       _errorMessage = "Your session expired. Please sign in again.";

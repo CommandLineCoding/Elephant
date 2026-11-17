@@ -5,6 +5,16 @@
     <!-- Scanning QR codes. Asked for only when scanning starts. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Voice calls. The microphone is asked for when a call starts. The
+         foreground service keeps a call going while the app is in the
+         background, and the wake lock turns the screen off at the ear. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:allowBackup="false"
@@ -74,6 +84,11 @@
                     android:pathPrefix="/u/" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name="com.example.elephant_frontend.CallService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <meta-data
             android:name="flutterEmbedding"
