@@ -76,6 +76,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | DELETE | [/api/users/{id}/block](#8-unblock-a-user) | Yes | Unblock a user |
 | GET | [/api/users/me/blocked](#9-list-blocked-users) | Yes | List the people you blocked |
 | GET | [/api/calls/ice-servers](#ice-servers) | Yes | STUN/TURN servers and credentials for a call (rate limited) |
+| GET | [/api/calls/pending](#pending-call) | Yes | The call ringing for you, after a push woke the app (rate limited) |
 | GET | [/api/ws?token=](#1-connect-to-websocket) | Yes (query) | WebSocket upgrade endpoint |
 | WS | [Client → Server](#2-client-to-server-messages) | — | Events the client sends |
 | WS | [Server → Client](#3-server-to-client-messages) | — | Events the server pushes |
@@ -621,7 +622,9 @@ TTL: 3600
 {"type":"new_messages"}
 ```
 
-The ping carries **no message content, sender or conversation**, so the push server learns only that something arrived. On receiving it, the app connects and fetches its messages as usual. Pings to one user are spaced at least 5 seconds apart, and messages that arrive meanwhile are covered by the next ping. Redirects are not followed. An endpoint that answers `404` or `410` is removed automatically. Typing indicators and read receipts never trigger a ping.
+The ping carries **no message content, sender or conversation**, so the push server learns only that something arrived. On receiving it, the app connects and fetches its messages as usual.
+
+A **call** to someone whose app isn't connected sends the same ping straight away (not spaced), with `TTL: 60` since a call only rings for a minute. The payload is identical, so the push server can't tell a call from a message. The app asks [`GET /api/calls/pending`](#pending-call) on every ping to find out. Pings to one user are spaced at least 5 seconds apart, and messages that arrive meanwhile are covered by the next ping. Redirects are not followed. An endpoint that answers `404` or `410` is removed automatically. Typing indicators and read receipts never trigger a ping.
 
 ### 6. Remove a Push Endpoint
 
@@ -798,6 +801,34 @@ If the server can't get TURN credentials (e.g. Cloudflare is unreachable), it an
   "success": false,
   "error": "Rate limit exceeded. Too many call setup requests."
 }
+```
+
+### Pending Call
+
+The call ringing for you, if any. The app asks when a [push](#the-ping) wakes it, to show who is calling before it has connected.
+
+- **URL:** `/api/calls/pending`
+- **Method:** `GET`
+- **Authentication Required:** `YES`
+- **Rate limit:** a burst of 10, then one every 2 seconds.
+
+#### `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "call_id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+    "caller_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "caller_display_name": "Ava"
+  }
+}
+```
+
+With no call ringing for you, `data` is absent:
+
+```json
+{ "success": true }
 ```
 
 ---
@@ -1081,7 +1112,7 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
 | `ended` | Someone hung up. This is the default when a client sends no reason or an unknown one. |
 | `declined` | The callee declined before answering. |
 | `timeout` | Nobody answered within 60 seconds. Sent to both people. |
-| `unavailable` | The call couldn't start: the callee isn't connected, you don't share a chat or group, you've blocked them, or you're already in a call. |
+| `unavailable` | The call couldn't start: the callee isn't connected and has no [push endpoint](#5-register-a-push-endpoint) to wake them, you don't share a chat or group, you've blocked them, or you're already in a call. |
 | `disconnected` | The other person's connection dropped and didn't come back. A ringing call ends at once. An answered call is given 30 seconds, because a phone switching networks reconnects while the audio may carry on. |
 
 #### Rules
@@ -1090,7 +1121,14 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
 - One call per person at a time. Calling someone who's in a call gets `call_busy`.
 - If the callee has [blocked](#7-block-a-user) the caller, the call isn't delivered and ends with `timeout` after 60 seconds, as if nobody answered. The caller isn't told about the block.
 - `call_ring`, `call_answer`, `call_ice` and `call_hangup` from anyone outside the call are ignored, as is `call_answer` from the caller.
-- There is no push notification for calls yet: the callee must have the app open.
+- **A callee whose app is closed** but who has a [push endpoint](#5-register-a-push-endpoint) is woken with a [ping](#the-ping), and the call rings for the caller as usual (no `call_ring` until the callee's app connects). The server keeps the `call_offer`, and up to 50 of the caller's `call_ice`, and sends them to the callee as soon as their WebSocket connects, once. Without a push endpoint the call ends at once with `unavailable`.
+- If such a call ends before the callee's app connects (it rang out, or the caller hung up or dropped), the callee gets a `call_missed` event the next time they connect:
+
+  ```json
+  { "type": "call_missed", "call_id": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee", "sender_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "at": "2026-11-17T10:37:12Z" }
+  ```
+
+  Missed calls are kept in memory, at most 20 per person for 24 hours. Waiting calls and missed calls are lost if the server restarts.
 
 ---
 

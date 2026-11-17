@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/commandlinecoding/elephant/server/models"
+	"github.com/commandlinecoding/elephant/server/repository"
 )
 
 // Call signalling. The hub relays the messages that set up a 1:1 call and
@@ -47,8 +48,37 @@ type call struct {
 	// is never told. They end with a timeout like an unanswered call.
 	silent bool
 
+	// delivered is false while the callee isn't connected: the app was closed
+	// and has been woken with a push. The offer and the caller's candidates
+	// wait here until the callee connects.
+	delivered bool
+	offer     string
+	queuedICE []string
+
 	ringTimer *time.Timer
 	dropTimer *time.Timer
+}
+
+// maxQueuedICE bounds the candidates kept for a callee who isn't connected yet.
+const maxQueuedICE = 50
+
+// hasPushEndpoint reports whether a user can be woken with a push, and
+// notifyCall sends that push. Variables so tests can run without the push
+// service and its database; read them through pushHooks, since tests replace
+// them while the hub's goroutines run.
+var (
+	hasPushEndpoint = func(ctx context.Context, userID string) bool {
+		targets, err := repository.NewPushRepository().ListByUser(ctx, userID)
+		return err == nil && len(targets) > 0
+	}
+	notifyCall    = func(userID string) { Push.NotifyCall(userID) }
+	pushHooksLock sync.RWMutex
+)
+
+func pushHooks() (func(context.Context, string) bool, func(string)) {
+	pushHooksLock.RLock()
+	defer pushHooksLock.RUnlock()
+	return hasPushEndpoint, notifyCall
 }
 
 // other returns the person on the other end of the call from userID.
@@ -156,9 +186,150 @@ func (t *callTable) ringTimedOut(cl *call) {
 		return
 	}
 	sendCallEvent(cl.caller, "call_hangup", cl.id, "", "", reasonTimeout)
-	if !cl.silent {
-		sendCallEvent(cl.callee, "call_hangup", cl.id, "", "", reasonTimeout)
+	t.tellCallee(cl, reasonTimeout)
+}
+
+// tellCallee lets the callee know a call they haven't answered ended. If it
+// never reached them (their app was closed), it's kept as a missed call for
+// when they next connect.
+func (t *callTable) tellCallee(cl *call, reason string) {
+	if cl.silent {
+		return
 	}
+	t.mu.Lock()
+	delivered := cl.delivered
+	t.mu.Unlock()
+	if delivered {
+		sendCallEvent(cl.callee, "call_hangup", cl.id, "", "", reason)
+		return
+	}
+	missed.add(cl.callee, missedCall{id: cl.id, from: cl.caller, at: time.Now()})
+}
+
+// deliver sends a waiting offer, and the candidates queued with it, to the
+// callee. It reports whether they were sent; they're sent only once.
+func (t *callTable) deliver(cl *call) bool {
+	t.mu.Lock()
+	if cl.delivered || t.byID[cl.id] != cl {
+		t.mu.Unlock()
+		return false
+	}
+	cl.delivered = true
+	offer, ice := cl.offer, cl.queuedICE
+	cl.offer, cl.queuedICE = "", nil
+	t.mu.Unlock()
+
+	if !sendCallEvent(cl.callee, "call_offer", cl.id, cl.caller, offer, "") {
+		// Gone again before it arrived; keep it for the next connection.
+		t.mu.Lock()
+		cl.delivered = false
+		cl.offer, cl.queuedICE = offer, append(ice, cl.queuedICE...)
+		t.mu.Unlock()
+		return false
+	}
+	for _, c := range ice {
+		sendCallEvent(cl.callee, "call_ice", cl.id, cl.caller, c, "")
+	}
+	return true
+}
+
+// queueICE keeps a caller's candidate while the offer hasn't reached the
+// callee. It reports false once the offer has been delivered.
+func (t *callTable) queueICE(cl *call, from, candidate string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if cl.delivered || !strings.EqualFold(from, cl.caller) {
+		return false
+	}
+	if len(cl.queuedICE) < maxQueuedICE {
+		cl.queuedICE = append(cl.queuedICE, candidate)
+	}
+	return true
+}
+
+// connected is called when a user's WebSocket connects. A call that has been
+// waiting for them rings now, and calls they missed while away are reported.
+func (t *callTable) connected(userID string) {
+	if cl := t.forUser(userID); cl != nil && strings.EqualFold(userID, cl.callee) {
+		t.deliver(cl)
+	}
+	for _, m := range missed.take(userID) {
+		b, _ := json.Marshal(map[string]string{
+			"type":      "call_missed",
+			"call_id":   m.id,
+			"sender_id": m.from,
+			"at":        m.at.UTC().Format(time.RFC3339),
+		})
+		Hub.sendToUser(userID, b)
+	}
+}
+
+// PendingCall returns the call ringing for userID, if any: the app asks when
+// a push wakes it, to show who is calling.
+func PendingCall(userID string) (callID, callerID string, ok bool) {
+	cl := calls.forUser(userID)
+	if cl == nil || cl.silent || !strings.EqualFold(userID, cl.callee) {
+		return "", "", false
+	}
+	calls.mu.Lock()
+	defer calls.mu.Unlock()
+	if cl.answered || calls.byID[cl.id] != cl {
+		return "", "", false
+	}
+	return cl.id, cl.caller, true
+}
+
+// missedCall is a call that rang out, or was given up, before the callee's
+// app connected.
+type missedCall struct {
+	id   string
+	from string
+	at   time.Time
+}
+
+// Missed calls are kept in memory, at most maxMissedCalls per person for
+// missedCallTTL, until they next connect. A server restart forgets them.
+const (
+	maxMissedCalls = 20
+	missedCallTTL  = 24 * time.Hour
+)
+
+type missedCalls struct {
+	mu     sync.Mutex
+	byUser map[string][]missedCall
+}
+
+var missed = &missedCalls{byUser: make(map[string][]missedCall)}
+
+func (m *missedCalls) add(userID string, c missedCall) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := strings.ToLower(userID)
+	list := append(m.fresh(m.byUser[id]), c)
+	if len(list) > maxMissedCalls {
+		list = list[len(list)-maxMissedCalls:]
+	}
+	m.byUser[id] = list
+}
+
+func (m *missedCalls) take(userID string) []missedCall {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	id := strings.ToLower(userID)
+	list := m.fresh(m.byUser[id])
+	delete(m.byUser, id)
+	return list
+}
+
+// fresh drops calls older than missedCallTTL. The caller holds m.mu.
+func (m *missedCalls) fresh(list []missedCall) []missedCall {
+	out := list[:0:0]
+	for _, c := range list {
+		if time.Since(c.at) < missedCallTTL {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // dropped is called when a user's last connection closes. An unanswered call
@@ -195,7 +366,11 @@ func (t *callTable) dropped(userID string) {
 	t.mu.Unlock()
 
 	if !answered && t.end(cl) {
-		sendCallEvent(cl.other(userID), "call_hangup", cl.id, "", "", reasonDisconnected)
+		if strings.EqualFold(userID, cl.caller) {
+			t.tellCallee(cl, reasonDisconnected)
+		} else {
+			sendCallEvent(cl.caller, "call_hangup", cl.id, "", "", reasonDisconnected)
+		}
 	}
 }
 
@@ -238,7 +413,7 @@ func handleCallMessage(c *WSClient, in models.WSMessage) bool {
 			sendCallEvent(cl.caller, "call_answer", cl.id, c.UserID, in.Content, "")
 		}
 	case "call_ice":
-		if cl := calls.lookup(in.CallID, c.UserID); cl != nil && !cl.silent {
+		if cl := calls.lookup(in.CallID, c.UserID); cl != nil && !cl.silent && !calls.queueICE(cl, c.UserID, in.Content) {
 			sendCallEvent(cl.other(c.UserID), "call_ice", cl.id, c.UserID, in.Content, "")
 		}
 	case "call_hangup":
@@ -250,7 +425,9 @@ func handleCallMessage(c *WSClient, in models.WSMessage) bool {
 		if in.Reason == reasonDeclined && !cl.answered && strings.EqualFold(c.UserID, cl.callee) {
 			reason = reasonDeclined
 		}
-		if !cl.silent {
+		if strings.EqualFold(c.UserID, cl.caller) && !cl.answered {
+			calls.tellCallee(cl, reason)
+		} else if !cl.silent {
 			sendCallEvent(cl.other(c.UserID), "call_hangup", cl.id, c.UserID, "", reason)
 		}
 	default:
@@ -293,11 +470,24 @@ func startCall(c *WSClient, in models.WSMessage) {
 		sendCallEvent(c.UserID, "call_busy", in.CallID, callee, "", "")
 		return
 	}
-	if !Hub.IsOnline(callee) || !calls.start(cl) {
+	// A callee whose app is closed is woken with a push, and the call rings
+	// for them once they connect. Without a way to wake them, it can't ring.
+	canPush, wake := pushHooks()
+	online := Hub.IsOnline(callee)
+	if !online && !canPush(ctx, callee) {
 		unavailable()
 		return
 	}
-	if !sendCallEvent(callee, "call_offer", cl.id, c.UserID, in.Content, "") {
+	cl.offer = in.Content
+	if !calls.start(cl) {
+		unavailable()
+		return
+	}
+	if !online {
+		wake(callee)
+		return
+	}
+	if !calls.deliver(cl) {
 		calls.end(cl)
 		unavailable()
 	}

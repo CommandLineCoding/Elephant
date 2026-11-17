@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -54,11 +55,25 @@ type PushService struct {
 	settle      time.Duration
 	minInterval time.Duration
 
-	queue chan string
+	queue chan pushJob
 
 	mu    sync.Mutex
 	state map[string]*pushState
 }
+
+// pushJob is one ping to all of a user's endpoints. ttl tells the push server
+// how long the ping is worth delivering.
+type pushJob struct {
+	userID string
+	ttl    time.Duration
+}
+
+// Pings for messages are worth delivering for an hour; a call only rings for
+// a minute.
+const (
+	messagePingTTL = time.Hour
+	callPingTTL    = time.Minute
+)
 
 type pushState struct {
 	last  time.Time
@@ -72,7 +87,7 @@ func NewPushService(allowPrivate bool) *PushService {
 		allowPrivate: allowPrivate,
 		settle:       time.Second,
 		minInterval:  5 * time.Second,
-		queue:        make(chan string, 1024),
+		queue:        make(chan pushJob, 1024),
 		state:        make(map[string]*pushState),
 	}
 }
@@ -81,8 +96,8 @@ func NewPushService(allowPrivate bool) *PushService {
 func (p *PushService) Start(workers int) {
 	for i := 0; i < workers; i++ {
 		go func() {
-			for userID := range p.queue {
-				p.deliver(userID)
+			for job := range p.queue {
+				p.deliver(job)
 			}
 		}()
 	}
@@ -123,11 +138,22 @@ func (p *PushService) notify(userID string) {
 		p.mu.Unlock()
 
 		select {
-		case p.queue <- userID:
+		case p.queue <- pushJob{userID: userID, ttl: messagePingTTL}:
 		default:
 			log.Println("push: queue full, dropping a ping")
 		}
 	})
+}
+
+// NotifyCall pings a user straight away because a call is ringing for them.
+// It skips the spacing message pings get, and the ping is the same as for a
+// message, so the push server can't tell a call from a message.
+func (p *PushService) NotifyCall(userID string) {
+	select {
+	case p.queue <- pushJob{userID: userID, ttl: callPingTTL}:
+	default:
+		log.Println("push: queue full, dropping a call ping")
+	}
 }
 
 // pruneLocked forgets users that haven't been pinged for a while, so the map
@@ -144,7 +170,8 @@ func (p *PushService) pruneLocked() {
 }
 
 // deliver pings every endpoint stored for the user.
-func (p *PushService) deliver(userID string) {
+func (p *PushService) deliver(job pushJob) {
+	userID := job.userID
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -154,7 +181,7 @@ func (p *PushService) deliver(userID string) {
 		return
 	}
 	for _, t := range targets {
-		gone, err := p.send(ctx, t.Endpoint)
+		gone, err := p.send(ctx, t.Endpoint, job.ttl)
 		if gone {
 			// The distributor says this endpoint no longer exists (app
 			// uninstalled or unregistered). Stop pinging it.
@@ -171,13 +198,13 @@ func (p *PushService) deliver(userID string) {
 }
 
 // send POSTs the ping. gone is true when the endpoint answered 404 or 410.
-func (p *PushService) send(ctx context.Context, endpoint string) (gone bool, err error) {
+func (p *PushService) send(ctx context.Context, endpoint string, ttl time.Duration) (gone bool, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader([]byte(pushPayload)))
 	if err != nil {
 		return false, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("TTL", "3600")
+	req.Header.Set("TTL", strconv.Itoa(int(ttl.Seconds())))
 
 	resp, err := p.client.Do(req)
 	if err != nil {

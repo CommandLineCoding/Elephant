@@ -1,10 +1,51 @@
 package services
 
 import (
+	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+// The hub tests have no database: by default nobody can be woken by a push.
+func init() {
+	hasPushEndpoint = func(context.Context, string) bool { return false }
+	notifyCall = func(string) {}
+}
+
+func setPushHooks(has func(context.Context, string) bool, notify func(string)) {
+	pushHooksLock.Lock()
+	defer pushHooksLock.Unlock()
+	hasPushEndpoint, notifyCall = has, notify
+}
+
+// withPush lets the listed users be woken by a push. It returns the call
+// pings sent so far.
+func withPush(t *testing.T, users ...string) func() []string {
+	t.Helper()
+	var mu sync.Mutex
+	pinged := []string{}
+	oldHas, oldNotify := pushHooks()
+	setPushHooks(func(_ context.Context, id string) bool {
+		for _, u := range users {
+			if u == id {
+				return true
+			}
+		}
+		return false
+	}, func(id string) {
+		mu.Lock()
+		defer mu.Unlock()
+		pinged = append(pinged, id)
+	})
+	t.Cleanup(func() { setPushHooks(oldHas, oldNotify) })
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]string(nil), pinged...)
+	}
+}
 
 // setCallTimes shortens the ring timeout and the reconnect grace for one test.
 func setCallTimes(t *testing.T, ring, grace time.Duration) {
@@ -347,5 +388,134 @@ func TestARingingCallEndsWhenTheCallerDrops(t *testing.T) {
 	_ = alice.phone.Close()
 	if got := bob.read(t, "call_hangup"); got["reason"] != "disconnected" {
 		t.Errorf("callee was told %v", got)
+	}
+}
+
+func TestACallToAClosedAppRingsWhenItConnects(t *testing.T) {
+	friends(t, "wake-alice", "wake-bob")
+	pinged := withPush(t, "wake-bob")
+	alice := connect(t, "wake-alice")
+
+	offer(alice, t, "w1", "wake-bob", "sealed-offer")
+	if m, ok := alice.got("call_hangup", 300*time.Millisecond); ok {
+		t.Fatalf("the call ended although bob can be woken: %v", m)
+	}
+	if got := pinged(); len(got) != 1 || got[0] != "wake-bob" {
+		t.Fatalf("pings sent: %v", got)
+	}
+	if id, from, ok := PendingCall("wake-bob"); !ok || id != "w1" || from != "wake-alice" {
+		t.Errorf("pending call = %q %q %v", id, from, ok)
+	}
+
+	// The caller's candidates wait with the offer.
+	for _, c := range []string{"cand-1", "cand-2"} {
+		alice.send(t, map[string]interface{}{"type": "call_ice", "call_id": "w1", "content": c})
+	}
+	time.Sleep(50 * time.Millisecond)
+
+	bob := connect(t, "wake-bob")
+	if got := bob.read(t, "call_offer"); got["content"] != "sealed-offer" || got["sender_id"] != "wake-alice" {
+		t.Fatalf("offer arrived as %v", got)
+	}
+	for _, want := range []string{"cand-1", "cand-2"} {
+		if got := bob.read(t, "call_ice"); got["content"] != want {
+			t.Errorf("candidate arrived as %v, want %s", got, want)
+		}
+	}
+
+	// From here it's an ordinary call.
+	bob.send(t, map[string]interface{}{"type": "call_ring", "call_id": "w1"})
+	alice.read(t, "call_ring")
+	alice.send(t, map[string]interface{}{"type": "call_ice", "call_id": "w1", "content": "cand-3"})
+	if got := bob.read(t, "call_ice"); got["content"] != "cand-3" {
+		t.Errorf("a later candidate arrived as %v", got)
+	}
+}
+
+func TestAWaitingOfferIsDeliveredOnce(t *testing.T) {
+	friends(t, "once-alice", "once-bob")
+	withPush(t, "once-bob")
+	alice := connect(t, "once-alice")
+	offer(alice, t, "o1", "once-bob", "x")
+	time.Sleep(50 * time.Millisecond)
+
+	connect(t, "once-bob").read(t, "call_offer")
+	again := connect(t, "once-bob") // the phone reconnects
+	if m, ok := again.got("call_offer", 300*time.Millisecond); ok {
+		t.Errorf("the offer was delivered twice: %v", m)
+	}
+}
+
+func TestACallThatRangOutWhileTheAppWasClosedIsMissed(t *testing.T) {
+	setCallTimes(t, 200*time.Millisecond, time.Second)
+	friends(t, "miss-alice", "miss-bob")
+	withPush(t, "miss-bob")
+	alice := connect(t, "miss-alice")
+
+	offer(alice, t, "m1", "miss-bob", "x")
+	if got := alice.read(t, "call_hangup"); got["reason"] != "timeout" {
+		t.Fatalf("caller was told %v", got)
+	}
+	if _, _, ok := PendingCall("miss-bob"); ok {
+		t.Error("the call was still pending after it rang out")
+	}
+
+	bob := connect(t, "miss-bob")
+	got := bob.read(t, "call_missed")
+	if got["call_id"] != "m1" || got["sender_id"] != "miss-alice" || got["at"] == "" {
+		t.Errorf("missed call arrived as %v", got)
+	}
+	if m, ok := bob.got("call_offer", 200*time.Millisecond); ok {
+		t.Errorf("a missed call's offer was delivered: %v", m)
+	}
+	if m, ok := connect(t, "miss-bob").got("call_missed", 300*time.Millisecond); ok {
+		t.Errorf("the missed call was reported twice: %v", m)
+	}
+}
+
+func TestACallerGivingUpBeforeTheAppConnectsIsAMissedCall(t *testing.T) {
+	friends(t, "gu-alice", "gu-bob")
+	withPush(t, "gu-bob")
+	alice := connect(t, "gu-alice")
+
+	offer(alice, t, "g1", "gu-bob", "x")
+	time.Sleep(50 * time.Millisecond)
+	alice.send(t, map[string]interface{}{"type": "call_hangup", "call_id": "g1", "reason": "ended"})
+	time.Sleep(50 * time.Millisecond)
+
+	bob := connect(t, "gu-bob")
+	if got := bob.read(t, "call_missed"); got["call_id"] != "g1" {
+		t.Errorf("missed call arrived as %v", got)
+	}
+}
+
+func TestSomeoneWithACallWaitingIsBusy(t *testing.T) {
+	friends(t, "wb-alice", "wb-bob", "wb-carol")
+	withPush(t, "wb-bob")
+	alice := connect(t, "wb-alice")
+	carol := connect(t, "wb-carol")
+
+	offer(alice, t, "wb1", "wb-bob", "x")
+	time.Sleep(50 * time.Millisecond)
+	offer(carol, t, "wb2", "wb-bob", "x")
+	carol.read(t, "call_busy")
+}
+
+func TestOnlyTheCalleeSeesAPendingCall(t *testing.T) {
+	setCallTimes(t, time.Minute, time.Second)
+	friends(t, "pc-alice", "pc-bob")
+	setBlocks(t, [2]string{"pc-carol", "pc-alice"})
+	alice := connect(t, "pc-alice")
+	bob := connect(t, "pc-bob")
+
+	offer(alice, t, "p1", "pc-bob", "x")
+	bob.read(t, "call_offer")
+	if _, _, ok := PendingCall("pc-alice"); ok {
+		t.Error("the caller sees their own call as pending")
+	}
+	bob.send(t, map[string]interface{}{"type": "call_answer", "call_id": "p1", "content": "y"})
+	alice.read(t, "call_answer")
+	if _, _, ok := PendingCall("pc-bob"); ok {
+		t.Error("an answered call is still pending")
 	}
 }

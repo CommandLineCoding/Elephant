@@ -248,6 +248,8 @@ func (h *WSHub) Run() {
 			} else {
 				go h.broadcastStatus(client.UserID, true)
 			}
+			// A call may be waiting for them (their app was woken by a push).
+			go calls.connected(client.UserID)
 
 		case client := <-h.Unregister:
 			uid := strings.ToLower(client.UserID)
