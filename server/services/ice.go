@@ -43,8 +43,9 @@ var iceNow = time.Now
 //
 // STUN_URLS lists STUN servers (default Cloudflare's free one; set it empty
 // for none). TURN comes from Cloudflare (CLOUDFLARE_TURN_KEY_ID and
-// CLOUDFLARE_TURN_API_TOKEN) or from your own coturn (TURN_URLS and
-// TURN_SECRET). If Cloudflare can't be reached, the call gets STUN only
+// CLOUDFLARE_TURN_API_TOKEN), from your own coturn (TURN_URLS and
+// TURN_SECRET), or from a TURN service with a fixed login (TURN_URLS,
+// TURN_USERNAME and TURN_PASSWORD). If Cloudflare can't be reached, the call gets STUN only
 // rather than failing.
 func ICEServers(ctx context.Context, userID string) []ICEServer {
 	servers := []ICEServer{}
@@ -65,6 +66,12 @@ func ICEServers(ctx context.Context, userID string) []ICEServer {
 		if urls := splitList(env.TURN_URLS); len(urls) > 0 {
 			username, credential := coturnCredentials(env.TURN_SECRET, userID, iceNow().Add(ICECredentialTTL))
 			servers = append(servers, ICEServer{URLs: urls, Username: username, Credential: credential})
+		}
+
+	case env.TURN_USERNAME != "" && env.TURN_PASSWORD != "" && env.TURN_URLS != "":
+		// A hosted TURN service with a fixed login. Everyone gets the same one.
+		if urls := splitList(env.TURN_URLS); len(urls) > 0 {
+			servers = append(servers, ICEServer{URLs: urls, Username: env.TURN_USERNAME, Credential: env.TURN_PASSWORD})
 		}
 	}
 	return servers

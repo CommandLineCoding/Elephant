@@ -103,6 +103,8 @@ services:
       - STUN_URLS=${STUN_URLS-stun:stun.cloudflare.com:3478}
       - TURN_URLS=${TURN_URLS:-}
       - TURN_SECRET=${TURN_SECRET:-}
+      - TURN_USERNAME=${TURN_USERNAME:-}
+      - TURN_PASSWORD=${TURN_PASSWORD:-}
       - CLOUDFLARE_TURN_KEY_ID=${CLOUDFLARE_TURN_KEY_ID:-}
       - CLOUDFLARE_TURN_API_TOKEN=${CLOUDFLARE_TURN_API_TOKEN:-}
     depends_on:
