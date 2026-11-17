@@ -4,6 +4,7 @@ Elephant is a privacy-first, open-source messenger. Direct messages are end-to-e
 <ul>
 <li>End-to-end encrypted one-to-one chats (Signal Protocol: X3DH and Double Ratchet)</li>
 <li>Safety numbers with QR codes to verify who you are talking to</li>
+<li>Voice calls with the people you chat with. Call setup is end-to-end encrypted, and calls ring even when the app is closed (through UnifiedPush)</li>
 <li>Group chats with admin and member roles</li>
 <li>Real-time delivery with typing indicators, read receipts and online status (shared only with people you chat with)</li>
 <li>Notifications for new messages through UnifiedPush, without Google services. A notification can say who wrote, but never what was said</li>
@@ -24,7 +25,7 @@ Elephant connects to the public server at elephant.commandlinecoding.in by defau
 <ul>
 <li>Group messages are encrypted in transit (TLS) but are not end-to-end encrypted yet.</li>
 <li>Google and GitHub sign-in are optional and open in your browser. A username and password account needs no third-party service.</li>
-<li>The camera is only used to scan QR codes.</li>
+<li>The camera is only used to scan QR codes, and the microphone only during calls.</li>
 <li>No ads, analytics or trackers.</li>
 </ul>
 
