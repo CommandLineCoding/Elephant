@@ -299,6 +299,7 @@ class ChatBubble extends StatelessWidget {
                     DeliveryTick(
                       isPending: message.isPending,
                       isRead: message.isRead,
+                      isDelivered: message.isDelivered,
                       color: metaColor,
                       readColor: textColor,
                       size: 15,

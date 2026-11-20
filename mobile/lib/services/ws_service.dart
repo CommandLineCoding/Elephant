@@ -161,6 +161,29 @@ class WebSocketService {
     });
   }
 
+  /// Tells the server these direct messages reached this phone, so their
+  /// senders can show a second tick.
+  void sendDelivered(List<String> messageIds) {
+    for (final frame in deliveredFrames(messageIds)) {
+      emit(frame);
+    }
+  }
+
+  /// `delivered` frames for [messageIds]: the server takes at most 100 IDs in
+  /// one.
+  static List<Map<String, dynamic>> deliveredFrames(List<String> messageIds) {
+    return [
+      for (var i = 0; i < messageIds.length; i += 100)
+        {
+          "type": "delivered",
+          "message_ids": messageIds.sublist(
+            i,
+            i + 100 > messageIds.length ? messageIds.length : i + 100,
+          ),
+        },
+    ];
+  }
+
   void sendRequestStatus({required String targetId}) {
     emit({"type": "request_status", "receiver_id": targetId});
   }

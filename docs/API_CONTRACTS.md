@@ -948,6 +948,19 @@ The server replies directly with a [`user_status`](#5-user-status) event. The an
 
 `content` is relayed as-is. The app sends `"true"` when typing starts and `"false"` when it stops. Use `group_id` for groups.
 
+#### 5. Delivered
+
+The recipient's app tells the server which direct messages have reached it, so their senders can show a second tick. Send it for messages received live and for ones that came in with a history page. Up to 100 IDs; anything that isn't a message ID, a message that wasn't sent to you, a group message, and one already reported are ignored.
+
+```json
+{
+  "type": "delivered",
+  "message_ids": ["cccccccc-cccc-cccc-cccc-cccccccccccc"]
+}
+```
+
+Each sender is sent a [`message_delivered`](#10-message-delivered) event. Reading messages ([`read_receipt`](#2-read-receipt)) delivers them too, so apps that never send this still get ticks.
+
 ### 3. Server to Client Messages
 
 #### 1. Incoming Chat Message
@@ -1088,6 +1101,19 @@ Sent to the other people in a chat when someone deletes one of their messages [f
 
 A group message has `group_id` instead of `receiver_id`. The app should show "This message was deleted" in its place and drop anything it kept of the content.
 
+#### 10. Message Delivered
+
+Sent to the sender of direct messages when they reach the recipient's phone. The sender shows a second tick. Not sent for messages that were already reported, or if the sender isn't connected (they see it in history's `delivered_at`).
+
+```json
+{
+  "type": "message_delivered",
+  "message_ids": ["cccccccc-cccc-cccc-cccc-cccccccccccc"],
+  "receiver_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "delivered_at": "<Timestamp>"
+}
+```
+
 ### 4. Calls
 
 One-to-one voice calls use WebRTC. The server relays the messages that set a call up; the audio goes directly between the two phones (or through a TURN relay), never through this server.
@@ -1177,6 +1203,7 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
   "is_read": false,
   "edited_at": "<Timestamp>",
   "deleted_at": "<Timestamp>",
+  "delivered_at": "<Timestamp>",
   "reply_to_message_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
   "quoted_message": {
     "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
@@ -1186,7 +1213,9 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
 }
 ```
 
-`receiver_id`, `group_id`, `edited_at`, `deleted_at`, `reply_to_message_id` and `quoted_message` are omitted when empty.
+`receiver_id`, `group_id`, `edited_at`, `deleted_at`, `delivered_at`, `reply_to_message_id` and `quoted_message` are omitted when empty.
+
+`delivered_at` is when a **direct** message reached the recipient's phone (see the [`delivered`](#5-delivered) event). Reading a message counts as delivering it. It is never set for group messages.
 
 A message deleted for everyone (see [Delete a Message](#7-delete-a-message)) stays in history as a **tombstone**: `deleted_at` is set and `content` is empty. It can no longer be edited, and replies that quoted it have nothing to quote.
 

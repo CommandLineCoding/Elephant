@@ -42,7 +42,7 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 	query := `
 		SELECT 
 			m.id, m.sender_id, m.receiver_id, m.content, m.created_at, m.is_read, m.edited_at, m.reply_to_message_id,
-			q.sender_id AS quoted_sender_id, q.content AS quoted_content, m.deleted_at
+			q.sender_id AS quoted_sender_id, q.content AS quoted_content, m.deleted_at, m.delivered_at
 		FROM messages m
 		LEFT JOIN messages q ON m.reply_to_message_id = q.id
 		WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1))
@@ -65,7 +65,7 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 		var m models.Message
 		var qSender, qContent *string
 
-		err := rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Content, &m.CreatedAt, &m.IsRead, &m.EditedAt, &m.ReplyToMessageID, &qSender, &qContent, &m.DeletedAt)
+		err := rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Content, &m.CreatedAt, &m.IsRead, &m.EditedAt, &m.ReplyToMessageID, &qSender, &qContent, &m.DeletedAt, &m.DeliveredAt)
 		if err != nil {
 			return nil, err
 		}
@@ -224,7 +224,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 func (r *MessageRepository) MarkAsRead(ctx context.Context, receiverID, senderID string) error {
 	query := `
 		UPDATE messages
-		SET is_read = TRUE
+		SET is_read = TRUE, delivered_at = COALESCE(delivered_at, NOW())
 		WHERE receiver_id = $1 AND sender_id = $2 AND is_read = FALSE;
 	`
 	_, err := config.DB.Exec(ctx, query, receiverID, senderID)
@@ -369,4 +369,33 @@ func (r *MessageRepository) HideForMe(ctx context.Context, userID, messageID str
 		return ErrMessageNotFound
 	}
 	return nil
+}
+
+// MarkDelivered records that direct messages reached their recipient's phone.
+// Only messages sent to receiverID count (so never a group's, which have no
+// receiver), and each only once.
+// It returns the messages that were newly marked, by sender, so each sender
+// can be told, and the time they were marked.
+func (r *MessageRepository) MarkDelivered(ctx context.Context, receiverID string, ids []string) (map[string][]string, time.Time, error) {
+	rows, err := config.DB.Query(ctx, `
+		UPDATE messages
+		SET delivered_at = NOW()
+		WHERE id = ANY($1::uuid[]) AND receiver_id = $2::uuid AND delivered_at IS NULL
+		RETURNING id::text, sender_id::text, delivered_at;
+	`, ids, receiverID)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer rows.Close()
+
+	bySender := map[string][]string{}
+	var at time.Time
+	for rows.Next() {
+		var id, sender string
+		if err := rows.Scan(&id, &sender, &at); err != nil {
+			return nil, time.Time{}, err
+		}
+		bySender[sender] = append(bySender[sender], id)
+	}
+	return bySender, at, rows.Err()
 }

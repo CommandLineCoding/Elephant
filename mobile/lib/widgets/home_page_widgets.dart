@@ -199,6 +199,10 @@ class ConversationTile extends StatelessWidget {
 class DeliveryTick extends StatelessWidget {
   final bool isPending;
   final bool isRead;
+
+  /// Reached the other person's phone but isn't read yet: two ticks in the
+  /// ordinary colour. [isRead] is two in the highlight colour.
+  final bool isDelivered;
   final Color color;
   final Color? readColor;
   final double size;
@@ -208,6 +212,7 @@ class DeliveryTick extends StatelessWidget {
     required this.isPending,
     required this.isRead,
     required this.color,
+    this.isDelivered = false,
     this.readColor,
     this.size = 16,
   });
@@ -215,16 +220,22 @@ class DeliveryTick extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isPending) {
-      return Icon(
-        Icons.schedule_rounded,
-        size: size - 2,
-        color: color.withValues(alpha: 0.7),
+      return Semantics(
+        label: 'Sending',
+        child: Icon(
+          Icons.schedule_rounded,
+          size: size - 2,
+          color: color.withValues(alpha: 0.7),
+        ),
       );
     }
-    return Icon(
-      isRead ? Icons.done_all_rounded : Icons.done_rounded,
-      size: size,
-      color: isRead ? (readColor ?? context.tokens.readTick) : color,
+    return Semantics(
+      label: isRead ? 'Read' : (isDelivered ? 'Delivered' : 'Sent'),
+      child: Icon(
+        isRead || isDelivered ? Icons.done_all_rounded : Icons.done_rounded,
+        size: size,
+        color: isRead ? (readColor ?? context.tokens.readTick) : color,
+      ),
     );
   }
 }

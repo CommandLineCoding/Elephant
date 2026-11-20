@@ -129,3 +129,86 @@ func setGroupMembers(t *testing.T, members []string) {
 	groupMembers = func(context.Context, string) ([]string, error) { return members, nil }
 	t.Cleanup(func() { groupMembers = old })
 }
+
+func TestDeliveredIsPushedToEachSenderOnly(t *testing.T) {
+	alice := hubClient(t, "dv-alice")
+	bob := hubClient(t, "dv-bob")
+	carol := hubClient(t, "dv-carol") // received the messages
+	dave := hubClient(t, "dv-dave")   // uninvolved
+
+	at := time.Now().UTC().Truncate(time.Millisecond)
+	Hub.PublishDelivered("dv-carol", map[string][]string{
+		"dv-alice": {"m1", "m2"},
+		"dv-bob":   {"m3"},
+	}, at)
+
+	got, ok := received(alice, "message_delivered", 3*time.Second)
+	if !ok {
+		t.Fatal("alice was never told")
+	}
+	ids, _ := got["message_ids"].([]interface{})
+	if len(ids) != 2 || ids[0] != "m1" || ids[1] != "m2" || got["receiver_id"] != "dv-carol" {
+		t.Errorf("alice got %v", got)
+	}
+	if when, err := time.Parse(time.RFC3339Nano, got["delivered_at"].(string)); err != nil || !when.Equal(at) {
+		t.Errorf("delivered_at = %v (%v), want %v", got["delivered_at"], err, at)
+	}
+	got, ok = received(bob, "message_delivered", 3*time.Second)
+	if !ok || len(got["message_ids"].([]interface{})) != 1 {
+		t.Errorf("bob got %v (%v)", got, ok)
+	}
+	if _, ok := received(carol, "message_delivered", 200*time.Millisecond); ok {
+		t.Error("the receiver was told about their own delivery")
+	}
+	if _, ok := received(dave, "message_delivered", 200*time.Millisecond); ok {
+		t.Error("someone uninvolved was told")
+	}
+}
+
+func TestAckDeliveredChecksWhatItIsGiven(t *testing.T) {
+	var gotReceiver string
+	var gotIDs []string
+	calls := 0
+	old := markDelivered
+	markDelivered = func(_ context.Context, receiver string, ids []string) (map[string][]string, time.Time, error) {
+		calls++
+		gotReceiver, gotIDs = receiver, ids
+		return map[string][]string{"ack-alice": ids}, time.Now(), nil
+	}
+	t.Cleanup(func() { markDelivered = old })
+	alice := hubClient(t, "ack-alice")
+
+	good := "11111111-2222-4333-8444-555555555555"
+	ackDelivered(context.Background(), "ack-bob", []string{good, "not-an-id", "'; DROP TABLE messages;--", ""})
+	if calls != 1 || gotReceiver != "ack-bob" || len(gotIDs) != 1 || gotIDs[0] != good {
+		t.Fatalf("stored %d times: %q %v", calls, gotReceiver, gotIDs)
+	}
+	if _, ok := received(alice, "message_delivered", 3*time.Second); !ok {
+		t.Error("the sender wasn't told")
+	}
+
+	calls = 0
+	ackDelivered(context.Background(), "ack-bob", nil)
+	ackDelivered(context.Background(), "ack-bob", []string{"junk"})
+	tooMany := make([]string, maxDeliveredIDs+1)
+	for i := range tooMany {
+		tooMany[i] = good
+	}
+	ackDelivered(context.Background(), "ack-bob", tooMany)
+	if calls != 0 {
+		t.Errorf("nothing usable should reach the database, but it was called %d times", calls)
+	}
+}
+
+func TestAckDeliveredSaysNothingWhenTheDatabaseFails(t *testing.T) {
+	old := markDelivered
+	markDelivered = func(context.Context, string, []string) (map[string][]string, time.Time, error) {
+		return nil, time.Time{}, context.DeadlineExceeded
+	}
+	t.Cleanup(func() { markDelivered = old })
+	alice := hubClient(t, "fail-alice")
+	ackDelivered(context.Background(), "fail-bob", []string{"11111111-2222-4333-8444-555555555555"})
+	if _, ok := received(alice, "message_delivered", 300*time.Millisecond); ok {
+		t.Error("a delivery that wasn't stored was announced")
+	}
+}

@@ -18,6 +18,7 @@ type Message struct {
 	IsRead           bool           `json:"is_read"`
 	EditedAt         *time.Time     `json:"edited_at,omitempty"`
 	DeletedAt        *time.Time     `json:"deleted_at,omitempty"`
+	DeliveredAt      *time.Time     `json:"delivered_at,omitempty"`
 	ReplyToMessageID *string        `json:"reply_to_message_id,omitempty"`
 	QuotedMessage    *QuotedMessage `json:"quoted_message,omitempty"`
 }
