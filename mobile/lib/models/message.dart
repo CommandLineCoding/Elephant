@@ -1,4 +1,5 @@
 import '../core/constants.dart';
+import '../core/message_payload.dart';
 
 class QuotedMessage {
   final String id;
@@ -83,6 +84,23 @@ class Message {
   }
 
   bool get isPending => syncStatus == 'pending';
+
+  // A message is immutable, so what its content holds is worked out once.
+  static final Expando<({String text, MessagePayload? payload})> _parsed =
+      Expando();
+
+  ({String text, MessagePayload? payload}) get _split =>
+      _parsed[this] ??= MessagePayload.split(content);
+
+  /// The structured payload in this message, if it has a valid one.
+  MessagePayload? get payload => _split.payload;
+
+  /// The message text without a payload's hidden line: what to show, copy and
+  /// quote.
+  String get text => _split.text;
+
+  /// An action (a reaction, a vote, a pin) rather than something to show.
+  bool get isAction => payload?.isAction ?? false;
 
   bool isFrom(String? currentUserId) {
     final sender = senderId.trim().toLowerCase();

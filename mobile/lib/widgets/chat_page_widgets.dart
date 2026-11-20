@@ -213,7 +213,7 @@ class ChatBubble extends StatelessWidget {
               )
             else
               MarkdownBody(
-                data: prepareChatMarkdown(message.content),
+                data: prepareChatMarkdown(message.text),
                 extensionSet: chatMarkdownExtensions,
                 softLineBreak: true,
                 onTapLink: (_, href, _) {

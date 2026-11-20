@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -126,5 +127,33 @@ func TestEditEventToleratesOfflineRecipientsAndLookupFailures(t *testing.T) {
 	Hub.PublishMessageEdit(context.Background(), editedMessage("fail-alice", "", "group-1"))
 	if _, leaked := received(bob, "message_edited", 300*time.Millisecond); leaked {
 		t.Error("no event should go out if the group's members couldn't be loaded")
+	}
+}
+
+// Reactions and other silent actions wake nobody: no push ping.
+func TestSilentMessagesSendNoPushPing(t *testing.T) {
+	var mu sync.Mutex
+	var pinged [][]string
+	old := pushPing
+	pushPing = func(ids []string) {
+		mu.Lock()
+		defer mu.Unlock()
+		pinged = append(pinged, ids)
+	}
+	t.Cleanup(func() { pushPing = old })
+
+	pingUsers(true, []string{"u1", "u2"})
+	pingUsers(false, nil)
+	mu.Lock()
+	if len(pinged) != 0 {
+		t.Fatalf("pinged %v for a silent message or nobody", pinged)
+	}
+	mu.Unlock()
+
+	pingUsers(false, []string{"u1"})
+	mu.Lock()
+	defer mu.Unlock()
+	if len(pinged) != 1 || pinged[0][0] != "u1" {
+		t.Errorf("a normal message should ping u1, got %v", pinged)
 	}
 }

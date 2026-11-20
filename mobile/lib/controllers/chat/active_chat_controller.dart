@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile/core/constants.dart';
 import 'package:mobile/core/message_envelope.dart';
+import 'package:mobile/core/message_payload.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -27,13 +28,27 @@ class ActiveChatController extends ChangeNotifier {
   /// an older one. Cached messages stay visible; [retryHistory] tries again.
   String? historyError;
   int _currentRequestId = 0;
-  List<Message> activeChat = [];
+  List<Message> _activeChat = [];
+  List<Message>? _visibleChat;
   String? currentChatUserId;
   bool isPeerTyping = false;
   bool isPeerOnline = false;
   bool isChatHistoryLoading = false;
   bool isCurrentChatGroup = false;
   int chatOpenCount = 0;
+
+  /// Every message of the open chat, oldest first, including actions
+  /// (reactions, votes, pins) that aren't shown as messages.
+  List<Message> get activeChat => _activeChat;
+
+  set activeChat(List<Message> messages) {
+    _activeChat = messages;
+    _visibleChat = null;
+  }
+
+  /// What the message list shows: [activeChat] without the actions.
+  List<Message> get visibleChat =>
+      _visibleChat ??= _activeChat.where((m) => !m.isAction).toList();
 
   void refreshUI() => notifyListeners();
 
@@ -350,7 +365,7 @@ class ActiveChatController extends ChangeNotifier {
             id: replyId,
             senderId: original.senderId,
             senderDisplayName: msg.quotedMessage?.senderDisplayName ?? '',
-            content: original.content,
+            content: original.text,
           ),
         );
       }
@@ -379,6 +394,27 @@ class ActiveChatController extends ChangeNotifier {
     return error;
   }
 
+  /// Sends a structured message to the open chat: [text] for apps that don't
+  /// know [kind], and [data] for ones that do. Actions are sent silently.
+  /// Returns an error to show, or null.
+  Future<String?> sendPayload(
+    String kind,
+    Map<String, dynamic> data, {
+    required String text,
+    Message? replyingTo,
+  }) async {
+    final targetId = currentChatUserId;
+    if (targetId == null) return null;
+    final (error, _) = await sendTo(
+      targetId,
+      isGroup: isCurrentChatGroup,
+      text: MessagePayload.encode(kind, data, text: text),
+      replyingTo: replyingTo,
+      silent: MessagePayload.actionKinds.contains(kind),
+    );
+    return error;
+  }
+
   /// Forwards [text] to each chat in [targets] (chat ID → is a group) as a
   /// new message: encrypted separately for each direct chat, never a copy of
   /// someone's ciphertext. Returns the chats it couldn't be sent to, with why.
@@ -403,11 +439,15 @@ class ActiveChatController extends ChangeNotifier {
   /// Encrypts (for a direct chat), queues and sends [text] to [targetId]. If
   /// that chat is open, the message appears in it straight away. Returns an
   /// error to show, or the message that was queued.
+  ///
+  /// A [silent] message carries an action (see [MessagePayload]): the server
+  /// doesn't count it as unread or ping anyone for it.
   Future<(String?, Message?)> sendTo(
     String targetId, {
     required bool isGroup,
     required String text,
     Message? replyingTo,
+    bool silent = false,
   }) async {
     final cleanContent = text.trim();
     if (cleanContent.isEmpty) return (null, null);
@@ -453,6 +493,7 @@ class ActiveChatController extends ChangeNotifier {
       groupId: isGroup ? targetId : null,
       content: securePayload,
       replyToMessageId: replyingTo?.id,
+      silent: silent,
     );
     if (WebSocketService.frameSize(frame) > ServerLimits.maxWsFrameBytes) {
       return ('Message is too long.', null);
@@ -472,7 +513,7 @@ class ActiveChatController extends ChangeNotifier {
               id: replyingTo.id,
               senderId: replyingTo.senderId,
               senderDisplayName: '',
-              content: replyingTo.content,
+              content: replyingTo.text,
             ),
       syncStatus: 'pending',
     );
@@ -495,6 +536,7 @@ class ActiveChatController extends ChangeNotifier {
           'groupId': isGroup ? targetId : null,
           'content': securePayload,
           'replyToMessageId': replyingTo?.id,
+          'silent': silent,
         },
       );
 

@@ -879,6 +879,18 @@ The server stores and relays `content` as an opaque string. The Elephant app sen
 - **Direct messages:** `ciphertext` is a base64-encoded Signal Protocol message, and `type` is the libsignal ciphertext message type. The first message to a new contact is a PreKey message built from the contact's [prekey bundle](#2-fetch-prekey-bundle).
 - **Group messages:** currently sent with `type: 0`, and `ciphertext` holds the **plaintext** message. Group messages are not yet end-to-end encrypted.
 
+#### Structured messages
+
+Apps can send small structured payloads (reactions, poll votes, pins, shared contacts, locations, link previews) inside the encrypted `content`. The server never sees them. The plaintext is a readable first part, followed by one hidden Markdown reference-definition line carrying the payload:
+
+```
+👍 Reacted to a message
+
+[//]: # (elephant:v1:<base64url, no padding, of a JSON object>)
+```
+
+Apps that don't understand a payload show only the first part (Markdown hides the definition line). The JSON object has a `kind` (for example `reaction`) and kind-specific fields. Actions (reactions, votes, pins) are sent with `silent: true`. This is a convention between apps; the server treats `content` as opaque.
+
 ### 2. Client to Server Messages
 
 #### 1. Send Chat Message
@@ -897,6 +909,7 @@ Persists the message and delivers it live to online recipients. Offline recipien
 
 - `message_id` is optional. If you send a client-generated UUID, the server uses it as the stored message ID, which lets offline-queued sends stay idempotent with the local DB. If you omit it, the server generates one.
 - `reply_to_message_id` is optional.
+- `silent` is optional (default `false`). Set it for a message that only carries an [action](#structured-messages) such as a reaction. The server stores it and relays it (with `silent: true`), but it is not the chat's last message in [`/api/messages/conversations`](#3-conversations), doesn't count as unread, and sends no [push ping](#the-ping). It still appears in history. The flag is the only thing the server learns about an action: not what it is. The REST [`POST /api/messages`](#1-send-message) doesn't accept it.
 - For a group, send `group_id` instead of `receiver_id`.
 
 #### 2. Read Receipt
