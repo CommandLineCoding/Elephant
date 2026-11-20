@@ -39,8 +39,22 @@ class SentMessage {
 class TestChat extends ActiveChatController {
   final List<SentMessage> sent = [];
 
+  /// Every chat opened, in order.
+  final List<String> opened = [];
+
   @override
-  Future<void> openChat(String targetUid, {bool isGroup = false}) async {}
+  Future<void> openChat(String targetUid, {bool isGroup = false}) async {
+    opened.add(targetUid);
+    // Like the real one: opening another chat starts it empty.
+    if (currentChatUserId != targetUid) {
+      activeChat = [];
+      chatOpenCount = 0;
+    }
+    chatOpenCount++;
+    currentChatUserId = targetUid;
+    isCurrentChatGroup = isGroup;
+    notifyListeners();
+  }
 
   @override
   Future<void> loadMoreMessages() async {}

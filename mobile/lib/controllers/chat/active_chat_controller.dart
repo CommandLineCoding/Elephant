@@ -7,6 +7,7 @@ import 'package:mobile/controllers/chat/chat_meta.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/core/message_payload.dart';
 import 'package:mobile/core/poll.dart';
+import 'package:mobile/core/shared_contact.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -442,6 +443,12 @@ class ActiveChatController extends ChangeNotifier {
       silent: MessagePayload.actionKinds.contains(kind),
     );
     return error;
+  }
+
+  /// Shares [contact] in the open chat.
+  Future<String?> sendContact(SharedContact contact) {
+    final (data, text) = contact.toPayload();
+    return sendPayload('contact', data, text: text);
   }
 
   /// Sends a poll to the open chat.

@@ -128,6 +128,10 @@ class ChatBubble extends StatelessWidget {
   /// Set when the message is a poll: drawn instead of its text.
   final PollView? poll;
 
+  /// Draws a structured message (a contact, a location) instead of its text,
+  /// given the text colour that suits the bubble.
+  final Widget Function(Color textColor)? cardBuilder;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -143,6 +147,7 @@ class ChatBubble extends StatelessWidget {
     this.reactions = const [],
     this.onReactionsTap,
     this.poll,
+    this.cardBuilder,
   });
 
   @override
@@ -224,6 +229,8 @@ class ChatBubble extends StatelessWidget {
               )
             else if (poll != null)
               PollCard(view: poll!, textColor: textColor)
+            else if (cardBuilder != null)
+              cardBuilder!(textColor)
             else
               MarkdownBody(
                 data: prepareChatMarkdown(message.text),

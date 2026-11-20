@@ -20,6 +20,9 @@ import 'package:mobile/services/calls/call_log.dart';
 import 'package:mobile/widgets/poll_widgets.dart';
 import 'package:mobile/widgets/reaction_widgets.dart';
 import 'package:mobile/core/poll.dart';
+import 'package:mobile/core/shared_contact.dart';
+import 'package:mobile/pages/chat/contact_picker_page.dart';
+import 'package:mobile/widgets/contact_widgets.dart';
 import 'package:mobile/pages/chat/create_poll_page.dart';
 import 'package:mobile/widgets/call_log_row.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
@@ -217,10 +220,72 @@ class _ChatPageState extends State<ChatPage> {
       context,
       actions: const [
         SheetAction(icon: Icons.poll_outlined, label: 'Poll', value: 'poll'),
+        SheetAction(
+          icon: Icons.person_outline_rounded,
+          label: 'Contact',
+          value: 'contact',
+        ),
       ],
     );
     if (!mounted || choice == null) return;
     if (choice == 'poll') await _createPoll();
+    if (choice == 'contact') await _shareContact();
+  }
+
+  Future<void> _shareContact() async {
+    final contact = await Navigator.push<SharedContact>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ContactPickerPage(
+          exceptId: widget.isGroup ? null : widget.chatUserId,
+        ),
+      ),
+    );
+    if (contact == null || !mounted) return;
+    final error = await _chat.sendContact(contact);
+    if (!mounted) return;
+    if (error != null) {
+      showSnack(context, error, isError: true);
+      return;
+    }
+    _noteSent('👤 Contact: ${contact.name}');
+  }
+
+  /// A shared contact as a card, or null if [message] isn't one.
+  Widget Function(Color)? _cardFor(Message message) {
+    final contact = SharedContact.fromPayload(message.payload);
+    if (contact != null) {
+      final me = _auth.currentUser?.id.toLowerCase();
+      final isMe = contact.id.toLowerCase() == me;
+      final isThisChat =
+          !widget.isGroup &&
+          contact.id.toLowerCase() == widget.chatUserId.toLowerCase();
+      return (textColor) => ContactCard(
+        contact: contact,
+        textColor: textColor,
+        onMessage: isMe || isThisChat ? null : () => _openChatWith(contact),
+      );
+    }
+    return null;
+  }
+
+  /// Opens a chat with a shared contact on top of this one, and gets this one
+  /// back when it's closed (there is one open chat at a time).
+  Future<void> _openChatWith(SharedContact contact) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage(
+          chatUserId: contact.id,
+          displayName: contact.name,
+          username: contact.username,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (_chat.currentChatUserId != widget.chatUserId) {
+      _chat.openChat(widget.chatUserId, isGroup: widget.isGroup);
+    }
   }
 
   Future<void> _createPoll() async {
@@ -972,6 +1037,7 @@ class _ChatPageState extends State<ChatPage> {
                   reactions: chat.meta.reactionsOn(msg.id),
                   onReactionsTap: () => _showReactions(msg),
                   poll: _pollViewFor(msg, chat),
+                  cardBuilder: _cardFor(msg),
                 ),
               ),
             ),
