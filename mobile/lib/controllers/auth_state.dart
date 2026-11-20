@@ -7,6 +7,7 @@ import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/services/chat_folders.dart';
 import 'package:mobile/services/drafts.dart';
 import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/services/db_services.dart';
@@ -356,6 +357,7 @@ class AuthState extends ChangeNotifier {
     CallLog.instance.clear();
     StarredMessages.instance.clear();
     Drafts.instance.reset();
+    ChatFolders.instance.reset();
     _token = null;
     _currentUser = null;
     await _authService.logout();
@@ -391,6 +393,7 @@ class AuthState extends ChangeNotifier {
       CallLog.instance.clear();
       StarredMessages.instance.clear();
       Drafts.instance.reset();
+      ChatFolders.instance.reset();
       _token = null;
       _currentUser = null;
       _errorMessage = "Your session expired. Please sign in again.";

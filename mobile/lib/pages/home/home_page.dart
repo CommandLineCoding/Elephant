@@ -11,7 +11,11 @@ import 'package:mobile/pages/home/conversation_actions.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
+import 'package:mobile/models/chat_folder.dart';
+import 'package:mobile/pages/settings/chat_folders.dart';
 import 'package:mobile/services/blocked_users.dart';
+import 'package:mobile/services/chat_folders.dart';
+import 'package:mobile/widgets/chat_filter_bar.dart';
 import 'package:mobile/services/drafts.dart';
 import 'package:mobile/services/push/push_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -220,6 +224,13 @@ class _ChatsTab extends StatefulWidget {
 class _ChatsTabState extends State<_ChatsTab> {
   final _searchController = TextEditingController();
   String _query = '';
+  String _filter = ChatFilter.all;
+
+  @override
+  void initState() {
+    super.initState();
+    ChatFolders.instance.load();
+  }
 
   @override
   void dispose() {
@@ -228,21 +239,36 @@ class _ChatsTabState extends State<_ChatsTab> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: ChatFolders.instance,
+    builder: (context, _) => _buildTab(context),
+  );
+
+  Widget _buildTab(BuildContext context) {
     final inbox = context.watch<InboxController>();
     final connection = context.watch<ChatConnectionController>();
+    final folders = ChatFolders.instance.folders;
 
+    // A folder that was deleted is the same as All.
+    final filter =
+        ChatFilter.isBuiltIn(_filter) || folders.any((f) => f.id == _filter)
+        ? _filter
+        : ChatFilter.all;
     final query = _query.toLowerCase();
-    // Searching looks through archived chats too.
+    // Searching looks through every chat, archived ones too.
     final items = query.isEmpty
-        ? inbox.chats
+        ? ChatFilter.apply(filter, inbox.chats, folders)
         : inbox.inbox.where((item) {
             return item.title.toLowerCase().contains(query) ||
                 (item.username?.toLowerCase().contains(query) ?? false) ||
                 item.lastMessage.toLowerCase().contains(query);
           }).toList();
 
-    final showArchived = query.isEmpty && inbox.archivedChats.isNotEmpty;
+    final showArchived =
+        query.isEmpty &&
+        filter == ChatFilter.all &&
+        inbox.archivedChats.isNotEmpty;
+    final showFilters = query.isEmpty && inbox.chats.isNotEmpty;
 
     return RefreshIndicator(
       edgeOffset: 120,
@@ -305,6 +331,16 @@ class _ChatsTabState extends State<_ChatsTab> {
               ),
             ),
           ),
+          if (showFilters)
+            SliverToBoxAdapter(
+              child: ChatFilterBar(
+                selected: filter,
+                unreadChats: inbox.unreadChats,
+                folders: folders,
+                onSelected: (key) => setState(() => _filter = key),
+                onEditFolder: (folder) => editChatFolder(context, folder),
+              ),
+            ),
           // Above the list, and above its empty state: with every chat
           // archived, this is how to get to them.
           if (showArchived)
@@ -329,6 +365,8 @@ class _ChatsTabState extends State<_ChatsTab> {
                       title: 'No matches',
                       message: 'No chat matches "$_query".',
                     )
+                  : filter != ChatFilter.all && inbox.chats.isNotEmpty
+                  ? _emptyFilter(filter, folders)
                   : inbox.loadError != null
                   ? EmptyState(
                       icon: Icons.cloud_off_rounded,
@@ -370,6 +408,29 @@ class _ChatsTabState extends State<_ChatsTab> {
       ),
     );
   }
+}
+
+Widget _emptyFilter(String filter, List<ChatFolder> folders) {
+  final folder = folders.where((f) => f.id == filter).firstOrNull;
+  return switch (filter) {
+    ChatFilter.unread => const EmptyState(
+      icon: Icons.mark_chat_read_outlined,
+      title: 'All caught up',
+      message: 'No chats have unread messages.',
+    ),
+    ChatFilter.groups => const EmptyState(
+      icon: Icons.groups_outlined,
+      title: 'No groups',
+      message: 'Groups you are in show here.',
+    ),
+    _ => EmptyState(
+      icon: Icons.folder_open_rounded,
+      title: folder == null ? 'No chats' : 'Nothing in ${folder.name}',
+      message:
+          'Add chats to this folder: press and hold its tab above, or use '
+          'Settings → Chat folders.',
+    ),
+  };
 }
 
 class _GroupsTab extends StatelessWidget {

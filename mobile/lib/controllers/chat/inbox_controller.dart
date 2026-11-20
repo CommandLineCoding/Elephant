@@ -9,6 +9,7 @@ import '../../models/group.dart';
 import '../../models/inbox_item.dart';
 import '../../services/api_services.dart';
 import '../../services/calls/call_log.dart';
+import '../../services/chat_folders.dart';
 import '../../services/db_services.dart';
 import '../../services/ws_service.dart';
 
@@ -451,6 +452,7 @@ class InboxController extends ChangeNotifier {
     _prefs.remove(_key(chatId));
     notifyListeners();
     CallLog.instance.forget(chatId);
+    ChatFolders.instance.forgetChat(chatId);
     await DatabaseHelper.instance.deleteChat(chatId);
   }
 

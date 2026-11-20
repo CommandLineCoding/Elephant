@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile/core/profile_links.dart';
 import 'package:mobile/pages/chat/starred_messages_page.dart';
+import 'package:mobile/pages/settings/chat_folders.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/core/constants.dart';
 import 'package:mobile/pages/settings/accounts.dart';
@@ -216,6 +217,12 @@ class SettingsPage extends StatelessWidget {
                   subtitle: 'Encryption keys and sessions',
                   onTap: () =>
                       _push(context, const PrivacySecuritySettingsPage()),
+                ),
+                ElephantTile(
+                  icon: Icons.folder_outlined,
+                  title: 'Chat folders',
+                  subtitle: 'Sort your chats',
+                  onTap: () => _push(context, const ChatFoldersPage()),
                 ),
                 ElephantTile(
                   icon: Icons.star_outline_rounded,
