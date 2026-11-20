@@ -4,6 +4,7 @@ import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/chat_prefs.dart';
+import 'package:mobile/services/drafts.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -143,67 +144,89 @@ class ConversationTile extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          if (isMe && hasMessage && !conversation.isGroup) ...[
-                            DeliveryTick(
-                              isPending:
-                                  conversation.lastMessageSyncStatus ==
-                                  'pending',
-                              isRead: conversation.lastMessageIsRead ?? false,
-                              color: mutedColor,
-                              size: 15,
-                            ),
-                            const SizedBox(width: 4),
-                          ],
-                          Expanded(
-                            child: Text.rich(
-                              TextSpan(
-                                children: [
-                                  if (prefix != null)
-                                    TextSpan(
-                                      text: '$prefix: ',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        color: hasUnread
-                                            ? onSurface
-                                            : mutedColor,
+                      ListenableBuilder(
+                        listenable: Drafts.instance,
+                        builder: (context, _) {
+                          final draft = Drafts.instance.of(conversation.id);
+                          return Row(
+                            children: [
+                              if (isMe &&
+                                  hasMessage &&
+                                  !conversation.isGroup &&
+                                  draft == null) ...[
+                                DeliveryTick(
+                                  isPending:
+                                      conversation.lastMessageSyncStatus ==
+                                      'pending',
+                                  isRead:
+                                      conversation.lastMessageIsRead ?? false,
+                                  color: mutedColor,
+                                  size: 15,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      if (draft != null)
+                                        TextSpan(
+                                          text: 'Draft: ',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: context.colors.error,
+                                          ),
+                                        )
+                                      else if (prefix != null)
+                                        TextSpan(
+                                          text: '$prefix: ',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            color: hasUnread
+                                                ? onSurface
+                                                : mutedColor,
+                                          ),
+                                        ),
+                                      TextSpan(
+                                        text: draft != null
+                                            ? draft.text.replaceAll('\n', ' ')
+                                            : preview,
                                       ),
-                                    ),
-                                  TextSpan(text: preview),
-                                ],
+                                    ],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: previewStyle,
+                                ),
                               ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: previewStyle,
-                            ),
-                          ),
-                          if (isMuted) ...[
-                            const SizedBox(width: Insets.sm),
-                            Icon(
-                              Icons.notifications_off_rounded,
-                              size: 16,
-                              color: mutedColor,
-                              semanticLabel: 'Muted',
-                            ),
-                          ],
-                          if (prefs.isPinned) ...[
-                            const SizedBox(width: Insets.sm),
-                            Icon(
-                              Icons.push_pin_rounded,
-                              size: 16,
-                              color: mutedColor,
-                              semanticLabel: 'Pinned',
-                            ),
-                          ],
-                          if (hasUnread) ...[
-                            const SizedBox(width: Insets.sm),
-                            UnreadBadge(
-                              conversation.unreadCount,
-                              muted: isMuted,
-                            ),
-                          ],
-                        ],
+                              if (isMuted) ...[
+                                const SizedBox(width: Insets.sm),
+                                Icon(
+                                  Icons.notifications_off_rounded,
+                                  size: 16,
+                                  color: mutedColor,
+                                  semanticLabel: 'Muted',
+                                ),
+                              ],
+                              if (prefs.isPinned) ...[
+                                const SizedBox(width: Insets.sm),
+                                Icon(
+                                  Icons.push_pin_rounded,
+                                  size: 16,
+                                  color: mutedColor,
+                                  semanticLabel: 'Pinned',
+                                ),
+                              ],
+                              if (hasUnread) ...[
+                                const SizedBox(width: Insets.sm),
+                                UnreadBadge(
+                                  conversation.unreadCount,
+                                  muted: isMuted,
+                                ),
+                              ],
+                            ],
+                          );
+                        },
                       ),
                     ],
                   ),

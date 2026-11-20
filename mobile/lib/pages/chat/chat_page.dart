@@ -17,6 +17,7 @@ import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
 import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/services/drafts.dart';
 import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/widgets/poll_widgets.dart';
 import 'package:mobile/widgets/reaction_widgets.dart';
@@ -76,6 +77,15 @@ class _ChatPageState extends State<ChatPage> {
   late String _title = widget.displayName;
   Message? _replyingTo;
   Message? _editing;
+
+  // What the box held before an edit began, put back when it ends.
+  String _textBeforeEdit = '';
+  Message? _replyBeforeEdit;
+
+  // Whether a saved draft has been put back. Until then nothing is saved,
+  // or leaving early would wipe it.
+  bool _draftRestored = false;
+  Timer? _draftTimer;
   String? _highlightedId;
   Timer? _highlightTimer;
   bool _showScrollDown = false;
@@ -95,7 +105,9 @@ class _ChatPageState extends State<ChatPage> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _chat.openChat(widget.chatUserId, isGroup: widget.isGroup);
+      _chat
+          .openChat(widget.chatUserId, isGroup: widget.isGroup)
+          .whenComplete(_restoreDraft);
       if (!widget.isGroup) CallLog.instance.load(widget.chatUserId);
       StarredMessages.instance.load();
       final initial = widget.initialMessageId;
@@ -114,6 +126,8 @@ class _ChatPageState extends State<ChatPage> {
     _positions.itemPositions.removeListener(_onScroll);
     _composer.removeListener(_onComposerChanged);
     _previewTimer?.cancel();
+    _draftTimer?.cancel();
+    _saveDraft();
     final closedChatId = widget.chatUserId;
     Future.microtask(() => _chat.closeChat(closedChatId));
     _highlightTimer?.cancel();
@@ -197,8 +211,7 @@ class _ChatPageState extends State<ChatPage> {
         showSnack(context, error, isError: true);
         return;
       }
-      setState(() => _editing = null);
-      _composer.clear();
+      _endEditing();
       return;
     }
 
@@ -220,6 +233,8 @@ class _ChatPageState extends State<ChatPage> {
 
     _composer.clear();
     setState(() => _replyingTo = null);
+    _draftTimer?.cancel();
+    Drafts.instance.clear(widget.chatUserId);
     _noteSent(text);
   }
 
@@ -417,14 +432,17 @@ class _ChatPageState extends State<ChatPage> {
 
   void _startReply(Message message) {
     HapticFeedback.selectionClick();
-    setState(() {
-      _editing = null;
-      _replyingTo = message;
-    });
+    if (_editing != null) _endEditing();
+    setState(() => _replyingTo = message);
+    _saveDraft();
     _composerFocus.requestFocus();
   }
 
   void _startEdit(Message message) {
+    if (_editing == null) {
+      _textBeforeEdit = _composer.text;
+      _replyBeforeEdit = _replyingTo;
+    }
     setState(() {
       _replyingTo = null;
       _editing = message;
@@ -456,6 +474,8 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _onComposerChanged() {
+    _draftTimer?.cancel();
+    _draftTimer = Timer(const Duration(milliseconds: 800), _saveDraft);
     _previewTimer?.cancel();
     final link = _editing != null ? null : _previewableLink(_composer.text);
     if (link == null) {
@@ -539,11 +559,60 @@ class _ChatPageState extends State<ChatPage> {
   }
 
   void _cancelBanner() {
-    if (_editing != null) _composer.clear();
+    if (_editing != null) {
+      _endEditing();
+      return;
+    }
+    setState(() => _replyingTo = null);
+    _saveDraft();
+  }
+
+  /// Leaves editing and puts back what was in the box before it began.
+  void _endEditing() {
+    final restored = _textBeforeEdit;
+    final reply = _replyBeforeEdit;
+    _textBeforeEdit = '';
+    _replyBeforeEdit = null;
     setState(() {
       _editing = null;
-      _replyingTo = null;
+      _replyingTo = reply;
     });
+    _composer.value = TextEditingValue(
+      text: restored,
+      selection: TextSelection.collapsed(offset: restored.length),
+    );
+  }
+
+  // --- Drafts ---
+
+  Future<void> _restoreDraft() async {
+    await Drafts.instance.load();
+    if (!mounted) return;
+    _draftRestored = true;
+    final draft = Drafts.instance.of(widget.chatUserId);
+    // Not over something already typed.
+    if (draft == null || _composer.text.isNotEmpty || _editing != null) return;
+    _composer.value = TextEditingValue(
+      text: draft.text,
+      selection: TextSelection.collapsed(offset: draft.text.length),
+    );
+    final replyId = draft.replyToId?.toLowerCase();
+    if (replyId != null) {
+      final reply = _chat.visibleChat
+          .where((m) => m.id.toLowerCase() == replyId)
+          .firstOrNull;
+      if (reply != null) setState(() => _replyingTo = reply);
+    }
+  }
+
+  void _saveDraft() {
+    // An edit is not a draft: what was there before is kept for afterwards.
+    if (!_draftRestored || _editing != null) return;
+    Drafts.instance.save(
+      widget.chatUserId,
+      _composer.text,
+      replyToId: _replyingTo?.id,
+    );
   }
 
   Future<void> _showMessageActions(Message message) async {
