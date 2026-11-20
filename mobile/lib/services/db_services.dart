@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 8,
+      version: 9,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -110,6 +110,7 @@ class DatabaseHelper {
     if (oldVersion < 6) await _createChatPrefs(db);
     if (oldVersion < 7) await _createStarred(db);
     if (oldVersion < 8) await _createDrafts(db);
+    if (oldVersion < 9) await _createChatFolders(db);
   }
 
   /// Messages the person starred, to find them again. Only on this phone.
@@ -124,6 +125,18 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX starred_messages_chat ON starred_messages (chat_id)',
     );
+  }
+
+  /// Folders the person made to sort chats. Only on this phone.
+  Future<void> _createChatFolders(Database db) async {
+    await db.execute('''
+      CREATE TABLE chat_folders (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        chat_ids TEXT NOT NULL,
+        position INTEGER NOT NULL
+      )
+    ''');
   }
 
   /// What was typed in a chat but not sent. Only on this phone.
@@ -170,6 +183,7 @@ class DatabaseHelper {
     await _createChatPrefs(db);
     await _createStarred(db);
     await _createDrafts(db);
+    await _createChatFolders(db);
     await db.execute('''
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -315,6 +329,40 @@ class DatabaseHelper {
       where: 'group_id = ?',
       whereArgs: [chatId],
     );
+  }
+
+  /// The folders, in the order they were made.
+  Future<List<Map<String, Object?>>> chatFolders() async {
+    final db = await instance.database;
+    return db.query('chat_folders', orderBy: 'position');
+  }
+
+  Future<void> saveChatFolder(
+    String id,
+    String name,
+    Set<String> chatIds,
+    int position,
+  ) async {
+    final db = await instance.database;
+    await db.insert('chat_folders', {
+      'id': id,
+      'name': name,
+      'chat_ids': jsonEncode(chatIds.toList()),
+      'position': position,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteChatFolder(String id) async {
+    final db = await instance.database;
+    await db.delete('chat_folders', where: 'id = ?', whereArgs: [id]);
+  }
+
+  static Set<String> decodeChatIds(String json) {
+    try {
+      return {for (final id in jsonDecode(json) as List) id as String};
+    } catch (_) {
+      return {};
+    }
   }
 
   /// Every saved draft.
@@ -475,6 +523,7 @@ class DatabaseHelper {
     await db.delete('chat_prefs');
     await db.delete('starred_messages');
     await db.delete('chat_drafts');
+    await db.delete('chat_folders');
     await db.delete('inbox');
     await db.delete('action_queue');
     await db.delete('group_members');
