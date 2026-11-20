@@ -21,6 +21,9 @@ import 'package:mobile/widgets/poll_widgets.dart';
 import 'package:mobile/widgets/reaction_widgets.dart';
 import 'package:mobile/core/poll.dart';
 import 'package:mobile/core/shared_contact.dart';
+import 'package:mobile/core/shared_location.dart';
+import 'package:mobile/services/location_service.dart';
+import 'package:mobile/widgets/location_widgets.dart';
 import 'package:mobile/pages/chat/contact_picker_page.dart';
 import 'package:mobile/widgets/contact_widgets.dart';
 import 'package:mobile/pages/chat/create_poll_page.dart';
@@ -225,11 +228,56 @@ class _ChatPageState extends State<ChatPage> {
           label: 'Contact',
           value: 'contact',
         ),
+        SheetAction(
+          icon: Icons.place_outlined,
+          label: 'Location',
+          value: 'location',
+        ),
       ],
     );
     if (!mounted || choice == null) return;
     if (choice == 'poll') await _createPoll();
     if (choice == 'contact') await _shareContact();
+    if (choice == 'location') await _shareLocation();
+  }
+
+  Future<void> _shareLocation() async {
+    final ok = await confirmAction(
+      context,
+      title: 'Share your location?',
+      message:
+          'This sends where you are right now to ${widget.isGroup ? 'the group' : _title}. '
+          'It is not updated as you move.',
+      confirmLabel: 'Share',
+    );
+    if (!ok || !mounted) return;
+
+    showSnack(context, 'Finding your location…');
+    final found = await LocationService().current();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+    final here = found.location;
+    if (here == null) {
+      showSnack(context, switch (found.problem) {
+        LocationProblem.denied =>
+          'Allow location access for Elephant in Settings to share where you are.',
+        LocationProblem.disabled =>
+          'Turn on location on your phone to share where you are.',
+        _ => "Couldn't find your location. Try again outside or near a window.",
+      }, isError: true);
+      return;
+    }
+
+    final error = await _chat.sendLocation(
+      SharedLocation(here.lat, here.lon, accuracy: here.accuracy),
+    );
+    if (!mounted) return;
+    if (error != null) {
+      showSnack(context, error, isError: true);
+      return;
+    }
+    _noteSent('📍 Location');
   }
 
   Future<void> _shareContact() async {
@@ -264,6 +312,18 @@ class _ChatPageState extends State<ChatPage> {
         contact: contact,
         textColor: textColor,
         onMessage: isMe || isThisChat ? null : () => _openChatWith(contact),
+      );
+    }
+    final location = SharedLocation.fromPayload(message.payload);
+    if (location != null) {
+      return (textColor) => LocationCard(
+        location: location,
+        textColor: textColor,
+        onOpen: () async {
+          if (!await openInMaps(location) && mounted) {
+            showSnack(context, "Couldn't open a maps app", isError: true);
+          }
+        },
       );
     }
     return null;

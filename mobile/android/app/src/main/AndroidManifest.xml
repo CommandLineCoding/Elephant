@@ -18,6 +18,11 @@
          over the lock screen. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Sharing your location in a chat. Asked for when you choose to share it.
+         It uses Android's own location service, with no Google Play Services. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
 
     <application
         android:allowBackup="false"
