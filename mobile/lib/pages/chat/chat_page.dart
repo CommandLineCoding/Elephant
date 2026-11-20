@@ -17,6 +17,7 @@ import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
 import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/widgets/poll_widgets.dart';
 import 'package:mobile/widgets/reaction_widgets.dart';
 import 'package:mobile/core/link_preview.dart';
@@ -47,12 +48,16 @@ class ChatPage extends StatefulWidget {
   final String? username;
   final bool isGroup;
 
+  /// A message to scroll to once the chat has loaded (from starred messages).
+  final String? initialMessageId;
+
   const ChatPage({
     super.key,
     required this.chatUserId,
     required this.displayName,
     this.username,
     this.isGroup = false,
+    this.initialMessageId,
   });
 
   @override
@@ -92,6 +97,9 @@ class _ChatPageState extends State<ChatPage> {
       if (!mounted) return;
       _chat.openChat(widget.chatUserId, isGroup: widget.isGroup);
       if (!widget.isGroup) CallLog.instance.load(widget.chatUserId);
+      StarredMessages.instance.load();
+      final initial = widget.initialMessageId;
+      if (initial != null) _showMessage(initial);
       context.read<InboxController>().clearUnread(widget.chatUserId);
       if (widget.isGroup) {
         context.read<GroupDetailsController>().fetchGroupMembers(
@@ -549,6 +557,7 @@ class _ChatPageState extends State<ChatPage> {
 
     // Nobody to react to once you've blocked them, or if it can't be read.
     final isDeleted = message.isDeleted;
+    final starred = StarredMessages.instance.isStarred(message.id);
     final canReact =
         !isLocked && !isDeleted && !_isBlocked && !message.isPending;
     final canPin = canReact && _chat.canPin;
@@ -585,6 +594,12 @@ class _ChatPageState extends State<ChatPage> {
             icon: Icons.reply_rounded,
             label: 'Reply',
             value: 'reply',
+          ),
+        if (!isDeleted && !isLocked && !message.isPending)
+          SheetAction(
+            icon: starred ? Icons.star_rounded : Icons.star_outline_rounded,
+            label: starred ? 'Remove star' : 'Star',
+            value: 'star',
           ),
         if (canPin)
           SheetAction(
@@ -663,6 +678,9 @@ class _ChatPageState extends State<ChatPage> {
       case 'edit':
         _startEdit(message);
         break;
+      case 'star':
+        await _toggleStar(message);
+        break;
       case 'delete':
         await _deleteMessage(message);
         break;
@@ -728,6 +746,41 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _setPinned(Message message, bool pinned) async {
     final error = await _chat.setPinned(message, pinned);
     if (error != null && mounted) showSnack(context, error, isError: true);
+  }
+
+  /// Scrolls to a message that may be further back than what's loaded,
+  /// loading older messages until it turns up.
+  Future<void> _showMessage(String messageId) async {
+    bool loaded() => _chat.visibleChat.any(
+      (m) => m.id.toLowerCase() == messageId.toLowerCase(),
+    );
+
+    for (var attempt = 0; attempt < 40; attempt++) {
+      if (!mounted) return;
+      if (loaded()) {
+        // The list needs a frame to exist before it can scroll.
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted) _jumpToMessage(messageId);
+        return;
+      }
+      if (_chat.isChatHistoryLoading || _chat.isLoadingMore) {
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      } else if (_chat.hasMoreMessages) {
+        await _chat.loadMoreMessages();
+      } else {
+        break;
+      }
+    }
+    if (mounted) showSnack(context, "Couldn't find that message");
+  }
+
+  Future<void> _toggleStar(Message message) async {
+    final stars = StarredMessages.instance;
+    await stars.setStarred(
+      widget.chatUserId,
+      message.id,
+      !stars.isStarred(message.id),
+    );
   }
 
   Future<void> _react(Message message, String emoji) async {
@@ -846,7 +899,11 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([BlockedUsers.instance, CallLog.instance]),
+      listenable: Listenable.merge([
+        BlockedUsers.instance,
+        CallLog.instance,
+        StarredMessages.instance,
+      ]),
       builder: (context, _) => _buildPage(context),
     );
   }
@@ -1255,6 +1312,7 @@ class _ChatPageState extends State<ChatPage> {
                   poll: _pollViewFor(msg, chat),
                   cardBuilder: _cardFor(msg),
                   previewBuilder: _previewFor(msg),
+                  isStarred: StarredMessages.instance.isStarred(msg.id),
                 ),
               ),
             ),

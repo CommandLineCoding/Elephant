@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile/controllers/auth_state.dart';
+import 'package:mobile/pages/chat/starred_messages_page.dart';
 import 'package:mobile/controllers/chat/chat_search_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
@@ -444,8 +445,28 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     );
   }
 
+  /// The way to this chat's starred messages.
+  List<Widget> _starredSection() => [
+    const SectionLabel('Messages'),
+    Section(
+      children: [
+        ElephantTile(
+          icon: Icons.star_outline_rounded,
+          title: 'Starred messages',
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => StarredMessagesPage(chatId: widget.chatId),
+            ),
+          ),
+        ),
+      ],
+    ),
+  ];
+
   List<Widget> _buildDirectSections() {
     return [
+      ..._starredSection(),
       const SectionLabel('Encryption'),
       Section(
         children: [
@@ -524,6 +545,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     final members = groups.currentGroupMembers;
 
     return [
+      ..._starredSection(),
       if (iAmAdmin) ...[
         const SectionLabel('Settings'),
         Section(

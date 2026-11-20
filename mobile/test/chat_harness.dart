@@ -42,12 +42,18 @@ class TestChat extends ActiveChatController {
   /// Every chat opened, in order.
   final List<String> opened = [];
 
+  /// What opening a chat loads, by chat ID (its newest messages).
+  final Map<String, List<Message>> chats = {};
+
+  /// Older pages, newest page first, that scrolling back loads one by one.
+  final List<List<Message>> olderPages = [];
+
   @override
   Future<void> openChat(String targetUid, {bool isGroup = false}) async {
     opened.add(targetUid);
-    // Like the real one: opening another chat starts it empty.
+    // Like the real one: opening another chat starts it with its own messages.
     if (currentChatUserId != targetUid) {
-      activeChat = [];
+      activeChat = chats[targetUid] ?? [];
       chatOpenCount = 0;
     }
     chatOpenCount++;
@@ -57,7 +63,15 @@ class TestChat extends ActiveChatController {
   }
 
   @override
-  Future<void> loadMoreMessages() async {}
+  Future<void> loadMoreMessages() async {
+    if (olderPages.isEmpty) {
+      hasMoreMessages = false;
+      return;
+    }
+    activeChat = [...olderPages.removeAt(0), ...activeChat];
+    hasMoreMessages = olderPages.isNotEmpty;
+    notifyListeners();
+  }
 
   @override
   Future<(String?, Message?)> sendTo(
