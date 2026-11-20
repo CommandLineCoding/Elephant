@@ -10,6 +10,19 @@ Elephant is a privacy-first, open-source messaging application built with Go and
 
 <img src="./mobile/assets/launcher/elephant.png" width="200" height="200" alt="App Screenshot">
 
+## Screenshots
+
+Elephant 0.6.0 on a phone, a tablet and an emulator, with test accounts.
+
+<table>
+<tr><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/01-chat-list-mention.png" width="190" alt="Filters, folders and an @ for mentions"><br><sub>Filters, folders and an @ for mentions</sub></td><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/02-group-poll-reaction-mention.png" width="190" alt="Polls, reactions, stars and @mentions"><br><sub>Polls, reactions, stars and @mentions</sub></td><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/04-location-and-link-preview.png" width="190" alt="Location and link preview"><br><sub>Location and link preview</sub></td><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/12-folder-filter.png" width="190" alt="Your own folders"><br><sub>Your own folders</sub></td></tr>
+<tr><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/06-group-phone-dark.png" width="190" alt="Group on a phone (dark)"><br><sub>Group on a phone (dark)</sub></td><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/05-location-and-link-preview-phone-dark.png" width="190" alt="The same chat on the other phone"><br><sub>The same chat on the other phone</sub></td><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/08-deleted-for-everyone-phone-dark.png" width="190" alt="Deleted for everyone"><br><sub>Deleted for everyone</sub></td><td align="center" valign="top"><img src="docs/screenshots/v0.6.0/03-message-menu.png" width="190" alt="Message menu"><br><sub>Message menu</sub></td></tr>
+</table>
+
+<p align="center"><img src="docs/screenshots/v0.6.0/07-group-tablet-dark.png" width="420" alt="A group chat on a tablet"><br><sub>A group chat on a tablet</sub></p>
+
+More are in [`docs/screenshots/v0.6.0/`](docs/screenshots/v0.6.0/).
+
 ## Features
 
 - **End-to-end encrypted direct messages:** The Signal Protocol (X3DH + Double Ratchet, via `libsignal_protocol_dart`) runs on the device. The server only stores public prekey bundles and opaque ciphertext.
