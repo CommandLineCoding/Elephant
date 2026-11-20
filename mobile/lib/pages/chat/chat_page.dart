@@ -13,10 +13,13 @@ import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/pages/chat/forward_page.dart';
+import 'package:mobile/widgets/mention_widgets.dart';
 import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
 import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/core/mention.dart';
+import 'package:mobile/models/group.dart';
 import 'package:mobile/services/drafts.dart';
 import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/widgets/poll_widgets.dart';
@@ -81,6 +84,12 @@ class _ChatPageState extends State<ChatPage> {
   // What the box held before an edit began, put back when it ends.
   String _textBeforeEdit = '';
   Message? _replyBeforeEdit;
+  Map<String, String> _mentionsBeforeEdit = {};
+
+  // Who each @Name in the box stands for (name → user ID), and the members
+  // that the @ being written could be.
+  final Map<String, String> _mentions = {};
+  List<GroupMember> _mentionMatches = const [];
 
   // Whether a saved draft has been put back. Until then nothing is saved,
   // or leaving early would wipe it.
@@ -203,7 +212,9 @@ class _ChatPageState extends State<ChatPage> {
 
   // --- Sending, replying, editing ---
 
-  Future<void> _send(String text) async {
+  Future<void> _send(String typed) async {
+    // Mentions are sent by ID, so a renamed member is still the one mentioned.
+    final text = encodeMentions(typed, _mentions);
     if (_editing != null) {
       final error = await _chat.editMessage(_editing!, text);
       if (!mounted) return;
@@ -231,6 +242,7 @@ class _ChatPageState extends State<ChatPage> {
       return;
     }
 
+    _mentions.clear();
     _composer.clear();
     setState(() => _replyingTo = null);
     _draftTimer?.cancel();
@@ -442,12 +454,17 @@ class _ChatPageState extends State<ChatPage> {
     if (_editing == null) {
       _textBeforeEdit = _composer.text;
       _replyBeforeEdit = _replyingTo;
+      _mentionsBeforeEdit = {..._mentions};
     }
     setState(() {
       _replyingTo = null;
       _editing = message;
     });
-    _composer.text = message.text;
+    final shown = decodeMentions(message.text);
+    _mentions
+      ..clear()
+      ..addAll(shown.mentions);
+    _composer.text = shown.text;
     _composer.selection = TextSelection.collapsed(
       offset: _composer.text.length,
     );
@@ -473,7 +490,112 @@ class _ChatPageState extends State<ChatPage> {
     return null;
   }
 
+  // --- Mentions ---
+
+  /// What was typed after the @ the cursor is at, or null if the cursor isn't
+  /// in the middle of one.
+  String? _mentionQuery() {
+    final selection = _composer.selection;
+    if (selection.isValid && !selection.isCollapsed) return null;
+    final cursor = selection.isValid
+        ? selection.baseOffset
+        : _composer.text.length;
+    final before = _composer.text.substring(0, cursor);
+    final at = before.lastIndexOf('@');
+    if (at == -1) return null;
+    if (at > 0 && !RegExp(r'\s').hasMatch(before[at - 1])) return null;
+    final query = before.substring(at + 1);
+    if (query.length > 25 || query.contains('\n') || query.endsWith(' ')) {
+      return null;
+    }
+    return query.toLowerCase();
+  }
+
+  void _updateMentionMatches() {
+    var matches = const <GroupMember>[];
+    final query = widget.isGroup ? _mentionQuery() : null;
+    if (query != null) {
+      final me = _auth.currentUser?.id.toLowerCase();
+      matches = context
+          .read<GroupDetailsController>()
+          .currentGroupMembers
+          .where(
+            (m) =>
+                m.userId.toLowerCase() != me &&
+                (m.displayName.toLowerCase().contains(query) ||
+                    m.username.toLowerCase().startsWith(query)),
+          )
+          .take(6)
+          .toList();
+    }
+    final same =
+        matches.length == _mentionMatches.length &&
+        [for (final m in matches) m.userId].join() ==
+            [for (final m in _mentionMatches) m.userId].join();
+    if (!same) setState(() => _mentionMatches = matches);
+  }
+
+  /// What to write for [member]: their name, or their username if the name
+  /// would stand for someone else too.
+  String _mentionLabel(GroupMember member) {
+    final id = member.userId.toLowerCase();
+    final name = mentionName(member.displayName);
+    final others = context.read<GroupDetailsController>().currentGroupMembers;
+    final clash =
+        name.isEmpty ||
+        others.any(
+          (m) =>
+              m.userId.toLowerCase() != id &&
+              mentionName(m.displayName).toLowerCase() == name.toLowerCase(),
+        ) ||
+        (_mentions['@$name'] != null && _mentions['@$name'] != id);
+    return clash ? member.username : name;
+  }
+
+  void _pickMention(GroupMember member) {
+    final text = _composer.text;
+    final cursor = _composer.selection.isValid
+        ? _composer.selection.baseOffset
+        : text.length;
+    final at = text.substring(0, cursor).lastIndexOf('@');
+    if (at == -1) return;
+    final label = _mentionLabel(member);
+    _mentions['@$label'] = member.userId.toLowerCase();
+    final inserted = '@$label ';
+    _composer.value = TextEditingValue(
+      text: text.replaceRange(at, cursor, inserted),
+      selection: TextSelection.collapsed(offset: at + inserted.length),
+    );
+  }
+
+  void _openMember(String userId) {
+    final id = userId.toLowerCase();
+    if (id == _auth.currentUser?.id.toLowerCase()) return;
+    final member = context
+        .read<GroupDetailsController>()
+        .currentGroupMembers
+        .where((m) => m.userId.toLowerCase() == id)
+        .firstOrNull;
+    if (member == null) {
+      showSnack(context, 'That person is no longer in this group.');
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatDetailsPage(
+          isGroup: false,
+          chatName: member.displayName,
+          chatId: member.userId,
+          username: member.username,
+          openedFromGroup: true,
+        ),
+      ),
+    );
+  }
+
   void _onComposerChanged() {
+    _updateMentionMatches();
     _draftTimer?.cancel();
     _draftTimer = Timer(const Duration(milliseconds: 800), _saveDraft);
     _previewTimer?.cancel();
@@ -519,27 +641,32 @@ class _ChatPageState extends State<ChatPage> {
         ? ComposerBanner(
             icon: Icons.edit_outlined,
             title: 'Editing message',
-            body: _editing!.text,
+            body: _editing!.plainText,
             onClose: _cancelBanner,
           )
         : _replyingTo != null
         ? ComposerBanner(
             icon: Icons.reply_rounded,
             title: 'Replying to ${_nameOf(_replyingTo!.senderId)}',
-            body: _replyingTo!.text,
+            body: _replyingTo!.plainText,
             onClose: _cancelBanner,
           )
         : null;
     final preview = _preview;
-    if (preview == null) return above;
+    final suggestions = _mentionMatches.isEmpty
+        ? null
+        : MentionSuggestions(members: _mentionMatches, onPick: _pickMention);
+    if (preview == null && suggestions == null) return above;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        ?suggestions,
         ?above,
-        LinkPreviewBar(
-          preview: preview,
-          onClose: () => setState(() => _preview = null),
-        ),
+        if (preview != null)
+          LinkPreviewBar(
+            preview: preview,
+            onClose: () => setState(() => _preview = null),
+          ),
       ],
     );
   }
@@ -573,6 +700,10 @@ class _ChatPageState extends State<ChatPage> {
     final reply = _replyBeforeEdit;
     _textBeforeEdit = '';
     _replyBeforeEdit = null;
+    _mentions
+      ..clear()
+      ..addAll(_mentionsBeforeEdit);
+    _mentionsBeforeEdit = {};
     setState(() {
       _editing = null;
       _replyingTo = reply;
@@ -592,9 +723,13 @@ class _ChatPageState extends State<ChatPage> {
     final draft = Drafts.instance.of(widget.chatUserId);
     // Not over something already typed.
     if (draft == null || _composer.text.isNotEmpty || _editing != null) return;
+    final shown = decodeMentions(draft.text);
+    _mentions
+      ..clear()
+      ..addAll(shown.mentions);
     _composer.value = TextEditingValue(
-      text: draft.text,
-      selection: TextSelection.collapsed(offset: draft.text.length),
+      text: shown.text,
+      selection: TextSelection.collapsed(offset: shown.text.length),
     );
     final replyId = draft.replyToId?.toLowerCase();
     if (replyId != null) {
@@ -610,7 +745,7 @@ class _ChatPageState extends State<ChatPage> {
     if (!_draftRestored || _editing != null) return;
     Drafts.instance.save(
       widget.chatUserId,
-      _composer.text,
+      encodeMentions(_composer.text, _mentions),
       replyToId: _replyingTo?.id,
     );
   }
@@ -737,7 +872,7 @@ class _ChatPageState extends State<ChatPage> {
         );
         break;
       case 'copy':
-        await Clipboard.setData(ClipboardData(text: message.text));
+        await Clipboard.setData(ClipboardData(text: message.plainText));
         if (mounted) showSnack(context, 'Copied');
         break;
       case 'copy-links':
@@ -1382,6 +1517,13 @@ class _ChatPageState extends State<ChatPage> {
                   cardBuilder: _cardFor(msg),
                   previewBuilder: _previewFor(msg),
                   isStarred: StarredMessages.instance.isStarred(msg.id),
+                  currentUserId: _auth.currentUser?.id,
+                  mentionName: widget.isGroup
+                      ? (id, stored) => context
+                            .read<GroupDetailsController>()
+                            .nameFor(id, fallback: stored)
+                      : null,
+                  onMentionTap: widget.isGroup ? _openMember : null,
                 ),
               ),
             ),
@@ -1409,7 +1551,11 @@ class _ChatPageState extends State<ChatPage> {
       itemBuilder: (context, index) {
         final msg = _searchResults[index];
         return ListTile(
-          title: Text(msg.text, maxLines: 2, overflow: TextOverflow.ellipsis),
+          title: Text(
+            msg.plainText,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
           subtitle: Text(
             '${_nameOf(msg.senderId)} · ${DateFormat.yMMMd().add_jm().format(msg.createdAt)}',
           ),
@@ -1561,7 +1707,9 @@ class _PinnedBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = message.text.trim().isEmpty ? 'Message' : message.text.trim();
+    final text = message.plainText.trim().isEmpty
+        ? 'Message'
+        : message.plainText.trim();
     return Semantics(
       button: true,
       label:

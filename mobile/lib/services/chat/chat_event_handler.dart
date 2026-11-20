@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
+import 'package:mobile/core/mention.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/controllers/chat/active_chat_controller.dart';
@@ -285,12 +286,15 @@ class ChatEventHandler {
       chatId,
       MessageEnvelope.isUnreadable(content)
           ? '🔒 Encrypted message'
-          : message.text,
+          : message.plainText,
       message.createdAt,
       !isOpen,
       senderId: senderId,
       syncStatus: 'synced',
       isRead: isOpen,
+      mentionsMe:
+          _id(data['group_id']) != null &&
+          mentionsUser(message.text, currentUserId),
     );
   }
 

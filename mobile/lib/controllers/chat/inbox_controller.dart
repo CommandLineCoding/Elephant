@@ -37,6 +37,10 @@ class InboxController extends ChangeNotifier {
   // --- Pinned, archived and muted chats ---
 
   Map<String, ChatPrefs> _prefs = {};
+
+  // Groups with an unread message that mentions the person (lower-case
+  // IDs). Kept while the app runs.
+  final Set<String> _mentioned = {};
   bool _prefsLoaded = false;
 
   /// Whether a new message brings an archived chat back to the chat list.
@@ -45,6 +49,9 @@ class InboxController extends ChangeNotifier {
   static const _unarchiveKey = 'unarchive_on_message';
 
   static String _key(String chatId) => chatId.toLowerCase();
+
+  /// Whether an unread message in [chatId] mentions the person.
+  bool isMentioned(String chatId) => _mentioned.contains(_key(chatId));
 
   ChatPrefs prefsOf(String chatId) => _prefs[_key(chatId)] ?? ChatPrefs.none;
 
@@ -290,6 +297,7 @@ class InboxController extends ChangeNotifier {
     String? senderId,
     String syncStatus = 'synced',
     bool isRead = false,
+    bool mentionsMe = false,
   }) {
     final int index = inbox.indexWhere((item) => item.id == chatId);
     if (index == -1) {
@@ -309,6 +317,7 @@ class InboxController extends ChangeNotifier {
     item.lastMessageSyncStatus = syncStatus;
     item.lastMessageIsRead = isRead;
     if (incrementUnread) item.unreadCount += 1;
+    if (incrementUnread && mentionsMe) _mentioned.add(_key(chatId));
     inbox.insert(0, item);
     notifyListeners();
 
@@ -326,6 +335,7 @@ class InboxController extends ChangeNotifier {
 
   /// We opened [chatId], so its unread badge goes away.
   void clearUnread(String chatId) {
+    if (_mentioned.remove(_key(chatId))) notifyListeners();
     final index = inbox.indexWhere((item) => item.id == chatId);
     if (index == -1 || inbox[index].unreadCount == 0) return;
     inbox[index].unreadCount = 0;
