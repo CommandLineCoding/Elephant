@@ -12,6 +12,7 @@ import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
 import 'package:mobile/services/blocked_users.dart';
+import 'package:mobile/services/drafts.dart';
 import 'package:mobile/services/push/push_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/home_page_widgets.dart';
@@ -34,6 +35,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    Drafts.instance.load();
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _maybeShowNewUsername(),
     );

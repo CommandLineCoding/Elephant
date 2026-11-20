@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 7,
+      version: 8,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -109,6 +109,7 @@ class DatabaseHelper {
     }
     if (oldVersion < 6) await _createChatPrefs(db);
     if (oldVersion < 7) await _createStarred(db);
+    if (oldVersion < 8) await _createDrafts(db);
   }
 
   /// Messages the person starred, to find them again. Only on this phone.
@@ -123,6 +124,18 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX starred_messages_chat ON starred_messages (chat_id)',
     );
+  }
+
+  /// What was typed in a chat but not sent. Only on this phone.
+  Future<void> _createDrafts(Database db) async {
+    await db.execute('''
+      CREATE TABLE chat_drafts (
+        chat_id TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        reply_to_id TEXT,
+        updated_at INTEGER NOT NULL
+      )
+    ''');
   }
 
   /// How each chat is arranged on this phone (pinned, archived, muted).
@@ -156,6 +169,7 @@ class DatabaseHelper {
     await _createCallLog(db);
     await _createChatPrefs(db);
     await _createStarred(db);
+    await _createDrafts(db);
     await db.execute('''
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -286,6 +300,11 @@ class DatabaseHelper {
     await db.delete('call_log', where: 'chat_id = ?', whereArgs: [chatId]);
     await db.delete('chat_prefs', where: 'chat_id = ?', whereArgs: [chatId]);
     await db.delete(
+      'chat_drafts',
+      where: 'chat_id = ?',
+      whereArgs: [chatId.toLowerCase()],
+    );
+    await db.delete(
       'starred_messages',
       where: 'chat_id = ?',
       whereArgs: [chatId],
@@ -296,6 +315,27 @@ class DatabaseHelper {
       where: 'group_id = ?',
       whereArgs: [chatId],
     );
+  }
+
+  /// Every saved draft.
+  Future<List<Map<String, Object?>>> drafts() async {
+    final db = await instance.database;
+    return db.query('chat_drafts');
+  }
+
+  Future<void> saveDraft(String chatId, String text, String? replyToId) async {
+    final db = await instance.database;
+    await db.insert('chat_drafts', {
+      'chat_id': chatId,
+      'text': text,
+      'reply_to_id': replyToId,
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteDraft(String chatId) async {
+    final db = await instance.database;
+    await db.delete('chat_drafts', where: 'chat_id = ?', whereArgs: [chatId]);
   }
 
   /// The IDs of every starred message.
@@ -434,6 +474,7 @@ class DatabaseHelper {
     await db.delete('call_log');
     await db.delete('chat_prefs');
     await db.delete('starred_messages');
+    await db.delete('chat_drafts');
     await db.delete('inbox');
     await db.delete('action_queue');
     await db.delete('group_members');
