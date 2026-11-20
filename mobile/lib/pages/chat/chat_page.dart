@@ -17,6 +17,7 @@ import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
 import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/widgets/reaction_widgets.dart';
 import 'package:mobile/widgets/call_log_row.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
@@ -237,17 +238,33 @@ class _ChatPageState extends State<ChatPage> {
     final canEdit = !isLocked && message.canEdit(_auth.currentUser?.id);
     final links = isLocked ? const <String>[] : linksIn(message.text);
 
+    // Nobody to react to once you've blocked them, or if it can't be read.
+    final canReact = !isLocked && !_isBlocked && !message.isPending;
+    final myReaction = _chat.meta.myReactionTo(message.id);
+
     final action = await showActionSheet<String>(
       context,
-      header: Padding(
-        padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.sm),
-        child: Text(
-          '${_nameOf(message.senderId)} · ${DateFormat.MMMd().add_jm().format(message.createdAt)}'
-          '${message.isEdited ? ' · edited' : ''}',
-          style: context.text.bodySmall?.copyWith(
-            color: context.colors.onSurfaceVariant,
+      header: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              Insets.xl,
+              0,
+              Insets.xl,
+              Insets.sm,
+            ),
+            child: Text(
+              '${_nameOf(message.senderId)} · ${DateFormat.MMMd().add_jm().format(message.createdAt)}'
+              '${message.isEdited ? ' · edited' : ''}',
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
           ),
-        ),
+          if (canReact) ReactionPicker(mine: myReaction),
+        ],
       ),
       actions: [
         const SheetAction(
@@ -283,7 +300,16 @@ class _ChatPageState extends State<ChatPage> {
     );
     if (!mounted || action == null) return;
 
+    if (action.startsWith(reactPrefix)) {
+      await _react(message, action.substring(reactPrefix.length));
+      return;
+    }
+
     switch (action) {
+      case reactMorePrefix:
+        final emoji = await showEmojiGrid(context, mine: myReaction);
+        if (emoji != null && mounted) await _react(message, emoji);
+        break;
       case 'reply':
         _startReply(message);
         break;
@@ -309,6 +335,22 @@ class _ChatPageState extends State<ChatPage> {
 
   bool get _isBlocked =>
       !widget.isGroup && BlockedUsers.instance.isBlocked(widget.chatUserId);
+
+  Future<void> _react(Message message, String emoji) async {
+    final error = await _chat.react(message, emoji);
+    if (error != null && mounted) showSnack(context, error, isError: true);
+  }
+
+  void _showReactions(Message message) {
+    final groups = _chat.meta.reactionsOn(message.id);
+    if (groups.isEmpty) return;
+    showReactionList(
+      context,
+      groups: groups,
+      nameOf: _nameOf,
+      onRemoveMine: () => _react(message, _chat.meta.myReactionTo(message.id)!),
+    );
+  }
 
   Future<void> _onMenu(String value) async {
     if (value == 'block') {
@@ -793,6 +835,8 @@ class _ChatPageState extends State<ChatPage> {
                   onQuoteTap: quote != null
                       ? () => _jumpToMessage(quote.id)
                       : null,
+                  reactions: chat.meta.reactionsOn(msg.id),
+                  onReactionsTap: () => _showReactions(msg),
                 ),
               ),
             ),

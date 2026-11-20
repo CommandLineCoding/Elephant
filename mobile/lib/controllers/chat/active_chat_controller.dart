@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:mobile/core/constants.dart';
+import 'package:mobile/controllers/chat/chat_meta.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/core/message_payload.dart';
 import 'package:mobile/services/signal_service.dart';
@@ -30,6 +31,7 @@ class ActiveChatController extends ChangeNotifier {
   int _currentRequestId = 0;
   List<Message> _activeChat = [];
   List<Message>? _visibleChat;
+  ChatMeta? _meta;
   String? currentChatUserId;
   bool isPeerTyping = false;
   bool isPeerOnline = false;
@@ -44,7 +46,11 @@ class ActiveChatController extends ChangeNotifier {
   set activeChat(List<Message> messages) {
     _activeChat = messages;
     _visibleChat = null;
+    _meta = null;
   }
+
+  /// What the open chat's actions add up to (reactions).
+  ChatMeta get meta => _meta ??= ChatMeta.from(_activeChat, _myId);
 
   /// What the message list shows: [activeChat] without the actions.
   List<Message> get visibleChat =>
@@ -413,6 +419,14 @@ class ActiveChatController extends ChangeNotifier {
       silent: MessagePayload.actionKinds.contains(kind),
     );
     return error;
+  }
+
+  /// Reacts to [message] with [emoji] in the open chat. Reacting with the
+  /// emoji already chosen takes the reaction away.
+  Future<String?> react(Message message, String emoji) {
+    final chosen = meta.myReactionTo(message.id) == emoji ? '' : emoji;
+    final (data, text) = ChatMeta.reactionPayload(message.id, chosen);
+    return sendPayload('reaction', data, text: text);
   }
 
   /// Forwards [text] to each chat in [targets] (chat ID → is a group) as a

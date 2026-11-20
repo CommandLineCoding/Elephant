@@ -6,6 +6,8 @@ import 'package:mobile/core/chat_markdown.dart';
 import 'package:mobile/core/links.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/message_envelope.dart';
+import '../controllers/chat/chat_meta.dart';
+import 'reaction_widgets.dart';
 import 'package:mobile/models/message.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/home_page_widgets.dart';
@@ -119,6 +121,8 @@ class ChatBubble extends StatelessWidget {
   final String? quotedAuthor;
   final bool highlighted;
   final VoidCallback? onQuoteTap;
+  final List<ReactionGroup> reactions;
+  final VoidCallback? onReactionsTap;
 
   const ChatBubble({
     super.key,
@@ -132,6 +136,8 @@ class ChatBubble extends StatelessWidget {
     this.quotedAuthor,
     this.highlighted = false,
     this.onQuoteTap,
+    this.reactions = const [],
+    this.onReactionsTap,
   });
 
   @override
@@ -291,7 +297,30 @@ class ChatBubble extends StatelessWidget {
             ),
             const SizedBox(width: 6),
           ],
-          Flexible(child: bubble),
+          Flexible(
+            child: reactions.isEmpty
+                ? bubble
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: isMe
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
+                    children: [
+                      bubble,
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          top: 3,
+                          left: 4,
+                          right: 4,
+                        ),
+                        child: ReactionChips(
+                          groups: reactions,
+                          onTap: onReactionsTap ?? () {},
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ],
       ),
     );
