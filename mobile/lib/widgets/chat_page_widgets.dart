@@ -7,6 +7,7 @@ import 'package:mobile/core/links.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/message_envelope.dart';
 import '../controllers/chat/chat_meta.dart';
+import 'poll_widgets.dart';
 import 'reaction_widgets.dart';
 import 'package:mobile/models/message.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -124,6 +125,9 @@ class ChatBubble extends StatelessWidget {
   final List<ReactionGroup> reactions;
   final VoidCallback? onReactionsTap;
 
+  /// Set when the message is a poll: drawn instead of its text.
+  final PollView? poll;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -138,6 +142,7 @@ class ChatBubble extends StatelessWidget {
     this.onQuoteTap,
     this.reactions = const [],
     this.onReactionsTap,
+    this.poll,
   });
 
   @override
@@ -217,6 +222,8 @@ class ChatBubble extends StatelessWidget {
                   ),
                 ],
               )
+            else if (poll != null)
+              PollCard(view: poll!, textColor: textColor)
             else
               MarkdownBody(
                 data: prepareChatMarkdown(message.text),
@@ -637,6 +644,9 @@ class ChatComposer extends StatefulWidget {
   final Widget? banner;
   final bool isEditing;
 
+  /// Shows an attach button that calls this. Hidden while editing.
+  final VoidCallback? onAttach;
+
   const ChatComposer({
     super.key,
     required this.controller,
@@ -646,6 +656,7 @@ class ChatComposer extends StatefulWidget {
     this.onTypingChanged,
     this.banner,
     this.isEditing = false,
+    this.onAttach,
   });
 
   @override
@@ -741,6 +752,20 @@ class _ChatComposerState extends State<ChatComposer> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                if (widget.onAttach != null && !widget.isEditing) ...[
+                  IconButton(
+                    tooltip: 'Attach',
+                    onPressed: widget.onAttach,
+                    icon: const Icon(Icons.add_circle_outline_rounded),
+                    iconSize: 28,
+                    color: context.colors.onSurfaceVariant,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 44,
+                      height: 48,
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                ],
                 Expanded(
                   child: TextField(
                     controller: widget.controller,
