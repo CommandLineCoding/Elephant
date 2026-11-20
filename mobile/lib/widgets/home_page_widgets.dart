@@ -45,6 +45,9 @@ class ConversationTile extends StatelessWidget {
       (inbox) => inbox.prefsOf(conversation.id),
     );
     final isMuted = prefs.isMuted();
+    final isMentioned = context.select<InboxController, bool>(
+      (inbox) => inbox.isMentioned(conversation.id),
+    );
     final members = context.watch<GroupDetailsController>();
 
     if (conversation.isGroup && !members.hasFetchedGroup(conversation.id)) {
@@ -215,6 +218,20 @@ class ConversationTile extends StatelessWidget {
                                   size: 16,
                                   color: mutedColor,
                                   semanticLabel: 'Pinned',
+                                ),
+                              ],
+                              if (hasUnread && isMentioned) ...[
+                                const SizedBox(width: Insets.sm),
+                                Semantics(
+                                  label: 'Mentions you',
+                                  excludeSemantics: true,
+                                  child: Text(
+                                    '@',
+                                    style: context.text.titleMedium?.copyWith(
+                                      color: context.colors.primary,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                 ),
                               ],
                               if (hasUnread) ...[

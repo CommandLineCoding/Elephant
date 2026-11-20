@@ -98,7 +98,7 @@ class _StarredMessagesPageState extends State<StarredMessagesPage> {
                   : chatName;
               return ListTile(
                 title: Text(
-                  entry.message.text,
+                  entry.message.plainText,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                 ),

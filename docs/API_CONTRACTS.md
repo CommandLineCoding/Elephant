@@ -892,6 +892,10 @@ Apps can send small structured payloads (reactions, poll votes, pins, shared con
 
 Apps that don't understand a payload show only the first part (Markdown hides the definition line). The JSON object has a `kind` (for example `reaction`) and kind-specific fields. Actions (reactions, votes, pins) are sent with `silent: true`. This is a convention between apps; the server treats `content` as opaque.
 
+#### Mentions
+
+A mention of a group member is written in the message text as `@[Name](user-id)`, where `user-id` is the member's ID (a UUID). The ID is what counts, so a renamed member is still the one mentioned; `Name` (no brackets or parentheses, one line, up to 60 characters) is what apps without mentions show, as a link named `Name`. Apps that know mentions show the member's current name, mark mentions of the person reading, and open the member when one is tapped.
+
 ### 2. Client to Server Messages
 
 #### 1. Send Chat Message

@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:mobile/core/chat_markdown.dart';
 import 'package:mobile/core/links.dart';
+import 'package:mobile/core/mention.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/core/message_envelope.dart';
 import '../controllers/chat/chat_meta.dart';
+import 'mention_widgets.dart';
 import 'poll_widgets.dart';
 import 'reaction_widgets.dart';
 import 'package:mobile/models/message.dart';
@@ -138,6 +140,12 @@ class ChatBubble extends StatelessWidget {
   /// Starred by the person looking at it.
   final bool isStarred;
 
+  /// For @mentions: who is looking, the current name of a member (given the
+  /// ID and the name stored in the message), and what a tap does.
+  final String? currentUserId;
+  final String Function(String userId, String stored)? mentionName;
+  final void Function(String userId)? onMentionTap;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -156,6 +164,9 @@ class ChatBubble extends StatelessWidget {
     this.cardBuilder,
     this.previewBuilder,
     this.isStarred = false,
+    this.currentUserId,
+    this.mentionName,
+    this.onMentionTap,
   });
 
   @override
@@ -262,6 +273,14 @@ class ChatBubble extends StatelessWidget {
                 data: prepareChatMarkdown(message.text),
                 extensionSet: chatMarkdownExtensions,
                 softLineBreak: true,
+                builders: {
+                  'mention': MentionBuilder(
+                    myId: currentUserId,
+                    textColor: textColor,
+                    nameOf: mentionName ?? (_, stored) => stored,
+                    onTap: onMentionTap,
+                  ),
+                },
                 onTapLink: (_, href, _) {
                   if (href != null) confirmAndOpenLink(context, href);
                 },
@@ -460,7 +479,7 @@ class _QuoteBlock extends StatelessWidget {
             Text(
               quote.content.isEmpty
                   ? 'This message was deleted'
-                  : quote.content.replaceAll('\n', ' '),
+                  : plainMentions(quote.content).replaceAll('\n', ' '),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: context.text.bodySmall?.copyWith(

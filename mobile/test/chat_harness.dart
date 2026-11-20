@@ -9,6 +9,7 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/group.dart';
 import 'package:mobile/models/message.dart';
+import 'package:mobile/models/user.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/services/chat/chat_event_handler.dart';
@@ -41,6 +42,15 @@ class TestChat extends ActiveChatController {
 
   /// Every chat opened, in order.
   final List<String> opened = [];
+
+  /// Every edit made: the message ID and its new content.
+  final List<(String, String)> edited = [];
+
+  @override
+  Future<String?> editMessage(Message message, String content) async {
+    edited.add((message.id, content));
+    return null;
+  }
 
   /// What opening a chat loads, by chat ID (its newest messages).
   final Map<String, List<Message>> chats = {};
@@ -96,6 +106,17 @@ class TestChat extends ActiveChatController {
     }
     return (null, message);
   }
+}
+
+/// An [AuthState] with someone signed in.
+class TestAuth extends AuthState {
+  TestAuth(String id)
+    : _user = UserModel(id: id, username: 'me.0000', displayName: 'Me');
+
+  final UserModel _user;
+
+  @override
+  UserModel? get currentUser => _user;
 }
 
 /// A [GroupDetailsController] whose members are given, not fetched.
@@ -167,6 +188,7 @@ Future<TestChat> showTestChat(
   TestChat? chat,
   List<GroupMember>? members,
   Widget Function(Widget page)? wrap,
+  AuthState? auth,
 }) async {
   final controller = chat ?? TestChat();
   controller
@@ -188,7 +210,7 @@ Future<TestChat> showTestChat(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => AuthState()),
+        ChangeNotifierProvider<AuthState>(create: (_) => auth ?? AuthState()),
         ChangeNotifierProvider.value(value: inboxController),
         ChangeNotifierProvider<ActiveChatController>.value(value: controller),
         ChangeNotifierProvider(create: (_) => GroupController()),

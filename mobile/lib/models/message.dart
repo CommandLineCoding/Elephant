@@ -1,4 +1,5 @@
 import '../core/constants.dart';
+import '../core/mention.dart';
 import '../core/message_payload.dart';
 
 class QuotedMessage {
@@ -112,6 +113,10 @@ class Message {
   /// The message text without a payload's hidden line: what to show, copy and
   /// quote.
   String get text => _split.text;
+
+  /// [text] with mentions as plain `@Name`, for a line of text (a quote, a
+  /// list).
+  String get plainText => plainMentions(text);
 
   /// An action (a reaction, a vote, a pin) rather than something to show.
   bool get isAction => payload?.isAction ?? false;

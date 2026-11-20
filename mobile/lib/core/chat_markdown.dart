@@ -1,12 +1,14 @@
 import 'package:markdown/markdown.dart' as md;
 
+import 'mention.dart';
+
 /// GitHub-flavoured Markdown without tables: a chat message that happens to
 /// contain pipes shouldn't turn into a grid.
 final md.ExtensionSet chatMarkdownExtensions = md.ExtensionSet(
   md.ExtensionSet.gitHubFlavored.blockSyntaxes
       .where((s) => s is! md.TableSyntax)
       .toList(),
-  md.ExtensionSet.gitHubFlavored.inlineSyntaxes,
+  [MentionSyntax(), ...md.ExtensionSet.gitHubFlavored.inlineSyntaxes],
 );
 
 final _fence = RegExp(r'^ {0,3}(```|~~~)');
@@ -15,8 +17,8 @@ final _fence = RegExp(r'^ {0,3}(```|~~~)');
 final _heading = RegExp(r'^( {0,3})#');
 final _rule = RegExp(r'^( {0,3})([-*_])(?: *\2){2,} *$');
 final _setext = RegExp(r'^( {0,3})=+ *$');
-// Inline code and links are passed through untouched.
-final _protected = RegExp(r'`+[^`]*`+|https?://\S+');
+// Inline code, links and mentions are passed through untouched.
+final _protected = RegExp('`+[^`]*`+|https?://\\S+|${mentionPattern.pattern}');
 // `*` between two letters or digits, as in 2*3*4.
 final _intrawordStar = RegExp(r'(?<=[A-Za-z0-9])\*(?=[A-Za-z0-9])');
 
