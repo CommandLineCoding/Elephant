@@ -6,6 +6,7 @@ import 'package:mobile/core/constants.dart';
 import 'package:mobile/controllers/chat/chat_meta.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/core/message_payload.dart';
+import 'package:mobile/core/poll.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -441,6 +442,19 @@ class ActiveChatController extends ChangeNotifier {
       silent: MessagePayload.actionKinds.contains(kind),
     );
     return error;
+  }
+
+  /// Sends a poll to the open chat.
+  Future<String?> sendPoll(PollData poll) {
+    final (data, text) = poll.toPayload();
+    return sendPayload('poll', data, text: text);
+  }
+
+  /// Votes in [poll] (a message in the open chat) for [options], replacing
+  /// any earlier vote. An empty set takes the vote back.
+  Future<String?> vote(Message poll, Set<int> options) {
+    final (data, text) = votePayload(poll.id, options);
+    return sendPayload('vote', data, text: text);
   }
 
   /// Pins or unpins [message] in the open chat for everyone in it.

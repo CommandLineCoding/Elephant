@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart' show StringCharacters;
 
+import '../../core/poll.dart';
 import '../../models/message.dart';
 
 /// One emoji on a message, with who reacted with it.
@@ -25,9 +26,12 @@ class ChatMeta {
   /// The pinned messages' IDs, in the order they were pinned.
   final List<String> pinned;
 
-  const ChatMeta._(this._reactions, this.pinned);
+  /// Poll message ID → who voted → the options they picked.
+  final Map<String, Map<String, List<int>>> _votes;
 
-  static const empty = ChatMeta._({}, []);
+  const ChatMeta._(this._reactions, this.pinned, this._votes);
+
+  static const empty = ChatMeta._({}, [], {});
 
   /// Most messages a chat can have pinned. Pinning one more drops the oldest.
   static const maxPins = 3;
@@ -51,6 +55,7 @@ class ChatMeta {
   }) {
     Map<String, Map<String, String>>? reactions;
     List<String>? pins;
+    Map<String, Map<String, List<int>>>? votes;
 
     for (final message in messages) {
       final payload = message.payload;
@@ -69,6 +74,23 @@ class ChatMeta {
         byPerson.remove(who);
         if (emoji.isNotEmpty) byPerson[who] = emoji;
         if (byPerson.isEmpty) reactions.remove(target);
+      } else if (payload.kind == 'vote') {
+        final poll = payload.field<String>('poll');
+        final raw = payload.field<List>('opts');
+        if (poll == null || poll.isEmpty || raw == null) continue;
+        if (raw.length > PollData.maxOptions) continue;
+        final picks = [
+          for (final o in raw)
+            if (o is int && o >= 0 && o < PollData.maxOptions) o,
+        ];
+        if (picks.length != raw.length) continue;
+
+        // A person's latest vote replaces their earlier one; none withdraws it.
+        final byPerson = (votes ??= {}).putIfAbsent(poll, () => {});
+        final who = senderKey(message, myId);
+        byPerson.remove(who);
+        if (picks.isNotEmpty) byPerson[who] = picks;
+        if (byPerson.isEmpty) votes.remove(poll);
       } else if (payload.kind == 'pin') {
         final target = payload.field<String>('target');
         final on = payload.field<bool>('on');
@@ -88,8 +110,14 @@ class ChatMeta {
         }
       }
     }
-    if (reactions == null && (pins == null || pins.isEmpty)) return empty;
-    return ChatMeta._(reactions ?? const {}, pins ?? const []);
+    if (reactions == null && votes == null && (pins == null || pins.isEmpty)) {
+      return empty;
+    }
+    return ChatMeta._(
+      reactions ?? const {},
+      pins ?? const [],
+      votes ?? const {},
+    );
   }
 
   /// The reactions on a message, most used first.
@@ -114,6 +142,10 @@ class ChatMeta {
   String? myReactionTo(String messageId) => _reactions[messageId]?['me'];
 
   bool isPinned(String messageId) => pinned.contains(messageId);
+
+  /// Who voted for what in a poll, adding up to [PollTally].
+  PollTally tallyOf(String pollId, PollData poll) =>
+      PollTally.of(poll, _votes[pollId] ?? const {});
 
   /// A pin's payload and the text apps without pins show.
   static (Map<String, dynamic>, String) pinPayload(String targetId, bool on) =>

@@ -17,7 +17,10 @@ import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
 import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/widgets/poll_widgets.dart';
 import 'package:mobile/widgets/reaction_widgets.dart';
+import 'package:mobile/core/poll.dart';
+import 'package:mobile/pages/chat/create_poll_page.dart';
 import 'package:mobile/widgets/call_log_row.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
@@ -168,8 +171,6 @@ class _ChatPageState extends State<ChatPage> {
   // --- Sending, replying, editing ---
 
   Future<void> _send(String text) async {
-    final inbox = context.read<InboxController>();
-
     if (_editing != null) {
       final error = await _chat.editMessage(_editing!, text);
       if (!mounted) return;
@@ -192,15 +193,80 @@ class _ChatPageState extends State<ChatPage> {
 
     _composer.clear();
     setState(() => _replyingTo = null);
-    inbox.updateLocalInboxState(
+    _noteSent(text);
+  }
+
+  /// Shows [preview] as the chat's last message in the chat list, and scrolls
+  /// to the message just sent.
+  void _noteSent(String preview) {
+    context.read<InboxController>().updateLocalInboxState(
       widget.chatUserId,
-      text,
+      preview,
       DateTime.now(),
       false,
       senderId: 'me',
       syncStatus: WebSocketService().isConnected ? 'synced' : 'pending',
     );
     _scrollToBottom();
+  }
+
+  // --- Attachments and polls ---
+
+  Future<void> _showAttach() async {
+    final choice = await showActionSheet<String>(
+      context,
+      actions: const [
+        SheetAction(icon: Icons.poll_outlined, label: 'Poll', value: 'poll'),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'poll') await _createPoll();
+  }
+
+  Future<void> _createPoll() async {
+    final poll = await Navigator.push<PollData>(
+      context,
+      MaterialPageRoute(builder: (_) => const CreatePollPage()),
+    );
+    if (poll == null || !mounted) return;
+    final error = await _chat.sendPoll(poll);
+    if (!mounted) return;
+    if (error != null) {
+      showSnack(context, error, isError: true);
+      return;
+    }
+    _noteSent('📊 Poll: ${poll.question}');
+  }
+
+  PollView? _pollViewFor(Message message, ActiveChatController chat) {
+    final poll = PollData.fromPayload(message.payload);
+    if (poll == null) return null;
+    final tally = chat.meta.tallyOf(message.id, poll);
+    final canVote = !_isBlocked && !message.isPending;
+    return PollView(
+      poll: poll,
+      tally: tally,
+      mine: tally.picksOf('me'),
+      onToggle: canVote
+          ? (option) => _toggleVote(message, poll, tally, option)
+          : null,
+      onShowVotes: () =>
+          showPollVotes(context, poll: poll, tally: tally, nameOf: _nameOf),
+    );
+  }
+
+  Future<void> _toggleVote(
+    Message message,
+    PollData poll,
+    PollTally tally,
+    int option,
+  ) async {
+    final mine = tally.picksOf('me');
+    final next = poll.multi
+        ? ({...mine}..toggle(option))
+        : (mine.contains(option) ? <int>{} : {option});
+    final error = await _chat.vote(message, next);
+    if (error != null && mounted) showSnack(context, error, isError: true);
   }
 
   void _startReply(Message message) {
@@ -726,6 +792,7 @@ class _ChatPageState extends State<ChatPage> {
                             controller: _composer,
                             focusNode: _composerFocus,
                             onSend: _send,
+                            onAttach: _showAttach,
                             byteLimit: chat.messageByteLimit,
                             isEditing: _editing != null,
                             onTypingChanged: chat.sendTypingNotification,
@@ -904,6 +971,7 @@ class _ChatPageState extends State<ChatPage> {
                       : null,
                   reactions: chat.meta.reactionsOn(msg.id),
                   onReactionsTap: () => _showReactions(msg),
+                  poll: _pollViewFor(msg, chat),
                 ),
               ),
             ),
@@ -1173,5 +1241,12 @@ class _HistoryErrorBar extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+extension on Set<int> {
+  /// Adds [value] if it isn't there, removes it if it is.
+  void toggle(int value) {
+    if (!remove(value)) add(value);
   }
 }
