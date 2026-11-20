@@ -118,7 +118,7 @@ class _ChatPageState extends State<ChatPage> {
       setState(() => _showScrollDown = scrolledUp);
     }
 
-    final itemCount = _chat.activeChat.length + 2;
+    final itemCount = _shown.length + 2;
     if (maxIndex >= itemCount - 3) _chat.loadMoreMessages();
   }
 
@@ -216,7 +216,7 @@ class _ChatPageState extends State<ChatPage> {
       _replyingTo = null;
       _editing = message;
     });
-    _composer.text = message.content;
+    _composer.text = message.text;
     _composer.selection = TextSelection.collapsed(
       offset: _composer.text.length,
     );
@@ -235,7 +235,7 @@ class _ChatPageState extends State<ChatPage> {
     HapticFeedback.mediumImpact();
     final isLocked = message.content.startsWith(MessageEnvelope.lockedPrefix);
     final canEdit = !isLocked && message.canEdit(_auth.currentUser?.id);
-    final links = isLocked ? const <String>[] : linksIn(message.content);
+    final links = isLocked ? const <String>[] : linksIn(message.text);
 
     final action = await showActionSheet<String>(
       context,
@@ -294,7 +294,7 @@ class _ChatPageState extends State<ChatPage> {
         );
         break;
       case 'copy':
-        await Clipboard.setData(ClipboardData(text: message.content));
+        await Clipboard.setData(ClipboardData(text: message.text));
         if (mounted) showSnack(context, 'Copied');
         break;
       case 'copy-links':
@@ -375,7 +375,8 @@ class _ChatPageState extends State<ChatPage> {
     if (!mounted) return;
     setState(() {
       _searchResults = messages
-          .where((m) => m.content.toLowerCase().contains(q))
+          // Actions (reactions, votes, pins) aren't messages to find.
+          .where((m) => !m.isAction && m.text.toLowerCase().contains(q))
           .toList()
           .reversed
           .toList();
@@ -473,7 +474,7 @@ class _ChatPageState extends State<ChatPage> {
     final group = context.watch<GroupDetailsController>();
     final messages = _shown = _withCalls(
       chat.currentChatUserId == widget.chatUserId
-          ? chat.activeChat
+          ? chat.visibleChat
           : const <Message>[],
       chat.hasMoreMessages,
     );
@@ -623,7 +624,7 @@ class _ChatPageState extends State<ChatPage> {
                                 ? ComposerBanner(
                                     icon: Icons.edit_outlined,
                                     title: 'Editing message',
-                                    body: _editing!.content,
+                                    body: _editing!.text,
                                     onClose: _cancelBanner,
                                   )
                                 : _replyingTo != null
@@ -631,7 +632,7 @@ class _ChatPageState extends State<ChatPage> {
                                     icon: Icons.reply_rounded,
                                     title:
                                         'Replying to ${_nameOf(_replyingTo!.senderId)}',
-                                    body: _replyingTo!.content,
+                                    body: _replyingTo!.text,
                                     onClose: _cancelBanner,
                                   )
                                 : null,
@@ -819,11 +820,7 @@ class _ChatPageState extends State<ChatPage> {
       itemBuilder: (context, index) {
         final msg = _searchResults[index];
         return ListTile(
-          title: Text(
-            msg.content,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
+          title: Text(msg.text, maxLines: 2, overflow: TextOverflow.ellipsis),
           subtitle: Text(
             '${_nameOf(msg.senderId)} · ${DateFormat.yMMMd().add_jm().format(msg.createdAt)}',
           ),

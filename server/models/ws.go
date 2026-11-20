@@ -13,4 +13,5 @@ type WSMessage struct {
 	Timestamp        time.Time `json:"timestamp,omitempty"`
 	CallID           string    `json:"call_id,omitempty"`
 	Reason           string    `json:"reason,omitempty"`
+	Silent           bool      `json:"silent,omitempty"` // an action carried in a chat message (migration 017)
 }

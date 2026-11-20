@@ -281,6 +281,24 @@ func (h *WSHub) Disconnect(userID string) {
 	}
 }
 
+// storeChat saves a chat event as a message. A client-chosen message ID is
+// kept, which makes a re-sent message idempotent with the sender's own copy.
+func storeChat(ctx context.Context, msg models.WSMessage) error {
+	_, err := config.DB.Exec(ctx, `
+		INSERT INTO messages (sender_id, receiver_id, group_id, content, id, reply_to_message_id, silent)
+		VALUES (
+			$1::uuid,
+			NULLIF($2, '')::uuid,
+			NULLIF($3, '')::uuid,
+			$4,
+			COALESCE(NULLIF($5, '')::uuid, gen_random_uuid()),
+			NULLIF($6, '')::uuid,
+			$7
+		)`,
+		msg.SenderID, msg.ReceiverID, msg.GroupID, msg.Content, msg.MessageID, msg.ReplyToMessageID, msg.Silent)
+	return err
+}
+
 func (c *WSClient) ReadPump() {
 	defer func() {
 		Hub.Unregister <- c
@@ -384,19 +402,7 @@ func (c *WSClient) ReadPump() {
 			}
 
 			go func(msg models.WSMessage) {
-				query := `
-					INSERT INTO messages (sender_id, receiver_id, group_id, content, id, reply_to_message_id)
-					VALUES (
-						$1::uuid,
-						NULLIF($2, '')::uuid,
-						NULLIF($3, '')::uuid,
-						$4,
-						COALESCE(NULLIF($5, '')::uuid, gen_random_uuid()),
-						NULLIF($6, '')::uuid
-					);
-				`
-				_, err := config.DB.Exec(context.Background(), query, msg.SenderID, msg.ReceiverID, msg.GroupID, msg.Content, msg.MessageID, msg.ReplyToMessageID)
-				if err != nil {
+				if err := storeChat(context.Background(), msg); err != nil {
 					log.Printf("Async group/direct write failure: %v", err)
 				}
 			}(incoming)
@@ -414,6 +420,7 @@ func (c *WSClient) ReadPump() {
 						"reply_to_message_id": incoming.ReplyToMessageID,
 						"timestamp":           incoming.Timestamp,
 						"quoted_message":      q,
+						"silent":              incoming.Silent,
 					}
 					outboundBytes, _ = json.Marshal(enriched)
 				} else {
@@ -431,10 +438,10 @@ func (c *WSClient) ReadPump() {
 					continue
 				}
 				// Members with no live connection get a push ping instead.
-				Push.NotifyUsers(Hub.sendToUsers(members, c.UserID, outboundBytes))
+				pingUsers(incoming.Silent, Hub.sendToUsers(members, c.UserID, outboundBytes))
 			} else {
 				if !Hub.sendToUser(incoming.ReceiverID, outboundBytes) {
-					Push.NotifyUsers([]string{incoming.ReceiverID})
+					pingUsers(incoming.Silent, []string{incoming.ReceiverID})
 				}
 			}
 		}
@@ -473,4 +480,17 @@ func (c *WSClient) WritePump() {
 			}
 		}
 	}
+}
+
+// pushPing is how the hub asks for push pings. A variable so tests can see who
+// would be pinged without the push service and its database.
+var pushPing = func(userIDs []string) { Push.NotifyUsers(userIDs) }
+
+// pingUsers sends push pings to users who weren't reached live, unless the
+// message is a silent action: nobody is woken for a reaction.
+func pingUsers(silent bool, userIDs []string) {
+	if silent || len(userIDs) == 0 {
+		return
+	}
+	pushPing(userIDs)
 }

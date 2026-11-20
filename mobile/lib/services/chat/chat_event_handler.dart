@@ -186,9 +186,22 @@ class ChatEventHandler {
     final content = await SignalService().decodeIncoming(senderId, rawContent);
 
     final isOpen = _isOpen(chatId);
-    final message = Message.fromJson(
+    var message = Message.fromJson(
       data,
     ).copyWith(content: content, isRead: isOpen);
+
+    // An action (a reaction, a vote, a pin) is kept and applied, but it isn't
+    // a new message: nothing unread, no read receipt, no new chat list line.
+    if (message.isAction) {
+      message = message.copyWith(isRead: true);
+      try {
+        await DatabaseHelper.instance.insertMessage(message.toRow(chatId));
+      } catch (e) {
+        debugPrint("Failed to save an incoming action: $e");
+      }
+      if (isOpen) activeChatController.receiveIncoming(message);
+      return;
+    }
 
     try {
       await DatabaseHelper.instance.insertMessage(message.toRow(chatId));
@@ -207,7 +220,9 @@ class ChatEventHandler {
 
     inboxController.updateLocalInboxState(
       chatId,
-      MessageEnvelope.isUnreadable(content) ? '🔒 Encrypted message' : content,
+      MessageEnvelope.isUnreadable(content)
+          ? '🔒 Encrypted message'
+          : message.text,
       message.createdAt,
       !isOpen,
       senderId: senderId,

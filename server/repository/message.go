@@ -104,6 +104,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 				NULL::UUID AS group_id
 			FROM messages
 			WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND group_id IS NULL
+			  AND NOT silent
 			  AND created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid
@@ -124,6 +125,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			FROM messages m
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid
+			  AND NOT m.silent
 			  AND m.created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid AND cc.group_id = m.group_id),
@@ -134,6 +136,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			SELECT sender_id, COUNT(*) AS count
 			FROM messages
 			WHERE receiver_id = $1::uuid AND is_read = FALSE AND group_id IS NULL
+			  AND NOT silent
 			  AND created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid AND cc.peer_id = sender_id),
@@ -145,6 +148,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			FROM messages m
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid AND m.created_at > gm.last_read_at AND m.sender_id != $1::uuid
+			  AND NOT m.silent
 			  AND m.created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid AND cc.group_id = m.group_id),

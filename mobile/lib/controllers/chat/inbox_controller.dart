@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../../core/message_envelope.dart';
+import '../../core/message_payload.dart';
 import '../../models/group.dart';
 import '../../models/inbox_item.dart';
 import '../../services/api_services.dart';
@@ -128,14 +129,21 @@ class InboxController extends ChangeNotifier {
         SELECT chat_id, MAX(created_at) AS latest
         FROM messages
         WHERE content NOT LIKE '%"ciphertext"%' AND content NOT LIKE ?
+          AND content NOT LIKE ?
         GROUP BY chat_id
       ) l ON l.chat_id = m.chat_id AND l.latest = m.created_at
     ''',
-      ['${MessageEnvelope.lockedPrefix}%'],
+      [
+        '${MessageEnvelope.lockedPrefix}%',
+        // Actions (reactions, votes, pins) are never a chat's last message.
+        '%${MessagePayload.actionMarker}%',
+      ],
     );
     return {
       for (final row in rows)
-        row['chat_id'].toString(): row['content'].toString(),
+        row['chat_id'].toString(): MessagePayload.readable(
+          row['content'].toString(),
+        ),
     };
   }
 
@@ -307,13 +315,17 @@ class InboxController extends ChangeNotifier {
   }
 
   void _saveItem(InboxItem item) {
-    DatabaseHelper.instance.database.then((db) {
-      db.insert(
-        'inbox',
-        item.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    });
+    DatabaseHelper.instance.database
+        .then((db) async {
+          await db.insert(
+            'inbox',
+            item.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace,
+          );
+        })
+        .catchError((Object e) {
+          debugPrint("Couldn't save a chat list entry: $e");
+        });
   }
 
   Future<void> _backgroundSyncChatHistoryToDb(

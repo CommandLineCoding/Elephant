@@ -41,6 +41,7 @@ class ChatSyncService {
             receiverId: payload['receiverId'],
             content: payload['content'],
             replyToMessageId: payload['replyToMessageId'],
+            silent: payload['silent'] == true,
           );
         } else if (type == 'send_group_chat') {
           sent = _ws.sendGroupChat(
@@ -48,6 +49,7 @@ class ChatSyncService {
             groupId: payload['groupId'],
             content: payload['content'],
             replyToMessageId: payload['replyToMessageId'],
+            silent: payload['silent'] == true,
           );
         }
 

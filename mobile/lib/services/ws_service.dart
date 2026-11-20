@@ -90,6 +90,7 @@ class WebSocketService {
     String? groupId,
     required String content,
     String? replyToMessageId,
+    bool silent = false,
   }) {
     return {
       "type": "chat",
@@ -98,6 +99,8 @@ class WebSocketService {
       "group_id": groupId,
       "content": content,
       "reply_to_message_id": replyToMessageId,
+      // Only sent when set: servers before this flag ignore it.
+      "silent": silent ? true : null,
     };
   }
 
@@ -106,6 +109,7 @@ class WebSocketService {
     required String receiverId,
     required String content,
     String? replyToMessageId,
+    bool silent = false,
   }) {
     return emit(
       chatFrame(
@@ -113,6 +117,7 @@ class WebSocketService {
         receiverId: receiverId,
         content: content,
         replyToMessageId: replyToMessageId,
+        silent: silent,
       ),
     );
   }
@@ -122,6 +127,7 @@ class WebSocketService {
     required String groupId,
     required String content,
     String? replyToMessageId,
+    bool silent = false,
   }) {
     return emit(
       chatFrame(
@@ -129,6 +135,7 @@ class WebSocketService {
         groupId: groupId,
         content: content,
         replyToMessageId: replyToMessageId,
+        silent: silent,
       ),
     );
   }
