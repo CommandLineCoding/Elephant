@@ -158,6 +158,45 @@ class ActiveChatController extends ChangeNotifier {
     }
   }
 
+  /// Shows our messages [ids] in the open chat as having reached the other
+  /// person's phone.
+  void applyDelivered(Iterable<String> ids, DateTime at) {
+    final wanted = {for (final id in ids) id.toLowerCase()};
+    var changed = false;
+    activeChat = [
+      for (final m in activeChat)
+        if (wanted.contains(m.id.toLowerCase()) && m.deliveredAt == null)
+          () {
+            changed = true;
+            return m.copyWith(deliveredAt: at);
+          }()
+        else
+          m,
+    ];
+    if (changed) notifyListeners();
+  }
+
+  /// Tells the server which of the direct messages in [messages] we hadn't yet
+  /// said we've received (their senders show a second tick when it does).
+  void _acknowledge(List<Message> messages) {
+    _ws.sendDelivered(idsToAcknowledge(messages, _myId));
+  }
+
+  /// The direct messages in [messages], from someone else, that the server
+  /// hasn't yet been told we received. Groups (which have no receiver), our
+  /// own messages and deleted ones are left out.
+  static List<String> idsToAcknowledge(
+    Iterable<Message> messages,
+    String myId,
+  ) => [
+    for (final m in messages)
+      if (!m.isFrom(myId) &&
+          m.receiverId.isNotEmpty &&
+          m.deliveredAt == null &&
+          !m.isDeleted)
+        m.id,
+  ];
+
   /// Shows [messageId] in the open chat as deleted for everyone. Reactions,
   /// votes and replies that pointed at it carry on pointing at the tombstone.
   void applyDeletion(String messageId, DateTime at) {
@@ -420,6 +459,8 @@ class ActiveChatController extends ChangeNotifier {
 
       result.add(msg.copyWith(content: content));
     }
+    // A history page can hold messages that never came to us live.
+    _acknowledge(result);
     return result;
   }
 

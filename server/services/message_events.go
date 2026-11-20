@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"regexp"
 	"time"
 
 	"github.com/commandlinecoding/elephant/server/models"
@@ -106,4 +107,55 @@ func (h *WSHub) PublishGroupDeleted(groupID, deletedBy string, members []string)
 		"deleted_by": deletedBy,
 	})
 	h.sendToUsers(members, deletedBy, bytes)
+}
+
+// PublishDelivered tells each sender which of their messages reached
+// receiverID's phone, so they can show the second tick. bySender maps a
+// sender to their delivered message IDs.
+func (h *WSHub) PublishDelivered(receiverID string, bySender map[string][]string, at time.Time) {
+	for sender, ids := range bySender {
+		bytes, _ := json.Marshal(map[string]interface{}{
+			"type":         "message_delivered",
+			"message_ids":  ids,
+			"receiver_id":  receiverID,
+			"delivered_at": at,
+		})
+		h.sendToUser(sender, bytes)
+	}
+}
+
+// maxDeliveredIDs is how many messages one "delivered" event may report.
+const maxDeliveredIDs = 100
+
+var uuidShape = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// markDelivered stores that messages reached receiverID. A variable so tests
+// can run without a database.
+var markDelivered = func(ctx context.Context, receiverID string, ids []string) (map[string][]string, time.Time, error) {
+	return repository.NewMessageRepository().MarkDelivered(ctx, receiverID, ids)
+}
+
+// ackDelivered handles a "delivered" event from receiverID's phone: it records
+// the messages and tells their senders. Anything that isn't a message ID is
+// ignored, and so is an event reporting far more than a phone could have
+// received at once.
+func ackDelivered(ctx context.Context, receiverID string, ids []string) {
+	if len(ids) == 0 || len(ids) > maxDeliveredIDs {
+		return
+	}
+	valid := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if uuidShape.MatchString(id) {
+			valid = append(valid, id)
+		}
+	}
+	if len(valid) == 0 {
+		return
+	}
+	bySender, at, err := markDelivered(ctx, receiverID, valid)
+	if err != nil {
+		log.Printf("Couldn't record delivered messages: %v", err)
+		return
+	}
+	Hub.PublishDelivered(receiverID, bySender, at)
 }

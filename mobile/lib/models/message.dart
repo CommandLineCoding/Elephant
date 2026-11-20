@@ -60,6 +60,9 @@ class Message {
   /// When the sender deleted it for everyone. Its content is gone.
   final DateTime? deletedAt;
 
+  /// When it reached the recipient's phone (direct messages we sent).
+  final DateTime? deliveredAt;
+
   Message({
     required this.id,
     required this.senderId,
@@ -72,9 +75,13 @@ class Message {
     this.syncStatus = 'synced',
     this.editedAt,
     this.deletedAt,
+    this.deliveredAt,
   });
 
   bool get isEdited => editedAt != null;
+
+  /// Reached the recipient's phone. A message that was read was delivered.
+  bool get isDelivered => deliveredAt != null || isRead;
 
   /// Shown as "This message was deleted".
   bool get isDeleted => deletedAt != null;
@@ -153,6 +160,7 @@ class Message {
       syncStatus: json['sync_status']?.toString() ?? 'synced',
       editedAt: _parseDate(json['edited_at']),
       deletedAt: _parseDate(json['deleted_at']),
+      deliveredAt: _parseDate(json['delivered_at']),
     );
   }
 
@@ -172,6 +180,9 @@ class Message {
           : null,
       deletedAt: row['deleted_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(row['deleted_at'] as int)
+          : null,
+      deliveredAt: row['delivered_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(row['delivered_at'] as int)
           : null,
     );
   }
@@ -194,6 +205,7 @@ class Message {
       'sync_status': syncStatus,
       'edited_at': editedAt?.millisecondsSinceEpoch,
       'deleted_at': deletedAt?.millisecondsSinceEpoch,
+      'delivered_at': deliveredAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -204,6 +216,7 @@ class Message {
     String? content,
     DateTime? editedAt,
     DateTime? deletedAt,
+    DateTime? deliveredAt,
     QuotedMessage? quotedMessage,
   }) {
     return Message(
@@ -218,6 +231,7 @@ class Message {
       syncStatus: syncStatus ?? this.syncStatus,
       editedAt: editedAt ?? this.editedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      deliveredAt: deliveredAt ?? this.deliveredAt,
     );
   }
 }

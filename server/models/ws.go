@@ -14,4 +14,5 @@ type WSMessage struct {
 	CallID           string    `json:"call_id,omitempty"`
 	Reason           string    `json:"reason,omitempty"`
 	Silent           bool      `json:"silent,omitempty"` // an action carried in a chat message (migration 017)
+	MessageIDs       []string  `json:"message_ids,omitempty"`
 }

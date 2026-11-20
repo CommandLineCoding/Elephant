@@ -88,7 +88,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 4,
+      version: 5,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -102,6 +102,9 @@ class DatabaseHelper {
     if (oldVersion < 3) await _createCallLog(db);
     if (oldVersion < 4) {
       await db.execute('ALTER TABLE messages ADD COLUMN deleted_at INTEGER');
+    }
+    if (oldVersion < 5) {
+      await db.execute('ALTER TABLE messages ADD COLUMN delivered_at INTEGER');
     }
   }
 
@@ -133,7 +136,8 @@ class DatabaseHelper {
         reply_to_id TEXT,
         sync_status TEXT NOT NULL, -- 'synced' or 'pending'
         edited_at INTEGER,
-        deleted_at INTEGER -- deleted for everyone
+        deleted_at INTEGER, -- deleted for everyone
+        delivered_at INTEGER -- reached the recipient's phone
       )
     ''');
 
@@ -254,6 +258,19 @@ class DatabaseHelper {
       'group_members',
       where: 'group_id = ?',
       whereArgs: [chatId],
+    );
+  }
+
+  /// Records when messages we sent reached the other person's phone.
+  Future<void> markMessagesDelivered(List<String> ids, DateTime at) async {
+    if (ids.isEmpty) return;
+    final db = await instance.database;
+    await db.update(
+      'messages',
+      {'delivered_at': at.millisecondsSinceEpoch},
+      where:
+          'delivered_at IS NULL AND id COLLATE NOCASE IN (${List.filled(ids.length, '?').join(',')})',
+      whereArgs: ids,
     );
   }
 

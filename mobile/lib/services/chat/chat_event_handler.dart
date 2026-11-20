@@ -16,11 +16,17 @@ class ChatEventHandler {
   final String Function() currentUserIdProvider;
   final WebSocketService _ws = WebSocketService();
 
+  /// Tells the server direct messages reached this phone. Tests replace it.
+  late final void Function(List<String> messageIds) acknowledge;
+
   ChatEventHandler({
     required this.inboxController,
     required this.activeChatController,
     required this.currentUserIdProvider,
-  });
+    void Function(List<String> messageIds)? acknowledge,
+  }) {
+    this.acknowledge = acknowledge ?? _ws.sendDelivered;
+  }
 
   String get currentUserId => currentUserIdProvider();
 
@@ -95,9 +101,35 @@ class ChatEventHandler {
         await _handleMessageDeleted(data);
         break;
 
+      case 'message_delivered':
+        await _handleDelivered(data);
+        break;
+
       case 'group_deleted':
         await _handleGroupDeleted(data);
         break;
+    }
+  }
+
+  /// Messages we sent reached the other person's phone.
+  Future<void> _handleDelivered(Map<String, dynamic> data) async {
+    final raw = data['message_ids'];
+    final peerId = _id(data['receiver_id']);
+    if (raw is! List || peerId == null) return;
+    final ids = [
+      for (final id in raw)
+        if (id is String && id.isNotEmpty) id,
+    ];
+    if (ids.isEmpty) return;
+    final at =
+        DateTime.tryParse(data['delivered_at']?.toString() ?? '')?.toLocal() ??
+        DateTime.now();
+
+    if (_isOpen(peerId)) activeChatController.applyDelivered(ids, at);
+    try {
+      await DatabaseHelper.instance.markMessagesDelivered(ids, at);
+    } catch (e) {
+      debugPrint("Couldn't save delivered messages: $e");
     }
   }
 
@@ -215,6 +247,11 @@ class ChatEventHandler {
     var message = Message.fromJson(
       data,
     ).copyWith(content: content, isRead: isOpen);
+
+    // A direct message reached this phone: say so, for the sender's tick.
+    if (_id(data['group_id']) == null && message.id.isNotEmpty) {
+      acknowledge([message.id]);
+    }
 
     // An action (a reaction, a vote, a pin) is kept and applied, but it isn't
     // a new message: nothing unread, no read receipt, no new chat list line.

@@ -346,6 +346,11 @@ func (c *WSClient) ReadPump() {
 			respBytes, _ := json.Marshal(resp)
 			c.trySend(respBytes)
 
+		case "delivered":
+			// The recipient's phone reports messages it has received, so the
+			// senders can show a second tick.
+			go ackDelivered(context.Background(), c.UserID, incoming.MessageIDs)
+
 		case "typing":
 			incoming.SenderID = c.UserID
 			outboundBytes, _ := json.Marshal(incoming)
