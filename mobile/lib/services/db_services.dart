@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../core/message_envelope.dart';
+import '../models/chat_prefs.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._init();
@@ -88,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 5,
+      version: 6,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -106,6 +107,19 @@ class DatabaseHelper {
     if (oldVersion < 5) {
       await db.execute('ALTER TABLE messages ADD COLUMN delivered_at INTEGER');
     }
+    if (oldVersion < 6) await _createChatPrefs(db);
+  }
+
+  /// How each chat is arranged on this phone (pinned, archived, muted).
+  Future<void> _createChatPrefs(Database db) async {
+    await db.execute('''
+      CREATE TABLE chat_prefs (
+        chat_id TEXT PRIMARY KEY,
+        pinned_at INTEGER,
+        archived INTEGER NOT NULL DEFAULT 0,
+        muted_until INTEGER
+      )
+    ''');
   }
 
   /// Calls made and received, shown in the chat. Only kept on this device.
@@ -125,6 +139,7 @@ class DatabaseHelper {
 
   Future _createDB(Database db, int version) async {
     await _createCallLog(db);
+    await _createChatPrefs(db);
     await db.execute('''
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -253,11 +268,35 @@ class DatabaseHelper {
     final db = await instance.database;
     await db.delete('messages', where: 'chat_id = ?', whereArgs: [chatId]);
     await db.delete('call_log', where: 'chat_id = ?', whereArgs: [chatId]);
+    await db.delete('chat_prefs', where: 'chat_id = ?', whereArgs: [chatId]);
     await db.delete('inbox', where: 'id = ?', whereArgs: [chatId]);
     await db.delete(
       'group_members',
       where: 'group_id = ?',
       whereArgs: [chatId],
+    );
+  }
+
+  /// Every chat's pinned, archived and muted settings, by chat ID.
+  Future<Map<String, ChatPrefs>> loadChatPrefs() async {
+    final db = await instance.database;
+    final rows = await db.query('chat_prefs');
+    return {
+      for (final row in rows) row['chat_id'] as String: ChatPrefs.fromRow(row),
+    };
+  }
+
+  /// Stores [prefs] for a chat, or forgets the chat if they're all default.
+  Future<void> saveChatPrefs(String chatId, ChatPrefs prefs) async {
+    final db = await instance.database;
+    if (prefs.isDefault) {
+      await db.delete('chat_prefs', where: 'chat_id = ?', whereArgs: [chatId]);
+      return;
+    }
+    await db.insert(
+      'chat_prefs',
+      prefs.toRow(chatId),
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 
@@ -317,6 +356,7 @@ class DatabaseHelper {
     final db = await instance.database;
     await db.delete('messages');
     await db.delete('call_log');
+    await db.delete('chat_prefs');
     await db.delete('inbox');
     await db.delete('action_queue');
     await db.delete('group_members');

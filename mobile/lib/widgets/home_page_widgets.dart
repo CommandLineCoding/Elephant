@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
+import 'package:mobile/controllers/chat/inbox_controller.dart';
+import 'package:mobile/models/chat_prefs.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -38,6 +40,10 @@ class ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasUnread = conversation.unreadCount > 0;
+    final prefs = context.select<InboxController, ChatPrefs>(
+      (inbox) => inbox.prefsOf(conversation.id),
+    );
+    final isMuted = prefs.isMuted();
     final members = context.watch<GroupDetailsController>();
 
     if (conversation.isGroup && !members.hasFetchedGroup(conversation.id)) {
@@ -172,9 +178,30 @@ class ConversationTile extends StatelessWidget {
                               style: previewStyle,
                             ),
                           ),
+                          if (isMuted) ...[
+                            const SizedBox(width: Insets.sm),
+                            Icon(
+                              Icons.notifications_off_rounded,
+                              size: 16,
+                              color: mutedColor,
+                              semanticLabel: 'Muted',
+                            ),
+                          ],
+                          if (prefs.isPinned) ...[
+                            const SizedBox(width: Insets.sm),
+                            Icon(
+                              Icons.push_pin_rounded,
+                              size: 16,
+                              color: mutedColor,
+                              semanticLabel: 'Pinned',
+                            ),
+                          ],
                           if (hasUnread) ...[
                             const SizedBox(width: Insets.sm),
-                            UnreadBadge(conversation.unreadCount),
+                            UnreadBadge(
+                              conversation.unreadCount,
+                              muted: isMuted,
+                            ),
                           ],
                         ],
                       ),
