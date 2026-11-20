@@ -5,6 +5,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:mobile/models/inbox_item.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/auth_service.dart';
+import 'package:mobile/services/db_services.dart';
 import 'package:mobile/services/push/push_notifier.dart';
 import 'package:mobile/services/push/push_prefs.dart';
 import 'package:unifiedpush/unifiedpush.dart';
@@ -270,12 +271,27 @@ class PushService with WidgetsBindingObserver {
         .toList();
 
     final lastNotified = await PushPrefs.lastNotified();
+    final muted = await _mutedChats();
     final due = chatsToNotify(
       conversations,
       lastNotified,
       since: await PushPrefs.enabledAt(),
+      muted: muted,
     );
-    if (due.isEmpty) return;
+
+    // A muted chat's messages count as seen, so unmuting it doesn't suddenly
+    // notify about what came while it was muted.
+    var changed = false;
+    for (final chat in conversations) {
+      if (muted.contains(chat.id.toLowerCase()) && chat.unreadCount > 0) {
+        lastNotified[chat.id] = chat.timestamp.millisecondsSinceEpoch;
+        changed = true;
+      }
+    }
+    if (due.isEmpty) {
+      if (changed) await PushPrefs.setLastNotified(lastNotified);
+      return;
+    }
 
     final showName = await PushPrefs.showNames();
     for (final chat in due) {
@@ -283,6 +299,21 @@ class PushService with WidgetsBindingObserver {
       lastNotified[chat.id] = chat.timestamp.millisecondsSinceEpoch;
     }
     await PushPrefs.setLastNotified(lastNotified);
+  }
+
+  /// The chats that are muted right now. If they can't be read, nothing is
+  /// treated as muted: a notification too many beats one missed.
+  Future<Set<String>> _mutedChats() async {
+    try {
+      final prefs = await DatabaseHelper.instance.loadChatPrefs();
+      return {
+        for (final e in prefs.entries)
+          if (e.value.isMuted()) e.key.toLowerCase(),
+      };
+    } catch (e) {
+      debugPrint("Couldn't read which chats are muted: $e");
+      return {};
+    }
   }
 
   void _onNotificationTap(NotificationResponse response) {

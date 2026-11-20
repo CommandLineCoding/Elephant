@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../../core/message_envelope.dart';
 import '../../core/message_payload.dart';
+import '../../models/chat_prefs.dart';
 import '../../models/group.dart';
 import '../../models/inbox_item.dart';
 import '../../services/api_services.dart';
@@ -23,9 +25,136 @@ class InboxController extends ChangeNotifier {
   String? loadError;
 
   List<InboxItem> get groups => inbox.where((item) => item.isGroup).toList();
-  int get unreadChats => inbox.where((item) => item.unreadCount > 0).length;
+
+  /// Chats with unread messages, for the badge. Archived and muted chats
+  /// don't count: they asked not to be noisy.
+  int get unreadChats => inbox.where((item) {
+    final prefs = prefsOf(item.id);
+    return item.unreadCount > 0 && !prefs.archived && !prefs.isMuted();
+  }).length;
+
+  // --- Pinned, archived and muted chats ---
+
+  Map<String, ChatPrefs> _prefs = {};
+  bool _prefsLoaded = false;
+
+  /// Whether a new message brings an archived chat back to the chat list.
+  bool unarchiveOnMessage = false;
+
+  static const _unarchiveKey = 'unarchive_on_message';
+
+  static String _key(String chatId) => chatId.toLowerCase();
+
+  ChatPrefs prefsOf(String chatId) => _prefs[_key(chatId)] ?? ChatPrefs.none;
+
+  /// The chats to show, pinned ones first (each group in the order of the
+  /// list), without the archived ones.
+  List<InboxItem> get chats => _arranged(inbox);
+
+  /// Like [chats], for the Groups tab.
+  List<InboxItem> get shownGroups => _arranged(groups);
+
+  List<InboxItem> get archivedChats =>
+      inbox.where((item) => prefsOf(item.id).archived).toList();
+
+  List<InboxItem> _arranged(Iterable<InboxItem> items) {
+    final shown = items.where((item) => !prefsOf(item.id).archived).toList();
+    return [
+      ...shown.where((item) => prefsOf(item.id).isPinned),
+      ...shown.where((item) => !prefsOf(item.id).isPinned),
+    ];
+  }
+
+  Future<void>? _prefsLoading;
+
+  void _ensurePrefs() {
+    if (_prefsLoaded) return;
+    _prefsLoading ??= loadPrefs().whenComplete(() => _prefsLoading = null);
+  }
+
+  Future<void> loadPrefs() async {
+    try {
+      final stored = await DatabaseHelper.instance.loadChatPrefs();
+      _prefs = {for (final e in stored.entries) _key(e.key): e.value};
+      _prefsLoaded = true;
+      unarchiveOnMessage =
+          (await SharedPreferences.getInstance()).getBool(_unarchiveKey) ??
+          false;
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Couldn't load chat settings: $e");
+    }
+  }
+
+  Future<void> setUnarchiveOnMessage(bool on) async {
+    unarchiveOnMessage = on;
+    notifyListeners();
+    try {
+      await (await SharedPreferences.getInstance()).setBool(_unarchiveKey, on);
+    } catch (e) {
+      debugPrint("Couldn't save the archive setting: $e");
+    }
+  }
+
+  /// Pins or unpins a chat. At most [ChatPrefs.maxPinned] can be pinned:
+  /// returns a message to show if there's no room.
+  Future<String?> setPinned(String chatId, bool pinned) async {
+    final current = prefsOf(chatId);
+    if (pinned) {
+      final others = _prefs.entries.where(
+        (e) => e.key != _key(chatId) && e.value.isPinned,
+      );
+      if (others.length >= ChatPrefs.maxPinned) {
+        return 'You can pin up to ${ChatPrefs.maxPinned} chats. Unpin one first.';
+      }
+      await _setPrefs(chatId, current.copyWith(pinnedAt: DateTime.now()));
+    } else {
+      await _setPrefs(chatId, current.copyWith(clearPinned: true));
+    }
+    return null;
+  }
+
+  /// Moves a chat to or from Archived. Archiving also unpins it.
+  Future<void> setArchived(String chatId, bool archived) {
+    final current = prefsOf(chatId);
+    return _setPrefs(
+      chatId,
+      archived
+          ? current.copyWith(archived: true, clearPinned: true)
+          : current.copyWith(archived: false),
+    );
+  }
+
+  /// Mutes a chat for [duration], or always when it's null.
+  Future<void> mute(String chatId, {Duration? duration}) => _setPrefs(
+    chatId,
+    prefsOf(chatId).copyWith(
+      mutedUntil: duration == null
+          ? ChatPrefs.forever
+          : DateTime.now().add(duration),
+    ),
+  );
+
+  Future<void> unmute(String chatId) =>
+      _setPrefs(chatId, prefsOf(chatId).copyWith(clearMuted: true));
+
+  Future<void> _setPrefs(String chatId, ChatPrefs next) async {
+    if (next.isDefault) {
+      _prefs.remove(_key(chatId));
+    } else {
+      _prefs[_key(chatId)] = next;
+    }
+    notifyListeners();
+    try {
+      await DatabaseHelper.instance.saveChatPrefs(chatId, next);
+    } catch (e) {
+      debugPrint("Couldn't save chat settings: $e");
+    }
+  }
 
   void clearInbox() {
+    _prefs = {};
+    _prefsLoaded = false;
     inbox = [];
     hasLoadedOnce = false;
     loadError = null;
@@ -36,6 +165,9 @@ class InboxController extends ChangeNotifier {
     bool isOffline = false,
     String? currentChatId,
   }) async {
+    // Pinned, archived and muted chats arrive a moment later and re-arrange
+    // the list, so the chats themselves aren't kept waiting for them.
+    _ensurePrefs();
     try {
       final db = await DatabaseHelper.instance.database;
       final localData = await db.query('inbox', orderBy: 'timestamp DESC');
@@ -162,6 +294,11 @@ class InboxController extends ChangeNotifier {
     if (index == -1) {
       unawaited(loadInbox());
       return;
+    }
+
+    // A new message brings an archived chat back, if that's what's wanted.
+    if (incrementUnread && unarchiveOnMessage && prefsOf(chatId).archived) {
+      unawaited(setArchived(chatId, false));
     }
 
     final item = inbox.removeAt(index);
@@ -311,6 +448,7 @@ class InboxController extends ChangeNotifier {
 
   Future<void> removeChat(String chatId) async {
     inbox.removeWhere((item) => item.id == chatId);
+    _prefs.remove(_key(chatId));
     notifyListeners();
     CallLog.instance.forget(chatId);
     await DatabaseHelper.instance.deleteChat(chatId);

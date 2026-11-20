@@ -5,15 +5,18 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:mobile/models/inbox_item.dart';
 
 /// The conversations that deserve a notification: they have unread messages
-/// newer than both the last one we notified about and [since].
+/// newer than both the last one we notified about and [since], and aren't
+/// [muted] (lowercase chat IDs).
 List<InboxItem> chatsToNotify(
   List<InboxItem> conversations,
   Map<String, int> lastNotified, {
   required DateTime since,
+  Set<String> muted = const {},
 }) {
   return [
     for (final chat in conversations)
       if (chat.unreadCount > 0 &&
+          !muted.contains(chat.id.toLowerCase()) &&
           chat.timestamp.millisecondsSinceEpoch >
               (lastNotified[chat.id] ?? since.millisecondsSinceEpoch))
         chat,

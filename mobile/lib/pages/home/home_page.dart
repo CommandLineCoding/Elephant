@@ -5,10 +5,9 @@ import 'package:mobile/core/profile_links.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
-import 'package:mobile/models/inbox_item.dart';
-import 'package:mobile/pages/chat/delete_chat.dart';
-import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
+import 'package:mobile/pages/home/archived_chats_page.dart';
+import 'package:mobile/pages/home/conversation_actions.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
@@ -209,90 +208,6 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-void openConversation(BuildContext context, InboxItem item) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => ChatPage(
-        chatUserId: item.id,
-        displayName: item.title.isEmpty ? (item.username ?? '') : item.title,
-        username: item.username,
-        isGroup: item.isGroup,
-      ),
-    ),
-  );
-}
-
-Future<void> _showConversationActions(
-  BuildContext context,
-  InboxItem item,
-) async {
-  final action = await showActionSheet<String>(
-    context,
-    header: ListTile(
-      title: Text(item.title, style: context.text.titleMedium),
-      subtitle: Text(item.isGroup ? 'Group' : '@${item.username ?? ''}'),
-    ),
-    actions: [
-      const SheetAction(
-        icon: Icons.chat_bubble_outline_rounded,
-        label: 'Open chat',
-        value: 'open',
-      ),
-      if (item.unreadCount > 0)
-        const SheetAction(
-          icon: Icons.mark_chat_read_outlined,
-          label: 'Mark as read',
-          value: 'read',
-        ),
-      SheetAction(
-        icon: item.isGroup
-            ? Icons.info_outline_rounded
-            : Icons.verified_user_outlined,
-        label: item.isGroup ? 'Group info' : 'Contact & encryption',
-        value: 'info',
-      ),
-      SheetAction(
-        icon: Icons.delete_outline_rounded,
-        label: item.isGroup ? 'Clear chat' : 'Delete chat',
-        value: 'delete',
-        destructive: true,
-      ),
-    ],
-  );
-  if (!context.mounted || action == null) return;
-
-  switch (action) {
-    case 'open':
-      openConversation(context, item);
-      break;
-    case 'delete':
-      await confirmAndDeleteChat(
-        context,
-        chatId: item.id,
-        title: item.title.isEmpty ? (item.username ?? '') : item.title,
-        isGroup: item.isGroup,
-      );
-      break;
-    case 'read':
-      await context.read<InboxController>().markReadFor(item);
-      break;
-    case 'info':
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ChatDetailsPage(
-            chatId: item.id,
-            chatName: item.title,
-            username: item.username,
-            isGroup: item.isGroup,
-          ),
-        ),
-      );
-      break;
-  }
-}
-
 class _ChatsTab extends StatefulWidget {
   const _ChatsTab();
 
@@ -316,13 +231,16 @@ class _ChatsTabState extends State<_ChatsTab> {
     final connection = context.watch<ChatConnectionController>();
 
     final query = _query.toLowerCase();
+    // Searching looks through archived chats too.
     final items = query.isEmpty
-        ? inbox.inbox
+        ? inbox.chats
         : inbox.inbox.where((item) {
             return item.title.toLowerCase().contains(query) ||
                 (item.username?.toLowerCase().contains(query) ?? false) ||
                 item.lastMessage.toLowerCase().contains(query);
           }).toList();
+
+    final showArchived = query.isEmpty && inbox.archivedChats.isNotEmpty;
 
     return RefreshIndicator(
       edgeOffset: 120,
@@ -385,6 +303,19 @@ class _ChatsTabState extends State<_ChatsTab> {
               ),
             ),
           ),
+          // Above the list, and above its empty state: with every chat
+          // archived, this is how to get to them.
+          if (showArchived)
+            SliverToBoxAdapter(
+              child: ArchivedRow(
+                count: inbox.archivedChats.length,
+                unread: inbox.archivedChats.any((c) => c.unreadCount > 0),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ArchivedChatsPage()),
+                ),
+              ),
+            ),
           if (items.isEmpty)
             SliverFillRemaining(
               hasScrollBody: false,
@@ -427,7 +358,7 @@ class _ChatsTabState extends State<_ChatsTab> {
                   onTap: () => openConversation(context, item),
                   onLongPress: () {
                     HapticFeedback.mediumImpact();
-                    _showConversationActions(context, item);
+                    showConversationActions(context, item);
                   },
                 );
               },
@@ -445,7 +376,7 @@ class _GroupsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final inbox = context.watch<InboxController>();
-    final groups = inbox.groups;
+    final groups = inbox.shownGroups;
 
     return RefreshIndicator(
       edgeOffset: 120,
@@ -485,7 +416,7 @@ class _GroupsTab extends StatelessWidget {
                   key: ValueKey(item.id),
                   conversation: item,
                   onTap: () => openConversation(context, item),
-                  onLongPress: () => _showConversationActions(context, item),
+                  onLongPress: () => showConversationActions(context, item),
                 );
               },
             ),

@@ -308,10 +308,32 @@ class TagPill extends StatelessWidget {
 class UnreadBadge extends StatelessWidget {
   final int count;
 
-  const UnreadBadge(this.count, {super.key});
+  /// A muted chat's count is grey, so it doesn't ask for attention.
+  final bool muted;
+
+  const UnreadBadge(this.count, {super.key, this.muted = false});
 
   @override
   Widget build(BuildContext context) {
+    if (muted) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        constraints: const BoxConstraints(minWidth: 10),
+        decoration: BoxDecoration(
+          color: context.colors.onSurfaceVariant.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Text(
+          count > 99 ? '99+' : '$count',
+          textAlign: TextAlign.center,
+          style: context.text.labelMedium?.copyWith(
+            color: context.colors.surface,
+            fontWeight: FontWeight.w700,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      );
+    }
     return AccentBox(
       borderRadius: BorderRadius.circular(99),
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
