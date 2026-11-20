@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:mobile/core/constants.dart';
 import 'package:mobile/controllers/chat/chat_meta.dart';
+import 'package:mobile/core/link_preview.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/core/message_payload.dart';
 import 'package:mobile/core/poll.dart';
@@ -413,13 +414,31 @@ class ActiveChatController extends ChangeNotifier {
   // --- Sending ---
 
   /// Sends a message. Returns an error to show the user, or null on success.
-  Future<String?> sendTextMessage(String text, {Message? replyingTo}) async {
+  ///
+  /// With a [preview] of a link in [text], it goes along inside the message,
+  /// unless that would make the message too long: then it is left out.
+  Future<String?> sendTextMessage(
+    String text, {
+    Message? replyingTo,
+    LinkPreview? preview,
+  }) async {
     final targetId = currentChatUserId;
     if (targetId == null) return null;
+    var content = text;
+    if (preview != null) {
+      final withPreview = MessagePayload.encode(
+        'preview',
+        preview.toData(),
+        text: text,
+      );
+      if (utf8.encode(withPreview).length <= messageByteLimit) {
+        content = withPreview;
+      }
+    }
     final (error, _) = await sendTo(
       targetId,
       isGroup: isCurrentChatGroup,
-      text: text,
+      text: content,
       replyingTo: replyingTo,
     );
     return error;

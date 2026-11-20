@@ -19,7 +19,9 @@ import 'package:mobile/pages/call/call_page.dart';
 import 'package:mobile/services/calls/call_log.dart';
 import 'package:mobile/widgets/poll_widgets.dart';
 import 'package:mobile/widgets/reaction_widgets.dart';
+import 'package:mobile/core/link_preview.dart';
 import 'package:mobile/core/poll.dart';
+import 'package:mobile/widgets/link_preview_widgets.dart';
 import 'package:mobile/core/shared_contact.dart';
 import 'package:mobile/core/shared_location.dart';
 import 'package:mobile/services/location_service.dart';
@@ -84,6 +86,7 @@ class _ChatPageState extends State<ChatPage> {
     _chat = context.read<ActiveChatController>();
     _auth = context.read<AuthState>();
     _positions.itemPositions.addListener(_onScroll);
+    _composer.addListener(_onComposerChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -101,6 +104,8 @@ class _ChatPageState extends State<ChatPage> {
   @override
   void dispose() {
     _positions.itemPositions.removeListener(_onScroll);
+    _composer.removeListener(_onComposerChanged);
+    _previewTimer?.cancel();
     final closedChatId = widget.chatUserId;
     Future.microtask(() => _chat.closeChat(closedChatId));
     _highlightTimer?.cancel();
@@ -190,7 +195,15 @@ class _ChatPageState extends State<ChatPage> {
     }
 
     final reply = _replyingTo;
-    final error = await _chat.sendTextMessage(text, replyingTo: reply);
+    // The preview only goes if its link is still in the text.
+    final preview = _preview != null && linksIn(text).contains(_preview!.url)
+        ? _preview
+        : null;
+    final error = await _chat.sendTextMessage(
+      text,
+      replyingTo: reply,
+      preview: preview,
+    );
     if (!mounted) return;
     if (error != null) {
       showSnack(context, error, isError: true);
@@ -413,6 +426,108 @@ class _ChatPageState extends State<ChatPage> {
       offset: _composer.text.length,
     );
     _composerFocus.requestFocus();
+  }
+
+  // --- Link previews ---
+
+  LinkPreview? _preview;
+
+  /// The link [_preview] was (or is being) made for, so one isn't looked up
+  /// twice, and one that was dismissed doesn't come back.
+  String? _previewLink;
+  Timer? _previewTimer;
+  int _previewRequest = 0;
+
+  /// The first link in [text] that a preview may be fetched for.
+  String? _previewableLink(String text) {
+    for (final link in linksIn(text)) {
+      final uri = Uri.tryParse(link);
+      if (uri != null && isFetchableUri(uri)) return link;
+    }
+    return null;
+  }
+
+  void _onComposerChanged() {
+    _previewTimer?.cancel();
+    final link = _editing != null ? null : _previewableLink(_composer.text);
+    if (link == null) {
+      _clearPreview();
+      return;
+    }
+    if (link == _previewLink) return;
+    // Wait for a pause in typing, so half a link isn't looked up.
+    _previewTimer = Timer(
+      const Duration(milliseconds: 700),
+      () => _fetchPreview(link),
+    );
+  }
+
+  void _clearPreview() {
+    _previewRequest++;
+    if (_preview != null || _previewLink != null) {
+      setState(() {
+        _preview = null;
+        _previewLink = null;
+      });
+    }
+  }
+
+  Future<void> _fetchPreview(String link) async {
+    final request = ++_previewRequest;
+    if (!await LinkPreviewPrefs.isEnabled()) return;
+    if (!mounted || request != _previewRequest) return;
+    final preview = await LinkPreviewFetcher.shared.fetch(link);
+    if (!mounted || request != _previewRequest) return;
+    setState(() {
+      _previewLink = link;
+      _preview = preview;
+    });
+  }
+
+  /// Everything above the message box: what's being edited or replied to,
+  /// and the preview of a link being written.
+  Widget? _composerBanner() {
+    final Widget? above = _editing != null
+        ? ComposerBanner(
+            icon: Icons.edit_outlined,
+            title: 'Editing message',
+            body: _editing!.text,
+            onClose: _cancelBanner,
+          )
+        : _replyingTo != null
+        ? ComposerBanner(
+            icon: Icons.reply_rounded,
+            title: 'Replying to ${_nameOf(_replyingTo!.senderId)}',
+            body: _replyingTo!.text,
+            onClose: _cancelBanner,
+          )
+        : null;
+    final preview = _preview;
+    if (preview == null) return above;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ?above,
+        LinkPreviewBar(
+          preview: preview,
+          onClose: () => setState(() => _preview = null),
+        ),
+      ],
+    );
+  }
+
+  /// A link preview that came with [message], drawn under its text.
+  Widget Function(Color)? _previewFor(Message message) {
+    final preview = LinkPreview.fromPayload(
+      message.payload,
+      messageText: message.text,
+    );
+    if (preview == null) return null;
+    return (textColor) => LinkPreviewCard(
+      preview: preview,
+      textColor: textColor,
+      onOpen: () => confirmAndOpenLink(context, preview.url),
+    );
   }
 
   void _cancelBanner() {
@@ -921,22 +1036,7 @@ class _ChatPageState extends State<ChatPage> {
                             byteLimit: chat.messageByteLimit,
                             isEditing: _editing != null,
                             onTypingChanged: chat.sendTypingNotification,
-                            banner: _editing != null
-                                ? ComposerBanner(
-                                    icon: Icons.edit_outlined,
-                                    title: 'Editing message',
-                                    body: _editing!.text,
-                                    onClose: _cancelBanner,
-                                  )
-                                : _replyingTo != null
-                                ? ComposerBanner(
-                                    icon: Icons.reply_rounded,
-                                    title:
-                                        'Replying to ${_nameOf(_replyingTo!.senderId)}',
-                                    body: _replyingTo!.text,
-                                    onClose: _cancelBanner,
-                                  )
-                                : null,
+                            banner: _composerBanner(),
                           ),
                   ),
                 ),
@@ -1098,6 +1198,7 @@ class _ChatPageState extends State<ChatPage> {
                   onReactionsTap: () => _showReactions(msg),
                   poll: _pollViewFor(msg, chat),
                   cardBuilder: _cardFor(msg),
+                  previewBuilder: _previewFor(msg),
                 ),
               ),
             ),

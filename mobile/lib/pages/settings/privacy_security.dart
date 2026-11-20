@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/core/link_preview.dart';
 import 'package:mobile/pages/settings/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/signal_service.dart';
@@ -18,6 +19,20 @@ class PrivacySecuritySettingsPage extends StatefulWidget {
 class _PrivacySecuritySettingsPageState
     extends State<PrivacySecuritySettingsPage> {
   bool _busy = false;
+  bool _linkPreviews = true;
+
+  @override
+  void initState() {
+    super.initState();
+    LinkPreviewPrefs.isEnabled().then((on) {
+      if (mounted) setState(() => _linkPreviews = on);
+    });
+  }
+
+  Future<void> _setLinkPreviews(bool on) async {
+    setState(() => _linkPreviews = on);
+    await LinkPreviewPrefs.setEnabled(on);
+  }
 
   Future<void> _resetSessions() async {
     final confirmed = await confirmAction(
@@ -121,6 +136,24 @@ class _PrivacySecuritySettingsPageState
                   title: 'Messages on this device',
                   subtitle: 'Stored in an encrypted database',
                   showChevron: false,
+                ),
+              ],
+            ),
+            const SectionLabel('Links'),
+            Section(
+              children: [
+                ElephantTile(
+                  icon: Icons.link_rounded,
+                  title: 'Link previews',
+                  subtitle: _linkPreviews
+                      ? 'When you paste a link, Elephant looks it up to show a preview. '
+                            'The website sees your address; your contact\'s phone never visits it.'
+                      : 'Links are sent without a preview. Nothing is looked up.',
+                  showChevron: false,
+                  trailing: Switch(
+                    value: _linkPreviews,
+                    onChanged: _setLinkPreviews,
+                  ),
                 ),
               ],
             ),
