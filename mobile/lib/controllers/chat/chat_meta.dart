@@ -22,9 +22,15 @@ class ChatMeta {
   /// Message ID → who reacted → with what. Insertion order is oldest first.
   final Map<String, Map<String, String>> _reactions;
 
-  const ChatMeta._(this._reactions);
+  /// The pinned messages' IDs, in the order they were pinned.
+  final List<String> pinned;
 
-  static const empty = ChatMeta._({});
+  const ChatMeta._(this._reactions, this.pinned);
+
+  static const empty = ChatMeta._({}, []);
+
+  /// Most messages a chat can have pinned. Pinning one more drops the oldest.
+  static const maxPins = 3;
 
   /// Longest emoji (in user-visible characters) that counts as a reaction.
   static const maxEmojiLength = 2;
@@ -34,8 +40,17 @@ class ChatMeta {
       message.isFrom(myId) ? 'me' : message.senderId.trim().toLowerCase();
 
   /// Adds up the actions in [messages], oldest first.
-  static ChatMeta from(Iterable<Message> messages, String? myId) {
+  ///
+  /// In a group ([isGroup]) only admins can pin: [admins] are their lowercase
+  /// user IDs, and until they're known no pin counts.
+  static ChatMeta from(
+    Iterable<Message> messages,
+    String? myId, {
+    bool isGroup = false,
+    Set<String>? admins,
+  }) {
     Map<String, Map<String, String>>? reactions;
+    List<String>? pins;
 
     for (final message in messages) {
       final payload = message.payload;
@@ -54,9 +69,27 @@ class ChatMeta {
         byPerson.remove(who);
         if (emoji.isNotEmpty) byPerson[who] = emoji;
         if (byPerson.isEmpty) reactions.remove(target);
+      } else if (payload.kind == 'pin') {
+        final target = payload.field<String>('target');
+        final on = payload.field<bool>('on');
+        if (target == null || target.isEmpty || on == null) continue;
+
+        if (isGroup) {
+          final who = senderKey(message, myId);
+          final id = who == 'me' ? (myId ?? '').trim().toLowerCase() : who;
+          if (admins == null || !admins.contains(id)) continue;
+        }
+
+        final list = pins ??= [];
+        list.remove(target);
+        if (on) {
+          list.add(target);
+          if (list.length > maxPins) list.removeAt(0);
+        }
       }
     }
-    return reactions == null ? empty : ChatMeta._(reactions);
+    if (reactions == null && (pins == null || pins.isEmpty)) return empty;
+    return ChatMeta._(reactions ?? const {}, pins ?? const []);
   }
 
   /// The reactions on a message, most used first.
@@ -79,6 +112,15 @@ class ChatMeta {
 
   /// Our own reaction to a message, or null.
   String? myReactionTo(String messageId) => _reactions[messageId]?['me'];
+
+  bool isPinned(String messageId) => pinned.contains(messageId);
+
+  /// A pin's payload and the text apps without pins show.
+  static (Map<String, dynamic>, String) pinPayload(String targetId, bool on) =>
+      (
+        {'target': targetId, 'on': on},
+        on ? '📌 Pinned a message' : 'Unpinned a message',
+      );
 
   /// A reaction's payload and the text apps without reactions show.
   static (Map<String, dynamic>, String) reactionPayload(

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:mobile/core/constants.dart';
 import 'package:mobile/controllers/chat/chat_meta.dart';
@@ -49,8 +50,29 @@ class ActiveChatController extends ChangeNotifier {
     _meta = null;
   }
 
-  /// What the open chat's actions add up to (reactions).
-  ChatMeta get meta => _meta ??= ChatMeta.from(_activeChat, _myId);
+  Set<String>? _groupAdmins;
+
+  /// Tells the controller who the open group's admins are (lowercase user IDs),
+  /// since only their pins count. Null while unknown.
+  void updateGroupAdmins(Set<String>? admins) {
+    if (setEquals(admins, _groupAdmins)) return;
+    _groupAdmins = admins;
+    _meta = null;
+  }
+
+  /// What the open chat's actions add up to (reactions, pins).
+  ChatMeta get meta => _meta ??= ChatMeta.from(
+    _activeChat,
+    _myId,
+    isGroup: isCurrentChatGroup,
+    admins: _groupAdmins,
+  );
+
+  /// Whether we can pin or unpin in the open chat: anyone in a direct chat,
+  /// admins in a group.
+  bool get canPin =>
+      !isCurrentChatGroup ||
+      (_groupAdmins?.contains(_myId.trim().toLowerCase()) ?? false);
 
   /// What the message list shows: [activeChat] without the actions.
   List<Message> get visibleChat =>
@@ -419,6 +441,15 @@ class ActiveChatController extends ChangeNotifier {
       silent: MessagePayload.actionKinds.contains(kind),
     );
     return error;
+  }
+
+  /// Pins or unpins [message] in the open chat for everyone in it.
+  Future<String?> setPinned(Message message, bool pinned) {
+    if (!canPin) {
+      return Future.value('Only admins can pin messages.');
+    }
+    final (data, text) = ChatMeta.pinPayload(message.id, pinned);
+    return sendPayload('pin', data, text: text);
   }
 
   /// Reacts to [message] with [emoji] in the open chat. Reacting with the
