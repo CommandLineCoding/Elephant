@@ -212,6 +212,12 @@ func HandleEditMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if msg.DeletedAt != nil {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Message not found"})
+		return
+	}
+
 	if time.Since(msg.CreatedAt) > 15*time.Minute {
 		w.WriteHeader(http.StatusForbidden)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Message can no longer be edited (15 minute window expired)"})

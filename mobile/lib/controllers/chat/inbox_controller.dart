@@ -73,7 +73,9 @@ class InboxController extends ChangeNotifier {
 
         final serverPreview = json['last_message']?.toString() ?? '';
         String preview = MessageEnvelope.preview(serverPreview, fallback: '');
-        if (preview.isEmpty) {
+        if (json['last_message_deleted'] == true) {
+          preview = 'This message was deleted';
+        } else if (preview.isEmpty) {
           preview = latestLocal[id] ?? '🔒 Encrypted message';
         }
         combined.add(
@@ -129,7 +131,7 @@ class InboxController extends ChangeNotifier {
         SELECT chat_id, MAX(created_at) AS latest
         FROM messages
         WHERE content NOT LIKE '%"ciphertext"%' AND content NOT LIKE ?
-          AND content NOT LIKE ?
+          AND content NOT LIKE ? AND deleted_at IS NULL
         GROUP BY chat_id
       ) l ON l.chat_id = m.chat_id AND l.latest = m.created_at
     ''',

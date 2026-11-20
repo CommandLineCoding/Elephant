@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:dio/dio.dart' show Response;
 import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:mobile/core/constants.dart';
@@ -94,6 +95,78 @@ class ActiveChatController extends ChangeNotifier {
   void applyRemoteEdit(String messageId, String content, DateTime editedAt) {
     final updated = withEditApplied(activeChat, messageId, content, editedAt);
     if (identical(updated, activeChat)) return;
+    activeChat = _withResolvedQuotes(updated);
+    notifyListeners();
+  }
+
+  /// Sends the delete request. Tests replace it.
+  Future<Response> Function(String messageId, {required bool forEveryone})
+  messageDeleter = ApiService().deleteMessage;
+
+  /// Called after a message is deleted, so the chat list can follow (set from
+  /// main.dart).
+  Future<void> Function(String chatId)? onMessageDeleted;
+
+  /// Deletes [message] in the open chat. For [forEveryone] it has to be ours:
+  /// it becomes "This message was deleted" for everyone. Otherwise it's only
+  /// removed from our own view. Returns an error to show, or null.
+  Future<String?> deleteMessage(
+    Message message, {
+    required bool forEveryone,
+  }) async {
+    final chatId = currentChatUserId;
+    if (chatId == null) return null;
+    if (forEveryone && !_isMine(message)) {
+      return 'You can only delete your own messages for everyone.';
+    }
+    try {
+      final res = await messageDeleter(message.id, forEveryone: forEveryone);
+      if (forEveryone) {
+        final at =
+            Message.fromJson({
+              'deleted_at': ApiService.dataMap(res.data)['deleted_at'],
+            }).deletedAt ??
+            DateTime.now();
+        applyDeletion(message.id, at);
+        await _remember(
+          () => DatabaseHelper.instance.markMessageDeleted(message.id, at),
+        );
+      } else {
+        activeChat = activeChat.where((m) => m.id != message.id).toList();
+        notifyListeners();
+        await _remember(
+          () => DatabaseHelper.instance.deleteMessageById(message.id),
+        );
+      }
+      await onMessageDeleted?.call(chatId);
+      return null;
+    } catch (e) {
+      debugPrint("Delete message failed: $e");
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't delete the message.",
+      );
+    }
+  }
+
+  /// A cache write that mustn't make a successful delete look like a failure.
+  Future<void> _remember(Future<void> Function() write) async {
+    try {
+      await write();
+    } catch (e) {
+      debugPrint("Couldn't update the message cache: $e");
+    }
+  }
+
+  /// Shows [messageId] in the open chat as deleted for everyone. Reactions,
+  /// votes and replies that pointed at it carry on pointing at the tombstone.
+  void applyDeletion(String messageId, DateTime at) {
+    final index = activeChat.indexWhere(
+      (m) => m.id.toLowerCase() == messageId.toLowerCase(),
+    );
+    if (index == -1 || activeChat[index].isDeleted) return;
+    final updated = [...activeChat];
+    updated[index] = updated[index].copyWith(content: '', deletedAt: at);
     activeChat = _withResolvedQuotes(updated);
     notifyListeners();
   }
@@ -315,6 +388,12 @@ class ActiveChatController extends ChangeNotifier {
     // Server pages are newest-first; decrypt oldest-first to follow the ratchet.
     for (final json in rows.reversed) {
       final msg = Message.fromJson(Map<String, dynamic>.from(json));
+      // Deleted for everyone: nothing to decrypt, and whatever we cached of it
+      // has to go.
+      if (msg.isDeleted) {
+        result.add(msg.copyWith(content: ''));
+        continue;
+      }
       final local = cachedById[msg.id];
       final localIsReadable =
           local != null && !MessageEnvelope.isUnreadable(local.content);

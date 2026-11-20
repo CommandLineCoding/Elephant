@@ -231,6 +231,24 @@ class ChatBubble extends StatelessWidget {
                   ),
                 ],
               )
+            else if (message.isDeleted)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.block_rounded, size: 15, color: metaColor),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'This message was deleted',
+                      style: TextStyle(
+                        color: metaColor,
+                        fontStyle: FontStyle.italic,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              )
             else if (poll != null)
               PollCard(view: poll!, textColor: textColor)
             else if (cardBuilder != null)
@@ -426,10 +444,13 @@ class _QuoteBlock extends StatelessWidget {
                 ),
               ),
             Text(
-              quote.content.replaceAll('\n', ' '),
+              quote.content.isEmpty
+                  ? 'This message was deleted'
+                  : quote.content.replaceAll('\n', ' '),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: context.text.bodySmall?.copyWith(
+                fontStyle: quote.content.isEmpty ? FontStyle.italic : null,
                 color: base.withValues(alpha: 0.8),
               ),
             ),

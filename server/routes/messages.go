@@ -14,5 +14,6 @@ func MessageRoute(router chi.Router) {
 	router.Get("/conversations", controllers.HandleGetConversations)                     // GET    /api/messages/conversations
 	router.Delete("/conversations/{userId}", controllers.HandleDeleteDirectConversation) // DELETE /api/messages/conversations/:userId?for=me|everyone
 	router.Put("/{id}", controllers.HandleEditMessage)                                   // PUT    /api/messages/:id
+	router.Delete("/{id}", controllers.HandleDeleteMessage)                              // DELETE /api/messages/:id?for=me|everyone
 	router.Post("/read", controllers.HandleMarkRead)                                     // POST   /api/messages/read
 }

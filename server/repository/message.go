@@ -42,11 +42,12 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 	query := `
 		SELECT 
 			m.id, m.sender_id, m.receiver_id, m.content, m.created_at, m.is_read, m.edited_at, m.reply_to_message_id,
-			q.sender_id AS quoted_sender_id, q.content AS quoted_content
+			q.sender_id AS quoted_sender_id, q.content AS quoted_content, m.deleted_at
 		FROM messages m
 		LEFT JOIN messages q ON m.reply_to_message_id = q.id
 		WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1))
 		  AND m.group_id IS NULL AND m.created_at < $3
+		  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $1::uuid)
 		  AND m.created_at > COALESCE(
 			(SELECT cleared_at FROM conversation_clears WHERE user_id = $1 AND peer_id = $2),
 			'-infinity')
@@ -64,7 +65,7 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 		var m models.Message
 		var qSender, qContent *string
 
-		err := rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Content, &m.CreatedAt, &m.IsRead, &m.EditedAt, &m.ReplyToMessageID, &qSender, &qContent)
+		err := rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Content, &m.CreatedAt, &m.IsRead, &m.EditedAt, &m.ReplyToMessageID, &qSender, &qContent, &m.DeletedAt)
 		if err != nil {
 			return nil, err
 		}
@@ -82,7 +83,8 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 }
 
 func (r *MessageRepository) GetMessagePreview(ctx context.Context, messageID string) (*models.QuotedMessage, error) {
-	query := `SELECT id, sender_id, content FROM messages WHERE id = $1::uuid;`
+	// A message deleted for everyone has no content left to quote.
+	query := `SELECT id, sender_id, content FROM messages WHERE id = $1::uuid AND deleted_at IS NULL;`
 	var q models.QuotedMessage
 	err := config.DB.QueryRow(ctx, query, messageID).Scan(&q.ID, &q.SenderID, &q.Content)
 	if err != nil {
@@ -101,10 +103,12 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 				sender_id,
 				created_at,
 				is_read,
-				NULL::UUID AS group_id
+				NULL::UUID AS group_id,
+				deleted_at IS NOT NULL AS deleted
 			FROM messages
 			WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND group_id IS NULL
 			  AND NOT silent
+			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = messages.id AND h.user_id = $1::uuid)
 			  AND created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid
@@ -121,11 +125,13 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 				m.sender_id,
 				m.created_at,
 				FALSE AS is_read,
-				m.group_id
+				m.group_id,
+				m.deleted_at IS NOT NULL AS deleted
 			FROM messages m
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid
 			  AND NOT m.silent
+			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $1::uuid)
 			  AND m.created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid AND cc.group_id = m.group_id),
@@ -136,7 +142,8 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			SELECT sender_id, COUNT(*) AS count
 			FROM messages
 			WHERE receiver_id = $1::uuid AND is_read = FALSE AND group_id IS NULL
-			  AND NOT silent
+			  AND NOT silent AND deleted_at IS NULL
+			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = messages.id AND h.user_id = $1::uuid)
 			  AND created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid AND cc.peer_id = sender_id),
@@ -148,7 +155,8 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			FROM messages m
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid AND m.created_at > gm.last_read_at AND m.sender_id != $1::uuid
-			  AND NOT m.silent
+			  AND NOT m.silent AND m.deleted_at IS NULL
+			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $1::uuid)
 			  AND m.created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
 				 WHERE cc.user_id = $1::uuid AND cc.group_id = m.group_id),
@@ -173,7 +181,8 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			CASE 
 				WHEN rc.type = 'direct' THEN COALESCE(du.count, 0)::INT
 				ELSE COALESCE(gu.count, 0)::INT
-			END AS unread_count
+			END AS unread_count,
+			COALESCE(rc.deleted, FALSE) AS last_message_deleted
 		FROM raw_conversations rc
 		LEFT JOIN users u ON rc.chat_user_id = u.id
 		LEFT JOIN groups g ON rc.group_id = g.id
@@ -202,6 +211,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			&c.SenderID,
 			&c.IsRead,
 			&c.UnreadCount,
+			&c.LastMessageDeleted,
 		)
 		if err != nil {
 			return nil, err
@@ -234,7 +244,7 @@ func (r *MessageRepository) UpdateGroupLastRead(ctx context.Context, groupID, us
 func (r *MessageRepository) GetMessageByID(ctx context.Context, id string) (*models.Message, error) {
 	query := `
 		SELECT id, sender_id, COALESCE(receiver_id::text, '') as receiver_id, COALESCE(group_id::text, '') as group_id, 
-		       content, created_at, edited_at, reply_to_message_id
+		       content, created_at, edited_at, reply_to_message_id, deleted_at
 		FROM messages 
 		WHERE id = $1::uuid;
 	`
@@ -248,6 +258,7 @@ func (r *MessageRepository) GetMessageByID(ctx context.Context, id string) (*mod
 		&msg.CreatedAt,
 		&msg.EditedAt,
 		&msg.ReplyToMessageID,
+		&msg.DeletedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -281,4 +292,81 @@ func (r *MessageRepository) UpdateMessage(ctx context.Context, id, content strin
 		return nil, err
 	}
 	return &msg, nil
+}
+
+var (
+	// ErrMessageNotFound is returned for a message that doesn't exist, that
+	// you can't see, or that was already deleted for everyone.
+	ErrMessageNotFound = errors.New("message not found")
+
+	// ErrNotYourMessage is returned when deleting someone else's message for
+	// everyone.
+	ErrNotYourMessage = errors.New("not your message")
+)
+
+// DeleteForEveryone removes a message from both sides: the content is cleared
+// and the message is marked deleted, but the row stays so history keeps its
+// order. Only the sender can, and at any time. It returns the message as it
+// is now (without its content) so the other people can be told.
+func (r *MessageRepository) DeleteForEveryone(ctx context.Context, userID, messageID string) (*models.Message, error) {
+	query := `
+		UPDATE messages
+		SET content = '', deleted_at = NOW(), edited_at = NULL
+		WHERE id = $1::uuid AND sender_id = $2::uuid AND deleted_at IS NULL
+		RETURNING id, sender_id, COALESCE(receiver_id::text, ''), COALESCE(group_id::text, ''),
+		          created_at, deleted_at, reply_to_message_id;
+	`
+	var msg models.Message
+	err := config.DB.QueryRow(ctx, query, messageID, userID).Scan(
+		&msg.ID, &msg.SenderID, &msg.ReceiverID, &msg.GroupID,
+		&msg.CreatedAt, &msg.DeletedAt, &msg.ReplyToMessageID,
+	)
+	if err == nil {
+		return &msg, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, err
+	}
+
+	// Nothing changed: say whether it isn't theirs or isn't there.
+	existing, lookupErr := r.GetMessageByID(ctx, messageID)
+	if lookupErr != nil || existing.DeletedAt != nil {
+		return nil, ErrMessageNotFound
+	}
+	if existing.SenderID != userID {
+		return nil, ErrNotYourMessage
+	}
+	return nil, ErrMessageNotFound
+}
+
+// HideForMe removes a message from the caller's own view: their history,
+// conversation list and unread counts. Everyone else still sees it. The
+// caller has to be able to see the message (sent it, received it, or be in
+// its group), or it is reported as not found.
+func (r *MessageRepository) HideForMe(ctx context.Context, userID, messageID string) error {
+	query := `
+		INSERT INTO message_hides (user_id, message_id)
+		SELECT $1::uuid, m.id
+		FROM messages m
+		WHERE m.id = $2::uuid
+		  AND (m.sender_id = $1::uuid
+		       OR m.receiver_id = $1::uuid
+		       OR EXISTS (SELECT 1 FROM group_members gm WHERE gm.group_id = m.group_id AND gm.user_id = $1::uuid))
+		ON CONFLICT DO NOTHING;
+	`
+	if _, err := config.DB.Exec(ctx, query, userID, messageID); err != nil {
+		return err
+	}
+	// ON CONFLICT also swallows a repeat, so check it is there afterwards.
+	var hidden bool
+	err := config.DB.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM message_hides WHERE user_id = $1::uuid AND message_id = $2::uuid)`,
+		userID, messageID).Scan(&hidden)
+	if err != nil {
+		return err
+	}
+	if !hidden {
+		return ErrMessageNotFound
+	}
+	return nil
 }

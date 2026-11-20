@@ -88,7 +88,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 3,
+      version: 4,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -100,6 +100,9 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE messages ADD COLUMN edited_at INTEGER');
     }
     if (oldVersion < 3) await _createCallLog(db);
+    if (oldVersion < 4) {
+      await db.execute('ALTER TABLE messages ADD COLUMN deleted_at INTEGER');
+    }
   }
 
   /// Calls made and received, shown in the chat. Only kept on this device.
@@ -129,7 +132,8 @@ class DatabaseHelper {
         is_read INTEGER NOT NULL,
         reply_to_id TEXT,
         sync_status TEXT NOT NULL, -- 'synced' or 'pending'
-        edited_at INTEGER
+        edited_at INTEGER,
+        deleted_at INTEGER -- deleted for everyone
       )
     ''');
 
@@ -250,6 +254,27 @@ class DatabaseHelper {
       'group_members',
       where: 'group_id = ?',
       whereArgs: [chatId],
+    );
+  }
+
+  /// Keeps a message as a tombstone: deleted for everyone, content gone.
+  Future<void> markMessageDeleted(String messageId, DateTime at) async {
+    final db = await instance.database;
+    await db.update(
+      'messages',
+      {'content': '', 'deleted_at': at.millisecondsSinceEpoch},
+      where: 'id = ? COLLATE NOCASE',
+      whereArgs: [messageId],
+    );
+  }
+
+  /// Removes one cached message (deleted for me).
+  Future<void> deleteMessageById(String messageId) async {
+    final db = await instance.database;
+    await db.delete(
+      'messages',
+      where: 'id = ? COLLATE NOCASE',
+      whereArgs: [messageId],
     );
   }
 

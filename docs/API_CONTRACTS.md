@@ -87,6 +87,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | PUT | [/api/messages/{id}](#4-edit-message) | Yes | Edit your own message (15-minute window) |
 | POST | [/api/messages/read](#5-mark-direct-messages-read) | Yes | Mark a sender's messages as read |
 | DELETE | [/api/messages/conversations/{userId}?for=me\|everyone](#6-delete-a-direct-conversation) | Yes | Delete a direct conversation for you, or your messages for both people |
+| DELETE | [/api/messages/{id}?for=me\|everyone](#7-delete-a-message) | Yes | Delete one message for you, or one of yours for everyone |
 | POST | [/api/groups](#1-create-group) | Yes | Create a group |
 | GET | [/api/groups](#2-list-my-groups) | Yes | List the groups you belong to |
 | GET | [/api/groups/{id}](#3-get-group-by-id) | Member | Get group details |
@@ -1071,6 +1072,22 @@ Sent to every **other** member when an admin deletes a group ([`DELETE /api/grou
 }
 ```
 
+#### 9. Message Deleted
+
+Sent to the other people in a chat when someone deletes one of their messages [for everyone](#7-delete-a-message): the other person in a direct chat, or every other member of a group. Nobody is told who isn't connected; they see the tombstone when they next load the chat. Not sent to someone who has blocked the sender.
+
+```json
+{
+  "type": "message_deleted",
+  "message_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+  "sender_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "receiver_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "deleted_at": "<Timestamp>"
+}
+```
+
+A group message has `group_id` instead of `receiver_id`. The app should show "This message was deleted" in its place and drop anything it kept of the content.
+
 ### 4. Calls
 
 One-to-one voice calls use WebRTC. The server relays the messages that set a call up; the audio goes directly between the two phones (or through a TURN relay), never through this server.
@@ -1159,6 +1176,7 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
   "created_at": "<Timestamp>",
   "is_read": false,
   "edited_at": "<Timestamp>",
+  "deleted_at": "<Timestamp>",
   "reply_to_message_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
   "quoted_message": {
     "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
@@ -1168,7 +1186,9 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
 }
 ```
 
-`receiver_id`, `group_id`, `edited_at`, `reply_to_message_id` and `quoted_message` are omitted when empty.
+`receiver_id`, `group_id`, `edited_at`, `deleted_at`, `reply_to_message_id` and `quoted_message` are omitted when empty.
+
+A message deleted for everyone (see [Delete a Message](#7-delete-a-message)) stays in history as a **tombstone**: `deleted_at` is set and `content` is empty. It can no longer be edited, and replies that quoted it have nothing to quote.
 
 ### 1. Send Message
 
@@ -1290,13 +1310,15 @@ Returns one entry per direct chat and per group you belong to, ordered by latest
       "last_message_time": "<Timestamp>",
       "sender_id": "<sender of the last message>",
       "is_read": false,
-      "unread_count": 3
+      "unread_count": 3,
+      "last_message_deleted": false
     }
   ]
 }
 ```
 
 - `type` is `direct` or `group`.
+- `last_message_deleted` is `true` (and `last_message` empty) when the last message was [deleted for everyone](#7-delete-a-message). It is omitted when `false`. A message you deleted for yourself, and [silent actions](#structured-messages), are never the last message.
 - **Direct:** `is_read` is the read flag of the last message, and `unread_count` counts unread messages sent to you.
 - **Group:** `is_read` is true if the last message is no newer than your `last_read_at`, and `unread_count` counts other members' messages since then.
 
@@ -1420,6 +1442,42 @@ Both return `cleared_at`: the app should delete its local copies of the conversa
 #### `404 Not Found`
 
 `"User not found"`.
+
+### 7. Delete a Message
+
+- **`for=me`** (the default): removes the message from **your** view only: your history, chat list and unread counts. Everyone else still sees it. Works for any message you can see.
+- **`for=everyone`**: deletes a message **you** sent, for everyone in the chat, at any time. The content is cleared and the message stays as a tombstone ("This message was deleted"). The other people are sent a [`message_deleted`](#9-message-deleted) event. You can't delete other people's messages for everyone.
+
+- **URL:** `/api/messages/{id}?for=me|everyone`
+- **Method:** `DELETE`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X DELETE "http://HOST:PORT/api/messages/<message_id>?for=everyone" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+    "deleted_at": "<Timestamp>"
+  }
+}
+```
+
+`deleted_at` is only returned for `for=everyone`.
+
+#### `400 Bad Request`
+
+`"Invalid message ID"` or `"'for' must be 'me' or 'everyone'"`.
+
+#### `403 Forbidden`
+
+`"You can only delete your own messages for everyone"`.
+
+#### `404 Not Found`
+
+`"Message not found"`: it doesn't exist, you can't see it, or it was already deleted for everyone.
 
 ---
 

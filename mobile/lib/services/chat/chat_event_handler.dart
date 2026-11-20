@@ -91,10 +91,36 @@ class ChatEventHandler {
         await _handleMessagesDeleted(data);
         break;
 
+      case 'message_deleted':
+        await _handleMessageDeleted(data);
+        break;
+
       case 'group_deleted':
         await _handleGroupDeleted(data);
         break;
     }
+  }
+
+  /// Someone deleted one of their messages for everyone.
+  Future<void> _handleMessageDeleted(Map<String, dynamic> data) async {
+    final chatId = _chatIdFor(data);
+    final messageId = data['message_id']?.toString() ?? '';
+    final senderId = data['sender_id']?.toString() ?? '';
+    if (chatId == null || messageId.isEmpty || senderId.isEmpty) return;
+    if (_id(senderId) == currentUserId.trim().toLowerCase()) return;
+
+    final at =
+        DateTime.tryParse(data['deleted_at']?.toString() ?? '')?.toLocal() ??
+        DateTime.now();
+    // Update the screen first: a cache error shouldn't leave it on show.
+    if (_isOpen(chatId)) activeChatController.applyDeletion(messageId, at);
+    try {
+      await DatabaseHelper.instance.markMessageDeleted(messageId, at);
+    } catch (e) {
+      debugPrint("Couldn't mark a message deleted in the cache: $e");
+    }
+    // It may have been the chat's last message.
+    await inboxController.loadInbox();
   }
 
   /// The other person in a direct chat deleted the messages they sent us, up

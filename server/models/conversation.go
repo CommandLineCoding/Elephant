@@ -12,4 +12,7 @@ type Conversation struct {
 	SenderID        string    `json:"sender_id"`
 	IsRead          bool      `json:"is_read"`
 	UnreadCount     int       `json:"unread_count"`
+	// LastMessageDeleted is true when the last message was deleted for
+	// everyone: LastMessage is empty and the app says so.
+	LastMessageDeleted bool `json:"last_message_deleted,omitempty"`
 }

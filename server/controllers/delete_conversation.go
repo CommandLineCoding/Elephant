@@ -120,3 +120,56 @@ func HandleDeleteGroup(w http.ResponseWriter, r *http.Request) {
 	services.Hub.PublishGroupDeleted(groupID, uid, members)
 	writeJSON(w, http.StatusOK, models.JSONResponse{Success: true, Data: "Group deleted"})
 }
+
+// HandleDeleteMessage handles DELETE /api/messages/{id}?for=me|everyone.
+//
+//   - for=me (the default) hides the message from the caller only.
+//   - for=everyone deletes a message the caller sent, for everyone in the
+//     chat, at any time. The message stays as "This message was deleted", and
+//     the other people's apps are told.
+func HandleDeleteMessage(w http.ResponseWriter, r *http.Request) {
+	uid, _ := r.Context().Value(middlewares.UserIDKey).(string)
+	messageID := chi.URLParam(r, "id")
+	scope := r.URL.Query().Get("for")
+
+	if !uuidPattern.MatchString(messageID) {
+		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "Invalid message ID"})
+		return
+	}
+	if scope != "" && scope != "me" && scope != "everyone" {
+		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "'for' must be 'me' or 'everyone'"})
+		return
+	}
+
+	repo := repository.NewMessageRepository()
+	if scope == "everyone" {
+		msg, err := repo.DeleteForEveryone(r.Context(), uid, messageID)
+		switch {
+		case errors.Is(err, repository.ErrMessageNotFound):
+			writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "Message not found"})
+		case errors.Is(err, repository.ErrNotYourMessage):
+			writeJSON(w, http.StatusForbidden, models.JSONResponse{Success: false, Error: "You can only delete your own messages for everyone"})
+		case err != nil:
+			log.Printf("Couldn't delete a message for everyone: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Couldn't delete the message"})
+		default:
+			services.Hub.PublishMessageDeleted(r.Context(), msg)
+			writeJSON(w, http.StatusOK, models.JSONResponse{Success: true, Data: map[string]interface{}{
+				"id":         msg.ID,
+				"deleted_at": msg.DeletedAt,
+			}})
+		}
+		return
+	}
+
+	err := repo.HideForMe(r.Context(), uid, messageID)
+	switch {
+	case errors.Is(err, repository.ErrMessageNotFound):
+		writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "Message not found"})
+	case err != nil:
+		log.Printf("Couldn't hide a message: %v", err)
+		writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Couldn't delete the message"})
+	default:
+		writeJSON(w, http.StatusOK, models.JSONResponse{Success: true, Data: map[string]string{"id": messageID}})
+	}
+}

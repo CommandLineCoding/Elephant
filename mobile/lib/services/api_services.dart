@@ -150,6 +150,17 @@ class ApiService {
 
   Future<Response> listBlockedUsers() => _dio.get("/users/me/blocked");
 
+  /// Deletes one message. For [forEveryone] it must be ours, and it becomes
+  /// "This message was deleted" for everyone; otherwise it's only removed from
+  /// our own view.
+  Future<Response> deleteMessage(
+    String messageId, {
+    required bool forEveryone,
+  }) => _dio.delete(
+    "/messages/$messageId",
+    queryParameters: {"for": forEveryone ? "everyone" : "me"},
+  );
+
   /// The call ringing for us, if any (asked when a push wakes the app). Null
   /// when nothing is ringing, or the server doesn't support it.
   Future<PendingCall?> pendingCall() async {

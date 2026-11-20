@@ -44,7 +44,8 @@ Future<void> main(List<String> args) async {
   final inboxController = InboxController();
   final activeChatController = ActiveChatController()
     ..currentUserIdProvider = currentUserId
-    ..onMessageEdited = inboxController.updatePreviewForEdit;
+    ..onMessageEdited = inboxController.updatePreviewForEdit
+    ..onMessageDeleted = (_) => inboxController.loadInbox();
 
   final callController = createCallController(inboxController);
   CallController.instance = callController;
