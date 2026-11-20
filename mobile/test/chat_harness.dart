@@ -7,6 +7,7 @@ import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/chat_search_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
+import 'package:mobile/models/group.dart';
 import 'package:mobile/models/message.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
@@ -69,6 +70,27 @@ class TestChat extends ActiveChatController {
   }
 }
 
+/// A [GroupDetailsController] whose members are given, not fetched.
+class TestGroups extends GroupDetailsController {
+  TestGroups(List<GroupMember> members) {
+    currentGroupMembers = members;
+    for (final m in members) {
+      userCache[m.userId.toLowerCase()] = m.displayName;
+    }
+  }
+
+  @override
+  Future<void> fetchGroupMembers(String groupId) async {}
+}
+
+GroupMember testMember(String id, String name, {bool admin = false}) =>
+    GroupMember(
+      userId: id,
+      username: '$name.1234',
+      displayName: name,
+      role: admin ? 'admin' : 'member',
+    );
+
 /// Mocks the platform channels the app touches at start-up. Call from
 /// `setUpAll`.
 void mockPlatformChannels() {
@@ -115,6 +137,7 @@ Future<TestChat> showTestChat(
   bool isGroup = false,
   InboxController? inbox,
   TestChat? chat,
+  List<GroupMember>? members,
   Widget Function(Widget page)? wrap,
 }) async {
   final controller = chat ?? TestChat();
@@ -142,7 +165,10 @@ Future<TestChat> showTestChat(
         ChangeNotifierProvider<ActiveChatController>.value(value: controller),
         ChangeNotifierProvider(create: (_) => GroupController()),
         ChangeNotifierProvider(create: (_) => ChatSearchController()),
-        ChangeNotifierProvider(create: (_) => GroupDetailsController()),
+        ChangeNotifierProvider<GroupDetailsController>(
+          create: (_) =>
+              members == null ? GroupDetailsController() : TestGroups(members),
+        ),
         ChangeNotifierProvider(
           create: (_) => ChatConnectionController(
             eventHandler: ChatEventHandler(

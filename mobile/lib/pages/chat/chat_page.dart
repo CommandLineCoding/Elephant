@@ -240,6 +240,8 @@ class _ChatPageState extends State<ChatPage> {
 
     // Nobody to react to once you've blocked them, or if it can't be read.
     final canReact = !isLocked && !_isBlocked && !message.isPending;
+    final canPin = canReact && _chat.canPin;
+    final isPinned = _chat.meta.isPinned(message.id);
     final myReaction = _chat.meta.myReactionTo(message.id);
 
     final action = await showActionSheet<String>(
@@ -272,6 +274,12 @@ class _ChatPageState extends State<ChatPage> {
           label: 'Reply',
           value: 'reply',
         ),
+        if (canPin)
+          SheetAction(
+            icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+            label: isPinned ? 'Unpin' : 'Pin',
+            value: isPinned ? 'unpin' : 'pin',
+          ),
         if (!isLocked)
           const SheetAction(
             icon: Icons.copy_rounded,
@@ -310,6 +318,12 @@ class _ChatPageState extends State<ChatPage> {
         final emoji = await showEmojiGrid(context, mine: myReaction);
         if (emoji != null && mounted) await _react(message, emoji);
         break;
+      case 'pin':
+        await _setPinned(message, true);
+        break;
+      case 'unpin':
+        await _setPinned(message, false);
+        break;
       case 'reply':
         _startReply(message);
         break;
@@ -335,6 +349,26 @@ class _ChatPageState extends State<ChatPage> {
 
   bool get _isBlocked =>
       !widget.isGroup && BlockedUsers.instance.isBlocked(widget.chatUserId);
+
+  int _pinCursor = 0;
+
+  /// The pinned messages that are on screen, newest pin first.
+  List<Message> _pinnedMessages(
+    ActiveChatController chat,
+    List<Message> shown,
+  ) {
+    if (chat.meta.pinned.isEmpty) return const [];
+    final byId = {for (final m in shown) m.id: m};
+    return [
+      for (final id in chat.meta.pinned.reversed)
+        if (byId[id] != null) byId[id]!,
+    ];
+  }
+
+  Future<void> _setPinned(Message message, bool pinned) async {
+    final error = await _chat.setPinned(message, pinned);
+    if (error != null && mounted) showSnack(context, error, isError: true);
+  }
 
   Future<void> _react(Message message, String emoji) async {
     final error = await _chat.react(message, emoji);
@@ -521,6 +555,17 @@ class _ChatPageState extends State<ChatPage> {
       chat.hasMoreMessages,
     );
     final topInset = MediaQuery.paddingOf(context).top + kToolbarHeight + 6;
+    // Only admins' pins count in a group, so the controller needs to know who
+    // they are (it doesn't notify: this only changes what `meta` adds up).
+    chat.updateGroupAdmins(
+      widget.isGroup && group.currentGroupMembers.isNotEmpty
+          ? {
+              for (final m in group.currentGroupMembers)
+                if (m.isAdmin) m.userId.trim().toLowerCase(),
+            }
+          : null,
+    );
+    final pins = _pinnedMessages(chat, messages);
 
     return PopScope(
       canPop: !_searchMode,
@@ -598,18 +643,40 @@ class _ChatPageState extends State<ChatPage> {
               ),
               if (_searchMode)
                 Positioned.fill(top: topInset, child: _buildSearchResults()),
-              // With cached messages on screen, a failed load is a slim bar
-              // under the header rather than replacing the chat.
+              // Slim bars under the header: with cached messages on screen, a
+              // failed load is one rather than replacing the chat, and the
+              // pinned messages are another.
               if (!_searchMode &&
-                  chat.historyError != null &&
-                  messages.isNotEmpty)
+                  ((chat.historyError != null && messages.isNotEmpty) ||
+                      pins.isNotEmpty))
                 Positioned(
                   top: topInset + Insets.sm,
                   left: Insets.md,
                   right: Insets.md,
-                  child: _HistoryErrorBar(
-                    message: chat.historyError!,
-                    onRetry: chat.retryHistory,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (chat.historyError != null && messages.isNotEmpty)
+                        _HistoryErrorBar(
+                          message: chat.historyError!,
+                          onRetry: chat.retryHistory,
+                        ),
+                      if (chat.historyError != null &&
+                          messages.isNotEmpty &&
+                          pins.isNotEmpty)
+                        const SizedBox(height: Insets.sm),
+                      if (pins.isNotEmpty)
+                        _PinnedBar(
+                          message: pins[_pinCursor % pins.length],
+                          position: _pinCursor % pins.length,
+                          total: pins.length,
+                          onTap: () {
+                            _jumpToMessage(pins[_pinCursor % pins.length].id);
+                            setState(() => _pinCursor++);
+                          },
+                        ),
+                    ],
                   ),
                 ),
               if (!_searchMode)
@@ -994,6 +1061,74 @@ class _SwipeToReplyState extends State<_SwipeToReply>
           ),
           Transform.translate(offset: Offset(_offset, 0), child: widget.child),
         ],
+      ),
+    );
+  }
+}
+
+/// The pinned message under the header. Tapping it jumps to the message, and
+/// then to the next pinned one.
+class _PinnedBar extends StatelessWidget {
+  final Message message;
+  final int position;
+  final int total;
+  final VoidCallback onTap;
+
+  const _PinnedBar({
+    required this.message,
+    required this.position,
+    required this.total,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final text = message.text.trim().isEmpty ? 'Message' : message.text.trim();
+    return Semantics(
+      button: true,
+      label:
+          'Pinned message${total > 1 ? ' ${position + 1} of $total' : ''}: '
+          '$text. Go to message',
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Panel(
+          borderRadius: BorderRadius.circular(Radii.md),
+          padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.push_pin_rounded,
+                size: 18,
+                color: context.colors.primary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      total > 1
+                          ? 'Pinned message ${position + 1} of $total'
+                          : 'Pinned message',
+                      style: context.text.labelSmall?.copyWith(
+                        color: context.colors.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    Text(
+                      text.replaceAll('\n', ' '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: context.text.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
