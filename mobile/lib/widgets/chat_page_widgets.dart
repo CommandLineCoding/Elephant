@@ -132,6 +132,9 @@ class ChatBubble extends StatelessWidget {
   /// given the text colour that suits the bubble.
   final Widget Function(Color textColor)? cardBuilder;
 
+  /// Draws a link preview under the message's text.
+  final Widget Function(Color textColor)? previewBuilder;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -148,6 +151,7 @@ class ChatBubble extends StatelessWidget {
     this.onReactionsTap,
     this.poll,
     this.cardBuilder,
+    this.previewBuilder,
   });
 
   @override
@@ -231,7 +235,7 @@ class ChatBubble extends StatelessWidget {
               PollCard(view: poll!, textColor: textColor)
             else if (cardBuilder != null)
               cardBuilder!(textColor)
-            else
+            else ...[
               MarkdownBody(
                 data: prepareChatMarkdown(message.text),
                 extensionSet: chatMarkdownExtensions,
@@ -241,6 +245,12 @@ class ChatBubble extends StatelessWidget {
                 },
                 styleSheet: _markdownStyle(context, textColor),
               ),
+              if (previewBuilder != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: previewBuilder!(textColor),
+                ),
+            ],
             const SizedBox(height: 3),
             Align(
               alignment: Alignment.centerRight,
