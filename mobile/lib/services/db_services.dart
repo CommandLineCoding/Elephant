@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -108,6 +108,21 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE messages ADD COLUMN delivered_at INTEGER');
     }
     if (oldVersion < 6) await _createChatPrefs(db);
+    if (oldVersion < 7) await _createStarred(db);
+  }
+
+  /// Messages the person starred, to find them again. Only on this phone.
+  Future<void> _createStarred(Database db) async {
+    await db.execute('''
+      CREATE TABLE starred_messages (
+        message_id TEXT PRIMARY KEY COLLATE NOCASE,
+        chat_id TEXT NOT NULL,
+        starred_at INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX starred_messages_chat ON starred_messages (chat_id)',
+    );
   }
 
   /// How each chat is arranged on this phone (pinned, archived, muted).
@@ -140,6 +155,7 @@ class DatabaseHelper {
   Future _createDB(Database db, int version) async {
     await _createCallLog(db);
     await _createChatPrefs(db);
+    await _createStarred(db);
     await db.execute('''
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -269,12 +285,72 @@ class DatabaseHelper {
     await db.delete('messages', where: 'chat_id = ?', whereArgs: [chatId]);
     await db.delete('call_log', where: 'chat_id = ?', whereArgs: [chatId]);
     await db.delete('chat_prefs', where: 'chat_id = ?', whereArgs: [chatId]);
+    await db.delete(
+      'starred_messages',
+      where: 'chat_id = ?',
+      whereArgs: [chatId],
+    );
     await db.delete('inbox', where: 'id = ?', whereArgs: [chatId]);
     await db.delete(
       'group_members',
       where: 'group_id = ?',
       whereArgs: [chatId],
     );
+  }
+
+  /// The IDs of every starred message.
+  Future<Set<String>> starredMessageIds() async {
+    final db = await instance.database;
+    final rows = await db.query('starred_messages', columns: ['message_id']);
+    return {for (final row in rows) (row['message_id'] as String)};
+  }
+
+  /// Stars or unstars a message of [chatId].
+  Future<void> setMessageStarred(
+    String chatId,
+    String messageId,
+    bool starred,
+  ) async {
+    final db = await instance.database;
+    if (!starred) {
+      await db.delete(
+        'starred_messages',
+        where: 'message_id = ?',
+        whereArgs: [messageId],
+      );
+      return;
+    }
+    await db.insert('starred_messages', {
+      'message_id': messageId,
+      'chat_id': chatId,
+      'starred_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Starred messages that are still in the cache, newest star first, with
+  /// when each was starred. Only [chatId]'s if given.
+  Future<List<({Map<String, dynamic> message, DateTime starredAt})>>
+  starredMessages({String? chatId}) async {
+    final db = await instance.database;
+    final rows = await db.rawQuery(
+      '''
+      SELECT m.*, s.starred_at AS starred_at
+      FROM starred_messages s
+      JOIN messages m ON m.id = s.message_id COLLATE NOCASE
+      ${chatId == null ? '' : 'WHERE s.chat_id = ?'}
+      ORDER BY s.starred_at DESC
+    ''',
+      [?chatId],
+    );
+    return [
+      for (final row in rows)
+        (
+          message: Map<String, dynamic>.from(row),
+          starredAt: DateTime.fromMillisecondsSinceEpoch(
+            row['starred_at'] as int,
+          ),
+        ),
+    ];
   }
 
   /// Every chat's pinned, archived and muted settings, by chat ID.
@@ -357,6 +433,7 @@ class DatabaseHelper {
     await db.delete('messages');
     await db.delete('call_log');
     await db.delete('chat_prefs');
+    await db.delete('starred_messages');
     await db.delete('inbox');
     await db.delete('action_queue');
     await db.delete('group_members');

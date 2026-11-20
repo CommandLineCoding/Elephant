@@ -11,6 +11,7 @@ import 'package:mobile/core/message_payload.dart';
 import 'package:mobile/core/poll.dart';
 import 'package:mobile/core/shared_contact.dart';
 import 'package:mobile/core/shared_location.dart';
+import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -132,6 +133,7 @@ class ActiveChatController extends ChangeNotifier {
           () => DatabaseHelper.instance.markMessageDeleted(message.id, at),
         );
       } else {
+        unawaited(StarredMessages.instance.forget(message.id));
         activeChat = activeChat.where((m) => m.id != message.id).toList();
         notifyListeners();
         await _remember(
@@ -204,6 +206,8 @@ class ActiveChatController extends ChangeNotifier {
       (m) => m.id.toLowerCase() == messageId.toLowerCase(),
     );
     if (index == -1 || activeChat[index].isDeleted) return;
+    // A deleted message can't stay in the starred list.
+    unawaited(StarredMessages.instance.forget(messageId));
     final updated = [...activeChat];
     updated[index] = updated[index].copyWith(content: '', deletedAt: at);
     activeChat = _withResolvedQuotes(updated);

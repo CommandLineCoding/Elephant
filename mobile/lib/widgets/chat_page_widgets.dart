@@ -135,6 +135,9 @@ class ChatBubble extends StatelessWidget {
   /// Draws a link preview under the message's text.
   final Widget Function(Color textColor)? previewBuilder;
 
+  /// Starred by the person looking at it.
+  final bool isStarred;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -152,6 +155,7 @@ class ChatBubble extends StatelessWidget {
     this.poll,
     this.cardBuilder,
     this.previewBuilder,
+    this.isStarred = false,
   });
 
   @override
@@ -275,6 +279,15 @@ class ChatBubble extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (isStarred) ...[
+                    Icon(
+                      Icons.star_rounded,
+                      size: 12,
+                      color: metaColor,
+                      semanticLabel: 'Starred',
+                    ),
+                    const SizedBox(width: 4),
+                  ],
                   if (message.isEdited) ...[
                     Text(
                       'edited',
