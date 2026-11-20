@@ -1,0 +1,5 @@
+- New: react to messages, make polls, pin messages and @mention people in groups
+- Share a contact or where you are, and see link previews made on the sender's phone
+- Delete a message for everyone, and see when it was delivered
+- Pin, archive and mute chats, and sort them into folders
+- Star messages to find them again, and unsent drafts are kept in each chat
