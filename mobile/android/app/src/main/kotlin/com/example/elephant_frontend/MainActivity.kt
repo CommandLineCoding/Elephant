@@ -13,6 +13,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var callAudio: CallAudio? = null
+    private var locationFinder: LocationFinder? = null
     private var callScreenOpen = false
     private val handler = Handler(Looper.getMainLooper())
 
@@ -55,6 +56,13 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        val finder = LocationFinder(this)
+        locationFinder = finder
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "elephant/location")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "current") finder.current(result) else result.notImplemented()
+            }
+
         val audio = CallAudio(applicationContext)
         callAudio = audio
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "elephant/call")
@@ -86,6 +94,16 @@ class MainActivity : FlutterActivity() {
                 }
                 result.success(null)
             }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        if (locationFinder?.onPermissionResult(requestCode, grantResults) != true) {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        }
     }
 
     override fun onDestroy() {

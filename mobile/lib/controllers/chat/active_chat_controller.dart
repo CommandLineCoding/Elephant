@@ -8,6 +8,7 @@ import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/core/message_payload.dart';
 import 'package:mobile/core/poll.dart';
 import 'package:mobile/core/shared_contact.dart';
+import 'package:mobile/core/shared_location.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -443,6 +444,12 @@ class ActiveChatController extends ChangeNotifier {
       silent: MessagePayload.actionKinds.contains(kind),
     );
     return error;
+  }
+
+  /// Shares [location] in the open chat.
+  Future<String?> sendLocation(SharedLocation location) {
+    final (data, text) = location.toPayload();
+    return sendPayload('location', data, text: text);
   }
 
   /// Shares [contact] in the open chat.
