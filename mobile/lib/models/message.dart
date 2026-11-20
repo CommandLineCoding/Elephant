@@ -57,6 +57,9 @@ class Message {
   final String syncStatus;
   final DateTime? editedAt;
 
+  /// When the sender deleted it for everyone. Its content is gone.
+  final DateTime? deletedAt;
+
   Message({
     required this.id,
     required this.senderId,
@@ -68,9 +71,13 @@ class Message {
     this.quotedMessage,
     this.syncStatus = 'synced',
     this.editedAt,
+    this.deletedAt,
   });
 
   bool get isEdited => editedAt != null;
+
+  /// Shown as "This message was deleted".
+  bool get isDeleted => deletedAt != null;
 
   /// Whether the server's edit time is newer than the cached one. The local copy
   /// is stored in milliseconds but the server sends microseconds, so comparing
@@ -145,6 +152,7 @@ class Message {
           : null,
       syncStatus: json['sync_status']?.toString() ?? 'synced',
       editedAt: _parseDate(json['edited_at']),
+      deletedAt: _parseDate(json['deleted_at']),
     );
   }
 
@@ -161,6 +169,9 @@ class Message {
       syncStatus: row['sync_status'] as String? ?? 'synced',
       editedAt: row['edited_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(row['edited_at'] as int)
+          : null,
+      deletedAt: row['deleted_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(row['deleted_at'] as int)
           : null,
     );
   }
@@ -182,6 +193,7 @@ class Message {
       'reply_to_id': replyToMessageId,
       'sync_status': syncStatus,
       'edited_at': editedAt?.millisecondsSinceEpoch,
+      'deleted_at': deletedAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -191,6 +203,7 @@ class Message {
     String? syncStatus,
     String? content,
     DateTime? editedAt,
+    DateTime? deletedAt,
     QuotedMessage? quotedMessage,
   }) {
     return Message(
@@ -204,6 +217,7 @@ class Message {
       quotedMessage: quotedMessage ?? this.quotedMessage,
       syncStatus: syncStatus ?? this.syncStatus,
       editedAt: editedAt ?? this.editedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
     );
   }
 }

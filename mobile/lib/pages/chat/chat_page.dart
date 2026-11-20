@@ -541,11 +541,16 @@ class _ChatPageState extends State<ChatPage> {
   Future<void> _showMessageActions(Message message) async {
     HapticFeedback.mediumImpact();
     final isLocked = message.content.startsWith(MessageEnvelope.lockedPrefix);
-    final canEdit = !isLocked && message.canEdit(_auth.currentUser?.id);
+    final canEdit =
+        !isLocked &&
+        !message.isDeleted &&
+        message.canEdit(_auth.currentUser?.id);
     final links = isLocked ? const <String>[] : linksIn(message.text);
 
     // Nobody to react to once you've blocked them, or if it can't be read.
-    final canReact = !isLocked && !_isBlocked && !message.isPending;
+    final isDeleted = message.isDeleted;
+    final canReact =
+        !isLocked && !isDeleted && !_isBlocked && !message.isPending;
     final canPin = canReact && _chat.canPin;
     final isPinned = _chat.meta.isPinned(message.id);
     final myReaction = _chat.meta.myReactionTo(message.id);
@@ -575,24 +580,25 @@ class _ChatPageState extends State<ChatPage> {
         ],
       ),
       actions: [
-        const SheetAction(
-          icon: Icons.reply_rounded,
-          label: 'Reply',
-          value: 'reply',
-        ),
+        if (!isDeleted)
+          const SheetAction(
+            icon: Icons.reply_rounded,
+            label: 'Reply',
+            value: 'reply',
+          ),
         if (canPin)
           SheetAction(
             icon: isPinned ? Icons.push_pin : Icons.push_pin_outlined,
             label: isPinned ? 'Unpin' : 'Pin',
             value: isPinned ? 'unpin' : 'pin',
           ),
-        if (!isLocked)
+        if (!isLocked && !isDeleted)
           const SheetAction(
             icon: Icons.copy_rounded,
             label: 'Copy text',
             value: 'copy',
           ),
-        if (!isLocked)
+        if (!isLocked && !isDeleted)
           const SheetAction(
             icon: Icons.shortcut_rounded,
             label: 'Forward',
@@ -609,6 +615,13 @@ class _ChatPageState extends State<ChatPage> {
             icon: Icons.edit_outlined,
             label: 'Edit',
             value: 'edit',
+          ),
+        if (!message.isPending)
+          const SheetAction(
+            icon: Icons.delete_outline_rounded,
+            label: 'Delete',
+            value: 'delete',
+            destructive: true,
           ),
       ],
     );
@@ -650,7 +663,48 @@ class _ChatPageState extends State<ChatPage> {
       case 'edit':
         _startEdit(message);
         break;
+      case 'delete':
+        await _deleteMessage(message);
+        break;
     }
+  }
+
+  /// Asks how to delete [message]: for yourself, or (for your own) everyone.
+  Future<void> _deleteMessage(Message message) async {
+    final mine = _isMine(message) && !message.isDeleted;
+    final choice = await showActionSheet<String>(
+      context,
+      header: Padding(
+        padding: const EdgeInsets.fromLTRB(Insets.xl, 0, Insets.xl, Insets.sm),
+        child: Text(
+          'Delete message?',
+          style: context.text.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+      actions: [
+        const SheetAction(
+          icon: Icons.delete_outline_rounded,
+          label: 'Delete for me',
+          value: 'me',
+          destructive: true,
+        ),
+        if (mine)
+          const SheetAction(
+            icon: Icons.delete_forever_outlined,
+            label: 'Delete for everyone',
+            value: 'everyone',
+            destructive: true,
+          ),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    final error = await _chat.deleteMessage(
+      message,
+      forEveryone: choice == 'everyone',
+    );
+    if (error != null && mounted) showSnack(context, error, isError: true);
   }
 
   bool get _isBlocked =>
@@ -667,7 +721,7 @@ class _ChatPageState extends State<ChatPage> {
     final byId = {for (final m in shown) m.id: m};
     return [
       for (final id in chat.meta.pinned.reversed)
-        if (byId[id] != null) byId[id]!,
+        if (byId[id] != null && !byId[id]!.isDeleted) byId[id]!,
     ];
   }
 
@@ -1194,7 +1248,9 @@ class _ChatPageState extends State<ChatPage> {
                   onQuoteTap: quote != null
                       ? () => _jumpToMessage(quote.id)
                       : null,
-                  reactions: chat.meta.reactionsOn(msg.id),
+                  reactions: msg.isDeleted
+                      ? const []
+                      : chat.meta.reactionsOn(msg.id),
                   onReactionsTap: () => _showReactions(msg),
                   poll: _pollViewFor(msg, chat),
                   cardBuilder: _cardFor(msg),

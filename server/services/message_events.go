@@ -51,6 +51,38 @@ func (h *WSHub) PublishMessageEdit(ctx context.Context, msg *models.Message) {
 	h.sendToUsers(members, msg.SenderID, bytes)
 }
 
+// PublishMessageDeleted tells the other people in a conversation that one
+// message was deleted for everyone, so their open chat and chat list show
+// "This message was deleted" without a reload. The deleter already has the
+// change. Anyone offline sees it when they next load the conversation.
+func (h *WSHub) PublishMessageDeleted(ctx context.Context, msg *models.Message) {
+	event := map[string]interface{}{
+		"type":       "message_deleted",
+		"message_id": msg.ID,
+		"sender_id":  msg.SenderID,
+		"deleted_at": msg.DeletedAt,
+	}
+
+	if msg.GroupID == "" {
+		if blockedBy(ctx, msg.ReceiverID, msg.SenderID) {
+			return
+		}
+		event["receiver_id"] = msg.ReceiverID
+		bytes, _ := json.Marshal(event)
+		h.sendToUser(msg.ReceiverID, bytes)
+		return
+	}
+
+	event["group_id"] = msg.GroupID
+	bytes, _ := json.Marshal(event)
+	members, err := groupMembers(ctx, msg.GroupID)
+	if err != nil {
+		log.Printf("Couldn't tell group members about a deleted message: %v", err)
+		return
+	}
+	h.sendToUsers(members, msg.SenderID, bytes)
+}
+
 // PublishMessagesDeleted tells the other person in a direct conversation that
 // senderID deleted every message they sent to them up to `before`, so their
 // app can remove those messages. Anyone offline sees the change when they next
