@@ -8,6 +8,7 @@ import 'package:mobile/widgets/ui/surfaces.dart';
 import 'core/constants.dart';
 import 'services/auth_service.dart';
 import 'services/push/push_service.dart';
+import 'services/screen_security.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/home/home_page.dart';
 import 'controllers/auth_state.dart';
@@ -34,6 +35,8 @@ Future<void> main(List<String> args) async {
   // A push can start the app without anyone opening it. Then there's no UI to
   // build: the push service handles the message and that's all.
   if (args.contains(PushService.backgroundArg)) return;
+
+  await ScreenSecurity.load();
 
   final themeProvider = ThemeProvider();
   await themeProvider.load();
