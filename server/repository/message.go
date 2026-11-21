@@ -41,7 +41,9 @@ func (r *MessageRepository) CreateMessage(ctx context.Context, senderID, receive
 func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB string, before time.Time, limit int) ([]models.Message, error) {
 	query := `
 		SELECT 
-			m.id, m.sender_id, m.receiver_id, m.content, m.created_at, m.is_read, m.edited_at, m.reply_to_message_id,
+			m.id, m.sender_id, m.receiver_id, m.content, m.created_at,
+			(m.is_read AND (m.sender_id <> $1::uuid OR COALESCE((SELECT us.read_receipts FROM user_settings us WHERE us.user_id = m.receiver_id), TRUE))) AS is_read,
+			m.edited_at, m.reply_to_message_id,
 			q.sender_id AS quoted_sender_id, q.content AS quoted_content, m.deleted_at, m.delivered_at
 		FROM messages m
 		LEFT JOIN messages q ON m.reply_to_message_id = q.id
@@ -102,7 +104,8 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 				content,
 				sender_id,
 				created_at,
-				is_read,
+				-- Messages the reader has set not to confirm read don't show as read to the sender.
+				(is_read AND (sender_id <> $1::uuid OR COALESCE((SELECT us.read_receipts FROM user_settings us WHERE us.user_id = messages.receiver_id), TRUE))) AS is_read,
 				NULL::UUID AS group_id,
 				deleted_at IS NOT NULL AS deleted
 			FROM messages

@@ -96,6 +96,18 @@ func (h *WSHub) loader() contactLoader {
 	return h.contacts
 }
 
+// settingsOf returns a person's privacy settings. An error means they could
+// not be loaded; callers then share nothing rather than guess.
+func (h *WSHub) settingsOf(ctx context.Context, userID string) (repository.UserSettings, error) {
+	h.mu.RLock()
+	load := h.settings
+	h.mu.RUnlock()
+	if load == nil {
+		return repository.DefaultUserSettings(), nil
+	}
+	return load(ctx, userID)
+}
+
 // contactCacheTTL is how long a connected user's contact list is reused to
 // answer status requests. Presence changes are always sent using a fresh list.
 var contactCacheTTL = 20 * time.Second
@@ -111,6 +123,17 @@ func loadContactsFromDB(ctx context.Context, userID string) ([]string, error) {
 	return repository.NewContactRepository().GetContactIDs(ctx, userID)
 }
 
+// settingsLoader returns what a person lets others see and do.
+type settingsLoader func(ctx context.Context, userID string) (repository.UserSettings, error)
+
+func loadSettingsFromDB(ctx context.Context, userID string) (repository.UserSettings, error) {
+	// Tests that run the hub without a database have no settings to load.
+	if config.DB == nil {
+		return repository.DefaultUserSettings(), nil
+	}
+	return repository.NewUserSettingsRepository().Get(ctx, userID)
+}
+
 type WSHub struct {
 	clients    map[string]*WSClient
 	Register   chan *WSClient
@@ -118,6 +141,10 @@ type WSHub struct {
 	mu         sync.RWMutex
 
 	contacts contactLoader
+
+	// settings is nil in tests that run the hub without a database; then
+	// everyone has the default settings.
+	settings settingsLoader
 }
 
 var Hub = &WSHub{
@@ -125,6 +152,7 @@ var Hub = &WSHub{
 	Register:   make(chan *WSClient),
 	Unregister: make(chan *WSClient),
 	contacts:   loadContactsFromDB,
+	settings:   loadSettingsFromDB,
 }
 
 // clientFor returns the user's current connection, or nil if they're offline.
@@ -181,6 +209,15 @@ func (h *WSHub) broadcastStatus(userID string, online bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	// Someone who hides their status isn't announced, and neither is a person
+	// whose settings can't be loaded.
+	if settings, err := h.settingsOf(ctx, userID); err != nil {
+		log.Printf("Presence update skipped, couldn't load settings: %v", err)
+		return
+	} else if settings.OnlineStatus == repository.AudienceNobody {
+		return
+	}
+
 	contacts, err := h.loader()(ctx, userID)
 	if err != nil {
 		log.Printf("Presence update skipped, couldn't load contacts: %v", err)
@@ -232,6 +269,29 @@ func (h *WSHub) canSeeStatus(viewer *WSClient, target string) bool {
 
 	_, ok := viewer.contacts[strings.ToLower(target)]
 	return ok
+}
+
+// statusVisible reports whether viewer may be told that target is online: it
+// follows target's online-status setting. Nobody means no one; contacts means
+// people who share a chat or a group; everyone means anyone who isn't blocked
+// either way. Settings that can't be loaded mean no.
+func (h *WSHub) statusVisible(viewer *WSClient, target string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	settings, err := h.settingsOf(ctx, target)
+	if err != nil {
+		log.Printf("Status request refused, couldn't load settings: %v", err)
+		return false
+	}
+	switch settings.OnlineStatus {
+	case repository.AudienceNobody:
+		return false
+	case repository.AudienceEveryone:
+		return !blockedBy(ctx, target, viewer.UserID) && !blockedBy(ctx, viewer.UserID, target)
+	default:
+		return h.canSeeStatus(viewer, target)
+	}
 }
 
 func (h *WSHub) Run() {
@@ -352,7 +412,7 @@ func (c *WSClient) ReadPump() {
 		case "request_status":
 			// Strangers are told "offline", whatever the truth, so asking
 			// can't be used to find out when someone is around.
-			online := Hub.canSeeStatus(c, incoming.ReceiverID) && Hub.clientFor(incoming.ReceiverID) != nil
+			online := Hub.statusVisible(c, incoming.ReceiverID) && Hub.clientFor(incoming.ReceiverID) != nil
 
 			resp := map[string]interface{}{
 				"type":    "user_status",
@@ -388,6 +448,12 @@ func (c *WSClient) ReadPump() {
 			incoming.Timestamp = time.Now()
 			outboundBytes, _ := json.Marshal(incoming)
 
+			// Whether to tell the others that this was read. The messages are
+			// still marked read for this person either way. If their setting
+			// can't be loaded, nothing is sent.
+			settings, serr := Hub.settingsOf(context.Background(), c.UserID)
+			shareRead := serr == nil && settings.ReadReceipts
+
 			if incoming.GroupID != "" {
 				go func(groupID, userID string) {
 					err := msgRepo.UpdateGroupLastRead(context.Background(), groupID, userID)
@@ -398,7 +464,7 @@ func (c *WSClient) ReadPump() {
 
 				groupRepo := repository.NewGroupRepository()
 				members, err := groupRepo.GetGroupMembers(context.Background(), incoming.GroupID)
-				if err == nil {
+				if err == nil && shareRead {
 					Hub.sendToUsers(members, c.UserID, outboundBytes)
 				}
 			} else if !blockedBy(context.Background(), incoming.ReceiverID, c.UserID) {
@@ -409,7 +475,9 @@ func (c *WSClient) ReadPump() {
 					}
 				}(c.UserID, incoming.ReceiverID)
 
-				Hub.sendToUser(incoming.ReceiverID, outboundBytes)
+				if shareRead {
+					Hub.sendToUser(incoming.ReceiverID, outboundBytes)
+				}
 			}
 
 		case "chat":

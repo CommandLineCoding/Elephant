@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/pages/settings/privacy_security.dart';
 import 'package:mobile/services/app_lock.dart';
+import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/themes/theme_provider.dart';
 import 'package:mobile/widgets/app_lock_gate.dart';
@@ -10,6 +11,17 @@ import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'chat_harness.dart';
+
+/// The settings screen asks the server for the privacy settings; here it has
+/// nothing to say.
+class QuietServer implements PrivacyApi {
+  @override
+  Future<Map<String, dynamic>> load() async => {};
+
+  @override
+  Future<Map<String, dynamic>> save(Map<String, dynamic> change) async =>
+      change;
+}
 
 class FakeAuthenticator implements Authenticator {
   bool supported = true;
@@ -371,6 +383,8 @@ void main() {
       final t = newLock();
       AppLock.instance = t.lock;
       addTearDown(() => AppLock.instance = AppLock());
+      PrivacySettings.instance = PrivacySettings(api: QuietServer());
+      addTearDown(() => PrivacySettings.instance = PrivacySettings());
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(800, 2400);
       addTearDown(tester.view.reset);

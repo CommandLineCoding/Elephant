@@ -17,6 +17,8 @@ func UserRoute(router chi.Router) {
 	router.Post("/me/push", controllers.HandlePushRegister)
 	router.Delete("/me/push", controllers.HandlePushUnregister)
 	router.Get("/me/blocked", controllers.HandleListBlocked)
+	router.Get("/me/settings", controllers.HandleGetSettings)
+	router.Patch("/me/settings", controllers.HandleUpdateSettings)
 	router.Get("/me/sessions", controllers.HandleListSessions)
 	router.Delete("/me/sessions", controllers.HandleDeleteOtherSessions)
 	router.Delete("/me/sessions/{id}", controllers.HandleDeleteSession)

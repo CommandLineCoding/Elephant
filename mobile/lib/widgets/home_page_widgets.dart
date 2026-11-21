@@ -5,6 +5,7 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/chat_prefs.dart';
 import 'package:mobile/services/drafts.dart';
+import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -296,13 +297,22 @@ class DeliveryTick extends StatelessWidget {
         ),
       );
     }
-    return Semantics(
-      label: isRead ? 'Read' : (isDelivered ? 'Delivered' : 'Sent'),
-      child: Icon(
-        isRead || isDelivered ? Icons.done_all_rounded : Icons.done_rounded,
-        size: size,
-        color: isRead ? (readColor ?? context.tokens.readTick) : color,
-      ),
+    // With read receipts off, a read message shows as delivered: you don't
+    // see who read yours, and nobody sees that you read theirs.
+    return ListenableBuilder(
+      listenable: PrivacySettings.instance,
+      builder: (context, _) {
+        final read = isRead && PrivacySettings.instance.readReceipts;
+        final delivered = isDelivered || isRead;
+        return Semantics(
+          label: read ? 'Read' : (delivered ? 'Delivered' : 'Sent'),
+          child: Icon(
+            delivered ? Icons.done_all_rounded : Icons.done_rounded,
+            size: size,
+            color: read ? (readColor ?? context.tokens.readTick) : color,
+          ),
+        );
+      },
     );
   }
 }

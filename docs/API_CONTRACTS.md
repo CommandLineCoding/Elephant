@@ -77,6 +77,8 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | POST | [/api/users/{id}/block](#7-block-a-user) | Yes | Block a user |
 | DELETE | [/api/users/{id}/block](#8-unblock-a-user) | Yes | Unblock a user |
 | GET | [/api/users/me/blocked](#9-list-blocked-users) | Yes | List the people you blocked |
+| GET | [/api/users/me/settings](#12-privacy-settings) | Yes | Get your privacy settings |
+| PATCH | [/api/users/me/settings](#12-privacy-settings) | Yes | Change your privacy settings |
 | GET | [/api/users/me/sessions](#11-signed-in-devices) | Yes | List the devices you are signed in on |
 | DELETE | [/api/users/me/sessions/{id}](#11-signed-in-devices) | Yes | Sign one device out |
 | DELETE | [/api/users/me/sessions](#11-signed-in-devices) | Yes | Sign out every device but this one |
@@ -820,6 +822,40 @@ Signs out every device except the one that is asking.
 ```
 
 `400 Bad Request` (`"Sign in again to use this"`) for an access token issued before sessions existed, which doesn't say which device is the current one.
+
+### 12. Privacy settings
+
+What a person lets others see and do. **The server enforces every setting**, so a modified app can't get around them. Someone who never changed anything has the defaults, which are how the server behaved before there were settings.
+
+- **URL:** `/api/users/me/settings`
+- **Authentication Required:** `YES`
+
+| Field | Values | Default | What it does |
+|---|---|---|---|
+| `online_status` | `everyone`, `contacts`, `nobody` | `contacts` | Who is told you are online (`user_status` events and `request_status` answers). `contacts` is people who share a chat or a group with you; `everyone` is anyone you haven't blocked and who hasn't blocked you; with `nobody` everyone is told you are offline. |
+| `read_receipts` | `true`, `false` | `true` | When `false`, your `read_receipt` events aren't forwarded, and the people who sent you messages don't see them as read in the history or the chat list. You still see which messages you read. |
+| `group_adds` | `everyone`, `contacts`, `nobody` | `everyone` | Who can add you to a group. [Add Member](#8-add-member-to-group) answers `403` for someone who isn't allowed. |
+
+If the server can't load someone's settings it shares nothing: they are reported offline and no read receipt is forwarded.
+
+#### `GET /api/users/me/settings`
+
+```json
+{
+  "success": true,
+  "data": { "online_status": "contacts", "read_receipts": true, "group_adds": "everyone" }
+}
+```
+
+#### `PATCH /api/users/me/settings`
+
+Send only the fields to change. The reply is all the settings after the change, in the same shape as `GET`.
+
+```json
+{ "online_status": "nobody", "read_receipts": false }
+```
+
+`400 Bad Request` for a body that isn't an object, or an `online_status` or `group_adds` that isn't one of the three values. Nothing is changed.
 
 ---
 
@@ -1838,9 +1874,13 @@ Adding a user who is already a member is a no-op that still returns `200`.
 
 `"Missing user target value"`.
 
+#### `403 Forbidden`
+
+The person's [privacy setting](#12-privacy-settings) doesn't allow it: `"This person doesn't allow being added to groups."`, or `"This person only allows people they chat with to add them to groups."`. Adding yourself is always allowed.
+
 #### `500 Internal Server Error`
 
-Returned when the user doesn't exist:
+Returned when the user doesn't exist (or their settings couldn't be checked, with `"Couldn't check whether this person can be added."`):
 
 ```json
 {

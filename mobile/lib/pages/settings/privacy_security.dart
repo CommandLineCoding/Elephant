@@ -3,6 +3,7 @@ import 'package:mobile/core/link_preview.dart';
 import 'package:mobile/pages/settings/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/app_lock.dart';
+import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/services/screen_security.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -26,6 +27,7 @@ class _PrivacySecuritySettingsPageState
   @override
   void initState() {
     super.initState();
+    PrivacySettings.instance.refresh();
     LinkPreviewPrefs.isEnabled().then((on) {
       if (mounted) setState(() => _linkPreviews = on);
     });
@@ -34,6 +36,46 @@ class _PrivacySecuritySettingsPageState
   Future<void> _setLinkPreviews(bool on) async {
     setState(() => _linkPreviews = on);
     await LinkPreviewPrefs.setEnabled(on);
+  }
+
+  /// Runs a settings change and says why if the server refused it.
+  Future<void> _save(Future<void> Function() change) async {
+    try {
+      await change();
+    } catch (e) {
+      if (!mounted) return;
+      showSnack(
+        context,
+        ApiService.errorMessage(e, fallback: 'Couldn\'t save that.'),
+        isError: true,
+      );
+    }
+  }
+
+  Future<void> _chooseAudience({
+    required String title,
+    required Audience current,
+    required Future<void> Function(Audience) save,
+  }) async {
+    final chosen = await showDialog<Audience>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: Text(title),
+        children: [
+          for (final a in Audience.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, a),
+              child: Row(
+                children: [
+                  Expanded(child: Text(a.label)),
+                  if (a == current) const Icon(Icons.check_rounded),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (chosen != null && chosen != current) await _save(() => save(chosen));
   }
 
   Future<void> _setAppLock(bool on) async {
@@ -251,6 +293,52 @@ class _PrivacySecuritySettingsPageState
                   ),
                 ),
               ],
+            ),
+            const SectionLabel('Who can see you'),
+            ListenableBuilder(
+              listenable: PrivacySettings.instance,
+              builder: (context, _) {
+                final settings = PrivacySettings.instance;
+                return Section(
+                  children: [
+                    ElephantTile(
+                      icon: Icons.visibility_outlined,
+                      title: 'Online status',
+                      subtitle: settings.onlineStatus.label,
+                      onTap: () => _chooseAudience(
+                        title: 'Who can see you online',
+                        current: settings.onlineStatus,
+                        save: settings.setOnlineStatus,
+                      ),
+                    ),
+                    ElephantTile(
+                      icon: Icons.done_all_rounded,
+                      title: 'Read receipts',
+                      subtitle: settings.readReceipts
+                          ? 'People see when you have read their messages, and '
+                                'you see when they read yours.'
+                          : 'You don\'t tell people you read their messages, '
+                                'and you don\'t see when they read yours.',
+                      showChevron: false,
+                      trailing: Switch(
+                        value: settings.readReceipts,
+                        onChanged: (v) =>
+                            _save(() => settings.setReadReceipts(v)),
+                      ),
+                    ),
+                    ElephantTile(
+                      icon: Icons.group_add_outlined,
+                      title: 'Who can add you to groups',
+                      subtitle: settings.groupAdds.label,
+                      onTap: () => _chooseAudience(
+                        title: 'Who can add you to groups',
+                        current: settings.groupAdds,
+                        save: settings.setGroupAdds,
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             const SectionLabel('People'),
             Section(
