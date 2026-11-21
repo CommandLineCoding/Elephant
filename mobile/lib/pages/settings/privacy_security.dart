@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile/core/link_preview.dart';
 import 'package:mobile/pages/settings/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
+import 'package:mobile/services/screen_security.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -153,6 +154,43 @@ class _PrivacySecuritySettingsPageState
                   trailing: Switch(
                     value: _linkPreviews,
                     onChanged: _setLinkPreviews,
+                  ),
+                ),
+              ],
+            ),
+            const SectionLabel('On this phone'),
+            Section(
+              children: [
+                ValueListenableBuilder<bool>(
+                  valueListenable: ScreenSecurity.screenSecure,
+                  builder: (context, on, _) => ElephantTile(
+                    icon: Icons.screen_lock_portrait_rounded,
+                    title: 'Screen security',
+                    subtitle: on
+                        ? 'Screenshots and screen recordings are blocked, and the '
+                              'app is hidden in the recent-apps list.'
+                        : 'Allow screenshots and show the app in the recent-apps list.',
+                    showChevron: false,
+                    trailing: Switch(
+                      value: on,
+                      onChanged: ScreenSecurity.setScreenSecure,
+                    ),
+                  ),
+                ),
+                ValueListenableBuilder<bool>(
+                  valueListenable: ScreenSecurity.incognitoKeyboard,
+                  builder: (context, on, _) => ElephantTile(
+                    icon: Icons.keyboard_alt_outlined,
+                    title: 'Incognito keyboard',
+                    subtitle: on
+                        ? 'Your keyboard is asked not to learn from what you type '
+                              'in the message box.'
+                        : 'Your keyboard may learn words you type in the message box.',
+                    showChevron: false,
+                    trailing: Switch(
+                      value: on,
+                      onChanged: ScreenSecurity.setIncognitoKeyboard,
+                    ),
                   ),
                 ),
               ],

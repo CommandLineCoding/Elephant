@@ -12,6 +12,7 @@ import 'mention_widgets.dart';
 import 'poll_widgets.dart';
 import 'reaction_widgets.dart';
 import 'package:mobile/models/message.dart';
+import 'package:mobile/services/screen_security.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/home_page_widgets.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
@@ -838,62 +839,68 @@ class _ChatComposerState extends State<ChatComposer> {
                   ),
                 ],
                 Expanded(
-                  child: TextField(
-                    controller: widget.controller,
-                    focusNode: widget.focusNode,
-                    keyboardType: TextInputType.multiline,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 1,
-                    maxLines: 6,
-                    style: context.text.bodyLarge?.copyWith(
-                      color: over
-                          ? context.colors.error
-                          : context.colors.onSurface,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: widget.isEditing ? 'Edit message' : 'Message',
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 13,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: ScreenSecurity.incognitoKeyboard,
+                    builder: (context, incognito, _) => TextField(
+                      controller: widget.controller,
+                      focusNode: widget.focusNode,
+                      enableIMEPersonalizedLearning: !incognito,
+                      keyboardType: TextInputType.multiline,
+                      textCapitalization: TextCapitalization.sentences,
+                      minLines: 1,
+                      maxLines: 6,
+                      style: context.text.bodyLarge?.copyWith(
+                        color: over
+                            ? context.colors.error
+                            : context.colors.onSurface,
                       ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(Radii.xl),
-                        borderSide: BorderSide(color: tokens.hairline),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(Radii.xl),
-                        borderSide: BorderSide(
-                          color: over ? context.colors.error : tokens.hairline,
+                      decoration: InputDecoration(
+                        hintText: widget.isEditing ? 'Edit message' : 'Message',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 18,
+                          vertical: 13,
                         ),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(Radii.xl),
-                        borderSide: BorderSide(
-                          color: over
-                              ? context.colors.error
-                              : context.colors.onSurfaceVariant,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Radii.xl),
+                          borderSide: BorderSide(color: tokens.hairline),
                         ),
-                      ),
-                      suffixIcon: nearLimit
-                          ? Padding(
-                              padding: const EdgeInsets.only(right: 12),
-                              child: Center(
-                                widthFactor: 1,
-                                child: Text(
-                                  '${widget.byteLimit - bytes}',
-                                  style: context.text.labelMedium?.copyWith(
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
-                                    color: over
-                                        ? context.colors.error
-                                        : context.colors.onSurfaceVariant,
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Radii.xl),
+                          borderSide: BorderSide(
+                            color: over
+                                ? context.colors.error
+                                : tokens.hairline,
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Radii.xl),
+                          borderSide: BorderSide(
+                            color: over
+                                ? context.colors.error
+                                : context.colors.onSurfaceVariant,
+                          ),
+                        ),
+                        suffixIcon: nearLimit
+                            ? Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Center(
+                                  widthFactor: 1,
+                                  child: Text(
+                                    '${widget.byteLimit - bytes}',
+                                    style: context.text.labelMedium?.copyWith(
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                      color: over
+                                          ? context.colors.error
+                                          : context.colors.onSurfaceVariant,
+                                    ),
                                   ),
                                 ),
-                              ),
-                            )
-                          : null,
+                              )
+                            : null,
+                      ),
                     ),
                   ),
                 ),

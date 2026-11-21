@@ -19,7 +19,21 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Block capture from the first frame, before Flutter has started, so
+        // the recent-apps preview never shows a chat when the person asked for
+        // screen security. (shared_preferences keeps its keys under "flutter.")
+        val prefs = getSharedPreferences("FlutterSharedPreferences", MODE_PRIVATE)
+        setSecure(prefs.getBoolean("flutter.screen_security", false))
         showIfCalling(intent)
+    }
+
+    /** Blocks screenshots, screen recording and the recent-apps preview. */
+    private fun setSecure(on: Boolean) {
+        if (on) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -61,6 +75,16 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "elephant/location")
             .setMethodCallHandler { call, result ->
                 if (call.method == "current") finder.current(result) else result.notImplemented()
+            }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "elephant/window")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "secure") {
+                    setSecure(call.argument<Boolean>("on") == true)
+                    result.success(null)
+                } else {
+                    result.notImplemented()
+                }
             }
 
         val audio = CallAudio(applicationContext)
