@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../models/group.dart';
 import '../../services/api_services.dart';
@@ -15,6 +16,54 @@ class GroupDetailsController extends ChangeNotifier {
   final Set<String> _fetchedGroups = {};
 
   bool hasFetchedGroup(String groupId) => _fetchedGroups.contains(groupId);
+
+  /// Each loaded group's description and whether only admins may post.
+  final Map<String, Group> _info = {};
+
+  /// The group's description, or an empty string if it has none or isn't loaded.
+  String descriptionOf(String groupId) => _info[groupId]?.description ?? '';
+
+  /// Whether only admins may send messages in the group.
+  bool adminsOnlyIn(String groupId) => _info[groupId]?.adminsOnly ?? false;
+
+  /// Loads the group's description and posting rule. Keeps what it has if that
+  /// fails.
+  Future<void> fetchGroupInfo(String groupId) async {
+    try {
+      final res = await _api.getGroup(groupId);
+      _info[groupId] = Group.fromJson(ApiService.dataMap(res.data));
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error fetching group info: $e");
+    }
+  }
+
+  /// Sets a group's details without asking the server.
+  @visibleForTesting
+  void debugSetInfo(Group group) => _info[group.id] = group;
+
+  /// The group changed (an admin edited it), so look again.
+  Future<void> refreshInfo(String groupId) => fetchGroupInfo(groupId);
+
+  /// Saves a new description and/or posting rule. Returns an error message, or
+  /// null on success.
+  Future<String?> updateGroup(
+    String groupId, {
+    String? description,
+    bool? adminsOnly,
+  }) async {
+    try {
+      final res = await _api.updateGroup(groupId, {
+        if (description != null) 'description': description.trim(),
+        if (adminsOnly != null) 'admins_only': adminsOnly,
+      });
+      _info[groupId] = Group.fromJson(ApiService.dataMap(res.data));
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(e, fallback: "Couldn't change the group.");
+    }
+  }
 
   String nameFor(String userId, {String fallback = 'Member'}) {
     return userCache[userId.trim().toLowerCase()] ?? fallback;
@@ -34,6 +83,7 @@ class GroupDetailsController extends ChangeNotifier {
     }
     isLoadingDetails = true;
     notifyListeners();
+    unawaited(fetchGroupInfo(groupId));
 
     try {
       final res = await _api.getGroupMembers(groupId);
@@ -126,6 +176,7 @@ class GroupDetailsController extends ChangeNotifier {
     currentGroupMembers = [];
     _currentGroupId = null;
     userCache.clear();
+    _info.clear();
     _fetchedGroups.clear();
     isLoadingDetails = false;
     notifyListeners();

@@ -284,6 +284,10 @@ class ApiService {
     return _dio.post("/groups", data: {"name": name});
   }
 
+  /// Changes a group's description and/or who may post (admins only).
+  Future<Response> updateGroup(String groupId, Map<String, dynamic> changes) =>
+      _dio.patch("/groups/$groupId", data: changes);
+
   Future<Response> renameGroup(String groupId, String name) {
     return _dio.patch("/groups/$groupId", data: {"name": name});
   }

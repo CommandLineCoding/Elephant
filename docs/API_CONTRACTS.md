@@ -956,7 +956,7 @@ Persists the message and delivers it live to online recipients. Offline recipien
 - `message_id` is optional. If you send a client-generated UUID, the server uses it as the stored message ID, which lets offline-queued sends stay idempotent with the local DB. If you omit it, the server generates one.
 - `reply_to_message_id` is optional.
 - `silent` is optional (default `false`). Set it for a message that only carries an [action](#structured-messages) such as a reaction. The server stores it and relays it (with `silent: true`), but it is not the chat's last message in [`/api/messages/conversations`](#3-conversations), doesn't count as unread, and sends no [push ping](#the-ping). It still appears in history. The flag is the only thing the server learns about an action: not what it is. The REST [`POST /api/messages`](#1-send-message) doesn't accept it.
-- For a group, send `group_id` instead of `receiver_id`.
+- For a group, send `group_id` instead of `receiver_id`. The sender must be a member, or the message is dropped without a reply. If the group is [admins-only](#7-update-group-details), only an admin's message is accepted, apart from actions (a reaction, a vote or a pin), which members can still send. The server checks that an action really is one: its text must end with the hidden action line, with a `kind` of `reaction`, `vote` or `pin`.
 
 #### 2. Read Receipt
 
@@ -1156,6 +1156,17 @@ Sent to the sender of direct messages when they reach the recipient's phone. The
   "message_ids": ["cccccccc-cccc-cccc-cccc-cccccccccccc"],
   "receiver_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
   "delivered_at": "<Timestamp>"
+}
+```
+
+#### 11. Group Updated
+
+Sent to the live members of a group when an admin changes its name, description or who may post ([`PATCH /api/groups/{id}`](#7-update-group-details)), including the admin who made the change. It says only which group; load [the group](#3-get-group-by-id) for the new details.
+
+```json
+{
+  "type": "group_updated",
+  "group_id": "dddddddd-dddd-dddd-dddd-dddddddddddd"
 }
 ```
 
@@ -1651,10 +1662,14 @@ Returns the groups you belong to, newest first.
     "id": "<group_id>",
     "name": "<group_name>",
     "created_by": "<creator_id>",
-    "created_at": "<Timestamp>"
+    "created_at": "<Timestamp>",
+    "description": "",
+    "admins_only": false
   }
 }
 ```
+
+`description` is up to 500 characters, set by an admin. With `admins_only` true only admins may send messages (see [Update Group Details](#7-update-group-details)). The list from `GET /api/groups` has the same two fields.
 
 #### `404 Not Found`
 
@@ -1758,31 +1773,48 @@ Members are listed admins first, then by join date.
 
 ### 7. Update Group Details
 
+Changes a group's name, description, and whether only admins may send messages. Send only what to change; at least one is needed.
+
 - **URL:** `/api/groups/{id}`
 - **Method:** `PATCH`
 - **Authentication Required:** `YES` (admin)
-- **curl:** `curl -X PATCH "http://HOST:PORT/api/groups/{id}" -H "Content-Type: application/json" -H "Authorization: Bearer <access_token>" -d '{ "name": "<new_group_name>" }'`
+- **curl:** `curl -X PATCH "http://HOST:PORT/api/groups/{id}" -H "Content-Type: application/json" -H "Authorization: Bearer <access_token>" -d '{ "description": "Weekend rides" }'`
 
 #### Request Body
 
 ```json
 {
-  "name": "<new_group_name>"
+  "name": "<new_group_name>",
+  "description": "Weekend rides, every Sunday.",
+  "admins_only": true
 }
 ```
 
+- `name`: 1 to 100 characters.
+- `description`: up to 500 characters; an empty string clears it.
+- `admins_only`: when `true`, only admins may send messages. Members can still react and vote. The server drops a member's message and anyone's message from outside the group, without telling the sender; apps hide the message box instead.
+
 #### `200 OK`
+
+The group, as in [Get Group by ID](#3-get-group-by-id). The group's live members get a `group_updated` WebSocket event (see [Server → Client messages](#3-server-to-client-messages)) and load the details again.
 
 ```json
 {
   "success": true,
-  "data": "Group details updated successfully"
+  "data": {
+    "id": "<group id>",
+    "name": "Sunday Ride",
+    "created_by": "<user id>",
+    "created_at": "<Timestamp>",
+    "description": "Weekend rides, every Sunday.",
+    "admins_only": true
+  }
 }
 ```
 
 #### `400 Bad Request`
 
-`"Invalid group name"`.
+`"Expected a name, a description or admins_only"`, `"A group name has 1 to 100 characters"` or `"A description can be at most 500 characters"`. Nothing is changed.
 
 ### 8. Add Member to Group
 

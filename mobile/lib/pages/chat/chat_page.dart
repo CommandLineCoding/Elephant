@@ -13,6 +13,7 @@ import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/pages/chat/forward_page.dart';
+import 'package:mobile/widgets/admins_only_banner.dart';
 import 'package:mobile/widgets/mention_widgets.dart';
 import 'package:mobile/core/chat_wallpaper.dart';
 import 'package:mobile/pages/chat/block_user.dart';
@@ -1025,6 +1026,15 @@ class _ChatPageState extends State<ChatPage> {
     ]);
   }
 
+  /// A group where only admins may send messages, and I am not one: the
+  /// message box gives way to a note saying so.
+  bool get _onlyAdminsMaySend {
+    if (!widget.isGroup) return false;
+    final groups = context.watch<GroupDetailsController>();
+    final me = context.read<AuthState>().currentUser?.id;
+    return groups.adminsOnlyIn(widget.chatUserId) && !groups.isAdmin(me);
+  }
+
   /// The nicknames may finish loading after the page opens.
   void _refreshTitle() {
     if (!mounted || widget.isGroup) return;
@@ -1421,7 +1431,9 @@ class _ChatPageState extends State<ChatPage> {
                         setState(() => _composerHeight = size.height);
                       }
                     },
-                    child: _isBlocked
+                    child: _onlyAdminsMaySend
+                        ? const AdminsOnlyBanner()
+                        : _isBlocked
                         ? BlockedBanner(
                             displayName: _title,
                             onUnblock: () =>

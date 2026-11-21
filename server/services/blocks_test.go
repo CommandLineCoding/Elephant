@@ -18,6 +18,8 @@ func init() {
 	Hub.settings = func(context.Context, string) (repository.UserSettings, error) {
 		return repository.DefaultUserSettings(), nil
 	}
+	// And every group lets everyone in it post.
+	groupPosting = func(context.Context, string, string) (bool, bool, error) { return true, true, nil }
 }
 
 func setBlockLookup(f func(context.Context, string, string) bool) {

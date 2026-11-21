@@ -2,13 +2,17 @@ package controllers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/commandlinecoding/elephant/server/middlewares"
 	"github.com/commandlinecoding/elephant/server/models"
 	"github.com/commandlinecoding/elephant/server/repository"
+	"github.com/commandlinecoding/elephant/server/services"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -186,27 +190,56 @@ func HandleGetGroupDetails(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: group})
 }
 
+// UpdateGroupReq is the body of PATCH /api/groups/{id}. Send what to change.
 type UpdateGroupReq struct {
-	Name string `json:"name"`
+	Name        *string `json:"name"`
+	Description *string `json:"description"`
+	AdminsOnly  *bool   `json:"admins_only"`
 }
 
+const (
+	maxGroupName        = 100
+	maxGroupDescription = 500
+)
+
+// HandleUpdateGroup handles PATCH /api/groups/{id} (admins): the group's name,
+// description, and whether only admins may send messages.
 func HandleUpdateGroup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	groupID := chi.URLParam(r, "id")
 
 	var req UpdateGroupReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Invalid group name"})
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil ||
+		(req.Name == nil && req.Description == nil && req.AdminsOnly == nil) {
+		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "Expected a name, a description or admins_only"})
 		return
 	}
-
-	repo := repository.NewGroupRepository()
-	if err := repo.UpdateName(r.Context(), groupID, req.Name); err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Failed to update group name"})
-		return
+	if req.Name != nil {
+		name := strings.TrimSpace(*req.Name)
+		if name == "" || utf8.RuneCountInString(name) > maxGroupName {
+			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "A group name has 1 to 100 characters"})
+			return
+		}
+		req.Name = &name
+	}
+	if req.Description != nil {
+		desc := strings.TrimSpace(*req.Description)
+		if utf8.RuneCountInString(desc) > maxGroupDescription {
+			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "A description can be at most 500 characters"})
+			return
+		}
+		req.Description = &desc
 	}
 
-	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: "Group details updated successfully"})
+	group, err := repository.NewGroupRepository().Update(r.Context(), groupID, repository.GroupChanges{
+		Name: req.Name, Description: req.Description, AdminsOnly: req.AdminsOnly,
+	})
+	if err != nil {
+		log.Printf("groups: could not update: %v", err)
+		writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Failed to update the group"})
+		return
+	}
+	// The other members' apps load the new details.
+	go services.Hub.GroupUpdated(groupID)
+	writeJSON(w, http.StatusOK, models.JSONResponse{Success: true, Data: group})
 }

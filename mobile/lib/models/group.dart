@@ -5,11 +5,19 @@ class Group {
   final String createdBy;
   final DateTime createdAt;
 
+  /// What admins say the group is for, up to 500 characters.
+  final String description;
+
+  /// Whether only admins may send messages.
+  final bool adminsOnly;
+
   Group({
     required this.id,
     required this.name,
     required this.createdBy,
     required this.createdAt,
+    this.description = '',
+    this.adminsOnly = false,
   });
 
   factory Group.fromJson(Map<String, dynamic> json) {
@@ -20,6 +28,8 @@ class Group {
       createdAt:
           DateTime.tryParse(json['created_at']?.toString() ?? '')?.toLocal() ??
           DateTime.now(),
+      description: json['description']?.toString() ?? '',
+      adminsOnly: json['admins_only'] == true,
     );
   }
 }

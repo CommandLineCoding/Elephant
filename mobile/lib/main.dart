@@ -51,6 +51,7 @@ Future<void> main(List<String> args) async {
   final authState = AuthState();
   String currentUserId() => authState.currentUser?.id ?? '';
 
+  final groupDetailsController = GroupDetailsController();
   final inboxController = InboxController();
   final activeChatController = ActiveChatController()
     ..currentUserIdProvider = currentUserId
@@ -73,13 +74,14 @@ Future<void> main(List<String> args) async {
         ChangeNotifierProvider.value(value: activeChatController),
         ChangeNotifierProvider.value(value: callController),
         ChangeNotifierProvider(create: (_) => ChatSearchController()),
-        ChangeNotifierProvider(create: (_) => GroupDetailsController()),
+        ChangeNotifierProvider.value(value: groupDetailsController),
         ChangeNotifierProvider(
           create: (_) => ChatConnectionController(
             eventHandler: ChatEventHandler(
               inboxController: inboxController,
               activeChatController: activeChatController,
               currentUserIdProvider: currentUserId,
+              onGroupUpdated: groupDetailsController.refreshInfo,
             ),
           ),
         ),
