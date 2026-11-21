@@ -124,12 +124,19 @@ Reports the status of the server and its PostgreSQL connection pool.
   "data": {
     "postgres": "up",
     "registration": "open",
+    "cleanup": {
+      "deleted_total": 12,
+      "last_run": "<Timestamp>",
+      "last_deleted": { "refresh_tokens": 12, "push_endpoints": 0 }
+    },
     "timestamp": "<Timestamp>"
   }
 }
 ```
 
 `registration` is `"open"` or `"closed"` (the server's `REGISTRATION` setting), so clients can hide their sign-up option on servers that don't accept new accounts.
+
+`cleanup` is the background job that deletes expired data (see `CLEANUP_INTERVAL_MINUTES`). It holds counts only: how many rows this server instance has deleted since it started, and what its last run deleted. `last_run` and `last_deleted` are missing until the job has run on this instance, for example when another instance holds the lock.
 
 #### `500 Internal Server Error`
 

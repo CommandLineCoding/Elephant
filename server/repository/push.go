@@ -88,3 +88,14 @@ func (r *PushRepository) ListByUser(ctx context.Context, userID string) ([]PushT
 	}
 	return out, rows.Err()
 }
+
+// RecordResult notes whether a ping to an endpoint got through: a success
+// clears its run of failures, a failure adds to it.
+func (r *PushRepository) RecordResult(ctx context.Context, id int64, ok bool) error {
+	query := `UPDATE push_endpoints SET failures = failures + 1 WHERE id = $1;`
+	if ok {
+		query = `UPDATE push_endpoints SET failures = 0 WHERE id = $1 AND failures > 0;`
+	}
+	_, err := config.DB.Exec(ctx, query, id)
+	return err
+}
