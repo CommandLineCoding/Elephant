@@ -98,21 +98,57 @@ func (r *UserRepository) SearchUsers(ctx context.Context, searchTerm string, lim
 
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*models.User, error) {
 	query := `
-		SELECT id, username, display_name, created_at 
-		FROM users 
+		SELECT id, username, display_name, created_at, bio, status_emoji, status_text, status_expires_at
+		FROM users
 		WHERE id = $1;
 	`
 	var user models.User
+	var emoji, text string
+	var expires *time.Time
 	err := config.DB.QueryRow(ctx, query, id).Scan(
 		&user.ID,
 		&user.Username,
 		&user.DisplayName,
 		&user.CreatedAt,
+		&user.Bio,
+		&emoji,
+		&text,
+		&expires,
 	)
 	if err != nil {
 		return nil, err
 	}
+	// A status that has run out is not shown.
+	if (emoji != "" || text != "") && (expires == nil || expires.After(time.Now())) {
+		user.Status = &models.UserStatus{Emoji: emoji, Text: text, ExpiresAt: expires}
+	}
 	return &user, nil
+}
+
+// ProfileChanges is a change to a person's bio and status. Nil fields stay.
+type ProfileChanges struct {
+	Bio *string
+
+	// Status replaces the custom status. An empty one (no emoji and no text)
+	// clears it. ExpiresAt is nil for no end.
+	Status *models.UserStatus
+}
+
+// UpdateProfile changes a person's bio and/or custom status.
+func (r *UserRepository) UpdateProfile(ctx context.Context, id string, c ProfileChanges) error {
+	if c.Bio != nil {
+		if _, err := config.DB.Exec(ctx, `UPDATE users SET bio = $2 WHERE id = $1::uuid;`, id, *c.Bio); err != nil {
+			return err
+		}
+	}
+	if c.Status != nil {
+		_, err := config.DB.Exec(ctx, `
+			UPDATE users SET status_emoji = $2, status_text = $3, status_expires_at = $4
+			WHERE id = $1::uuid;
+		`, id, c.Status.Emoji, c.Status.Text, c.Status.ExpiresAt)
+		return err
+	}
+	return nil
 }
 
 func (r *UserRepository) FindByProviderID(ctx context.Context, provider, providerID string) (*models.User, error) {

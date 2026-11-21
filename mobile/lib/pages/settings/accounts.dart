@@ -7,6 +7,7 @@ import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/core/constants.dart';
+import 'package:mobile/core/profile_limits.dart';
 import 'package:mobile/core/username.dart';
 import 'package:mobile/models/user.dart';
 import 'package:mobile/pages/settings/signed_in_devices.dart';
@@ -49,6 +50,156 @@ Future<void> _deleteAccount(BuildContext context, String username) async {
     return;
   }
   await signOut(context);
+}
+
+/// What the person chose in [StatusDialog].
+class StatusChoice {
+  final String emoji;
+  final String text;
+  final StatusDuration duration;
+
+  const StatusChoice(this.emoji, this.text, this.duration);
+
+  /// Whether this clears the status.
+  bool get isClear => emoji.isEmpty && text.isEmpty;
+}
+
+/// Set or clear the custom status: an emoji, a few words, and how long.
+@visibleForTesting
+class StatusDialog extends StatefulWidget {
+  final String emoji;
+  final String text;
+
+  const StatusDialog({super.key, this.emoji = '', this.text = ''});
+
+  @override
+  State<StatusDialog> createState() => StatusDialogState();
+}
+
+@visibleForTesting
+class StatusDialogState extends State<StatusDialog> {
+  late final TextEditingController _emoji = TextEditingController(
+    text: widget.emoji,
+  );
+  late final TextEditingController _text = TextEditingController(
+    text: widget.text,
+  );
+  StatusDuration _duration = StatusDuration.never;
+
+  static const _suggestions = ['🚴', '🎧', '📚', '🌴', '🍽️', '💼'];
+
+  bool get _hasAny =>
+      _emoji.text.trim().isNotEmpty || _text.text.trim().isNotEmpty;
+
+  @override
+  void dispose() {
+    _emoji.dispose();
+    _text.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Status'),
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Shown under your name in chats and on your profile. Anyone who '
+            'can look you up can see it.',
+            style: context.text.bodyMedium,
+          ),
+          const SizedBox(height: Insets.lg),
+          Row(
+            children: [
+              SizedBox(
+                width: 64,
+                child: TextField(
+                  controller: _emoji,
+                  textAlign: TextAlign.center,
+                  maxLength: 8,
+                  buildCounter:
+                      (
+                        _, {
+                        required currentLength,
+                        required isFocused,
+                        maxLength,
+                      }) => null,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(hintText: '🙂'),
+                ),
+              ),
+              const SizedBox(width: Insets.md),
+              Expanded(
+                child: TextField(
+                  controller: _text,
+                  maxLength: profileStatusMax,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(hintText: 'What\'s up?'),
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: Insets.sm,
+            children: [
+              for (final e in _suggestions)
+                ActionChip(
+                  label: Text(e),
+                  onPressed: () => setState(() => _emoji.text = e),
+                ),
+            ],
+          ),
+          const SizedBox(height: Insets.lg),
+          Text('Clear after', style: context.text.labelLarge),
+          for (final d in StatusDuration.values)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(d.label),
+              trailing: _duration == d
+                  ? Icon(
+                      Icons.check_circle_rounded,
+                      color: context.colors.primary,
+                    )
+                  : const Icon(Icons.radio_button_unchecked_rounded),
+              onTap: () => setState(() => _duration = d),
+            ),
+        ],
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      actions: [
+        if (widget.emoji.isNotEmpty || widget.text.isNotEmpty)
+          TextButton(
+            onPressed: () => Navigator.pop(
+              context,
+              const StatusChoice('', '', StatusDuration.never),
+            ),
+            child: const Text('Clear'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _hasAny
+              ? () => Navigator.pop(
+                  context,
+                  StatusChoice(
+                    _emoji.text.trim(),
+                    _text.text.trim(),
+                    _duration,
+                  ),
+                )
+              : null,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
 }
 
 /// Asks for the new username, and says what changing it means first.
@@ -232,11 +383,58 @@ class AccountsSettings extends StatelessWidget {
     }
   }
 
+  String _statusEnds(UserModel user) {
+    final ends = user.statusExpiresAt;
+    return ends == null
+        ? 'Status · until you change it'
+        : 'Status · until ${DateFormat.MMMd().add_jm().format(ends)}';
+  }
+
   String _changeSubtitle(UserModel? user) {
     final wait = nextUsernameChange(user?.usernameChangedAt, DateTime.now());
     return wait == null
         ? 'Once every 30 days. You get a new number after the dot.'
         : 'You can change it again after ${DateFormat.yMMMd().format(wait)}.';
+  }
+
+  Future<void> _editAbout(BuildContext context, UserModel user) async {
+    final text = await promptText(
+      context,
+      title: 'About',
+      message:
+          'A few words about you. Anyone who can look you up can read this.',
+      initialValue: user.bio,
+      hint: 'About you',
+      maxLength: profileBioMax,
+    );
+    if (text == null || text.trim() == user.bio || !context.mounted) return;
+    final error = await context.read<AuthState>().updateProfile(bio: text);
+    if (context.mounted) {
+      showSnack(context, error ?? 'About updated', isError: error != null);
+    }
+  }
+
+  Future<void> _editStatus(BuildContext context, UserModel user) async {
+    final result = await showDialog<StatusChoice>(
+      context: context,
+      builder: (_) => StatusDialog(
+        emoji: user.hasStatus() ? user.statusEmoji : '',
+        text: user.hasStatus() ? user.statusText : '',
+      ),
+    );
+    if (result == null || !context.mounted) return;
+    final error = await context.read<AuthState>().updateProfile(
+      statusEmoji: result.emoji,
+      statusText: result.text,
+      statusExpiresIn: result.duration.from(DateTime.now()),
+    );
+    if (context.mounted) {
+      showSnack(
+        context,
+        error ?? (result.isClear ? 'Status cleared' : 'Status set'),
+        isError: error != null,
+      );
+    }
   }
 
   Future<void> _changeUsername(BuildContext context, UserModel user) async {
@@ -322,6 +520,22 @@ class AccountsSettings extends StatelessWidget {
                   onTap: user == null
                       ? null
                       : () => _changeUsername(context, user),
+                ),
+                ElephantTile(
+                  icon: Icons.info_outline_rounded,
+                  title: user == null || user.bio.isEmpty
+                      ? 'Add an about text'
+                      : user.bio,
+                  subtitle: 'About · anyone who can look you up can read it',
+                  onTap: user == null ? null : () => _editAbout(context, user),
+                ),
+                ElephantTile(
+                  icon: Icons.mood_rounded,
+                  title: user?.statusLine() ?? 'Set a status',
+                  subtitle: user != null && user.hasStatus()
+                      ? _statusEnds(user)
+                      : 'Shown under your name in chats',
+                  onTap: user == null ? null : () => _editStatus(context, user),
                 ),
                 ElephantTile(
                   icon: Icons.badge_outlined,

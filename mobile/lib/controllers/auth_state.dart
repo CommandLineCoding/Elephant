@@ -11,6 +11,7 @@ import 'package:mobile/services/chat_folders.dart';
 import 'package:mobile/services/chat_appearance.dart';
 import 'package:mobile/services/drafts.dart';
 import 'package:mobile/services/nicknames.dart';
+import 'package:mobile/services/peer_profiles.dart';
 import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/services/db_services.dart';
@@ -21,6 +22,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import 'package:mobile/models/user.dart';
 import '../core/constants.dart';
+import '../core/profile_limits.dart';
 import '../core/username.dart';
 import '../core/profile_links.dart';
 import '../services/auth_service.dart';
@@ -240,6 +242,48 @@ class AuthState extends ChangeNotifier {
     }
   }
 
+  /// Saves the "about" text and/or custom status. Pass [statusEmoji] and
+  /// [statusText] empty to clear the status; [statusExpiresIn] is how long it
+  /// lasts (null for no end). Returns an error message, or null on success.
+  Future<String?> updateProfile({
+    String? bio,
+    String? statusEmoji,
+    String? statusText,
+    Duration? statusExpiresIn,
+  }) async {
+    if (bio != null && bio.trim().runes.length > profileBioMax) {
+      return 'Keep your about text to $profileBioMax characters.';
+    }
+    final settingStatus = statusEmoji != null || statusText != null;
+    if (settingStatus &&
+        (statusText ?? '').trim().runes.length > profileStatusMax) {
+      return 'Keep your status to $profileStatusMax characters.';
+    }
+    try {
+      final res = await ApiService().updateMe(
+        bio: bio?.trim(),
+        status: settingStatus
+            ? {
+                'emoji': (statusEmoji ?? '').trim(),
+                'text': (statusText ?? '').trim(),
+                if (statusExpiresIn != null)
+                  'expires_in': statusExpiresIn.inSeconds,
+              }
+            : null,
+      );
+      final userData = ApiService.dataMap(res.data);
+      _currentUser = UserModel.fromJson(userData);
+      await _authService.saveUserProfile(jsonEncode(userData));
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't save your profile.",
+      );
+    }
+  }
+
   static String _day(DateTime d) => '${d.day}/${d.month}/${d.year}';
 
   Future<String?> checkAutoLogin() async {
@@ -396,6 +440,7 @@ class AuthState extends ChangeNotifier {
     Drafts.instance.reset();
     ChatFolders.instance.reset();
     Nicknames.instance.reset();
+    PeerProfiles.instance.reset();
     PrivacySettings.instance.reset();
     ChatAppearance.instance.forgetChats();
     _token = null;
@@ -449,6 +494,7 @@ class AuthState extends ChangeNotifier {
       Drafts.instance.reset();
       ChatFolders.instance.reset();
       Nicknames.instance.reset();
+      PeerProfiles.instance.reset();
       PrivacySettings.instance.reset();
       ChatAppearance.instance.forgetChats();
       _token = null;
