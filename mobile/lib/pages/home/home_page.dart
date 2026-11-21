@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/core/profile_links.dart';
 import 'package:mobile/controllers/auth_state.dart';
@@ -40,6 +41,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     Drafts.instance.load();
+    Nicknames.instance.load();
     WidgetsBinding.instance.addPostFrameCallback(
       (_) => _maybeShowNewUsername(),
     );
@@ -260,6 +262,7 @@ class _ChatsTabState extends State<_ChatsTab> {
         ? ChatFilter.apply(filter, inbox.chats, folders)
         : inbox.inbox.where((item) {
             return item.title.toLowerCase().contains(query) ||
+                item.shownTitle.toLowerCase().contains(query) ||
                 (item.username?.toLowerCase().contains(query) ?? false) ||
                 item.lastMessage.toLowerCase().contains(query);
           }).toList();

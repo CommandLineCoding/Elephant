@@ -13,6 +13,7 @@ import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
@@ -28,6 +29,9 @@ enum ChatDetailsResult { search, left }
 class ChatDetailsPage extends StatefulWidget {
   final bool isGroup;
   final String chatName;
+
+  /// The contact's own display name, when [chatName] may be a nickname.
+  final String? realName;
   final String? username;
   final String chatId;
 
@@ -40,6 +44,7 @@ class ChatDetailsPage extends StatefulWidget {
     super.key,
     required this.isGroup,
     required this.chatName,
+    this.realName,
     required this.chatId,
     this.username,
     this.openedFromGroup = false,
@@ -464,8 +469,49 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     ),
   ];
 
+  Future<void> _editNickname() async {
+    final real = widget.realName ?? widget.chatName;
+    final current = Nicknames.instance.of(widget.chatId);
+    final text = await promptText(
+      context,
+      title: 'Nickname',
+      message:
+          'Only you see this. It replaces $real in your chat list, in this '
+          'chat and in notifications. Clear it to go back to their name.',
+      initialValue: current ?? '',
+      hint: real,
+      maxLength: Nicknames.maxLength,
+    );
+    if (text == null || !mounted) return;
+    await Nicknames.instance.set(widget.chatId, text);
+    if (mounted) {
+      setState(() => _name = Nicknames.instance.nameFor(widget.chatId, real));
+    }
+  }
+
+  List<Widget> _nicknameSection() {
+    final real = widget.realName ?? widget.chatName;
+    final nickname = Nicknames.instance.of(widget.chatId);
+    return [
+      const SectionLabel('Nickname'),
+      Section(
+        children: [
+          ElephantTile(
+            icon: Icons.edit_outlined,
+            title: nickname ?? 'Add a nickname',
+            subtitle: nickname == null
+                ? 'A name only you see'
+                : 'Only you see this. Their name is $real.',
+            onTap: _editNickname,
+          ),
+        ],
+      ),
+    ];
+  }
+
   List<Widget> _buildDirectSections() {
     return [
+      ..._nicknameSection(),
       ..._starredSection(),
       const SectionLabel('Encryption'),
       Section(

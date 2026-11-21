@@ -5,6 +5,7 @@ import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/themes/app_themes.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
 import 'package:provider/provider.dart';
 
@@ -30,7 +31,7 @@ Future<void> showConversationActions(
   final action = await showActionSheet<String>(
     context,
     header: ListTile(
-      title: Text(item.title, style: context.text.titleMedium),
+      title: Text(item.shownTitle, style: context.text.titleMedium),
       subtitle: Text(item.isGroup ? 'Group' : '@${item.username ?? ''}'),
     ),
     actions: [
@@ -91,7 +92,9 @@ Future<void> showConversationActions(
       await confirmAndDeleteChat(
         context,
         chatId: item.id,
-        title: item.title.isEmpty ? (item.username ?? '') : item.title,
+        title: item.shownTitle.isEmpty
+            ? (item.username ?? '')
+            : item.shownTitle,
         isGroup: item.isGroup,
       );
       break;
@@ -128,7 +131,8 @@ Future<void> showConversationActions(
         MaterialPageRoute(
           builder: (_) => ChatDetailsPage(
             chatId: item.id,
-            chatName: item.title,
+            chatName: item.shownTitle,
+            realName: item.title,
             username: item.username,
             isGroup: item.isGroup,
           ),

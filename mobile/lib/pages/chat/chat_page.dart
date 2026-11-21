@@ -16,6 +16,7 @@ import 'package:mobile/pages/chat/forward_page.dart';
 import 'package:mobile/widgets/mention_widgets.dart';
 import 'package:mobile/pages/chat/block_user.dart';
 import 'package:mobile/pages/chat/report_user.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/reports.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
@@ -79,7 +80,10 @@ class _ChatPageState extends State<ChatPage> {
   late final ActiveChatController _chat;
   late final AuthState _auth;
 
-  late String _title = widget.displayName;
+  // A direct chat shows the nickname the person gave the contact, if any.
+  late String _title = widget.isGroup
+      ? widget.displayName
+      : Nicknames.instance.nameFor(widget.chatUserId, widget.displayName);
   Message? _replyingTo;
   Message? _editing;
 
@@ -121,6 +125,9 @@ class _ChatPageState extends State<ChatPage> {
           .whenComplete(_restoreDraft);
       if (!widget.isGroup) CallLog.instance.load(widget.chatUserId);
       StarredMessages.instance.load();
+      if (!widget.isGroup) {
+        Nicknames.instance.load().then((_) => _refreshTitle());
+      }
       final initial = widget.initialMessageId;
       if (initial != null) _showMessage(initial);
       context.read<InboxController>().clearUnread(widget.chatUserId);
@@ -1015,6 +1022,16 @@ class _ChatPageState extends State<ChatPage> {
     ]);
   }
 
+  /// The nicknames may finish loading after the page opens.
+  void _refreshTitle() {
+    if (!mounted || widget.isGroup) return;
+    final shown = Nicknames.instance.nameFor(
+      widget.chatUserId,
+      widget.displayName,
+    );
+    if (shown != _title) setState(() => _title = shown);
+  }
+
   Future<void> _onMenu(String value) async {
     if (value == 'block') {
       await confirmAndBlock(
@@ -1059,6 +1076,7 @@ class _ChatPageState extends State<ChatPage> {
         builder: (_) => ChatDetailsPage(
           chatId: widget.chatUserId,
           chatName: _title,
+          realName: widget.displayName,
           username: widget.username,
           isGroup: widget.isGroup,
         ),
