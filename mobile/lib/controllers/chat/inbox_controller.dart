@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_sqlcipher/sqflite.dart';
 import '../../core/message_envelope.dart';
 import '../../core/message_payload.dart';
+import '../../core/message_summary.dart';
 import '../../models/chat_prefs.dart';
 import '../../models/group.dart';
 import '../../models/inbox_item.dart';
@@ -283,9 +284,7 @@ class InboxController extends ChangeNotifier {
     );
     return {
       for (final row in rows)
-        row['chat_id'].toString(): MessagePayload.readable(
-          row['content'].toString(),
-        ),
+        row['chat_id'].toString(): summarizeContent(row['content'].toString()),
     };
   }
 

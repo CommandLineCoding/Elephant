@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile/controllers/chat/active_chat_controller.dart';
-import 'package:mobile/core/message_payload.dart';
+import 'package:mobile/core/message_summary.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/inbox_item.dart';
 import 'package:mobile/services/ws_service.dart';
@@ -53,7 +53,7 @@ class _ForwardPageState extends State<ForwardPage> {
     for (final chatId in targets.keys.where((id) => !failed.containsKey(id))) {
       inbox.updateLocalInboxState(
         chatId,
-        MessagePayload.readable(widget.text),
+        summarizeContent(widget.text),
         now,
         false,
         senderId: 'me',

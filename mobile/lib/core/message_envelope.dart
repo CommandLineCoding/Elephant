@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'mention.dart';
 import 'message_payload.dart';
+import 'message_summary.dart';
 
 /// Wire format of the `content` field the server relays opaquely:
 /// `{"type": <int>, "ciphertext": "<base64 or text>"}`.
@@ -60,12 +61,14 @@ class MessageEnvelope {
     String fallback = '🔒 Encrypted message',
   }) {
     final envelope = tryParse(content);
-    final readable = envelope == null
-        ? MessagePayload.readable(content)
+    final body = envelope == null
+        ? content
         : envelope.isPlaintext
-        ? MessagePayload.readable(envelope.body)
+        ? envelope.body
         : null;
-    return readable == null ? fallback : plainMentions(readable);
+    if (body == null) return fallback;
+    final parts = MessagePayload.split(body);
+    return plainMentions(summarizeMessage(parts.text, parts.payload));
   }
 
   static String locked(String reason) => '$lockedPrefix$reason';

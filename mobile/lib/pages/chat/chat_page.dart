@@ -641,14 +641,14 @@ class _ChatPageState extends State<ChatPage> {
         ? ComposerBanner(
             icon: Icons.edit_outlined,
             title: 'Editing message',
-            body: _editing!.plainText,
+            body: _editing!.summary,
             onClose: _cancelBanner,
           )
         : _replyingTo != null
         ? ComposerBanner(
             icon: Icons.reply_rounded,
             title: 'Replying to ${_nameOf(_replyingTo!.senderId)}',
-            body: _replyingTo!.plainText,
+            body: _replyingTo!.summary,
             onClose: _cancelBanner,
           )
         : null;
@@ -1552,7 +1552,7 @@ class _ChatPageState extends State<ChatPage> {
         final msg = _searchResults[index];
         return ListTile(
           title: Text(
-            msg.plainText,
+            msg.summary,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
@@ -1707,9 +1707,9 @@ class _PinnedBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = message.plainText.trim().isEmpty
+    final text = message.summary.trim().isEmpty
         ? 'Message'
-        : message.plainText.trim();
+        : message.summary.trim();
     return Semantics(
       button: true,
       label:
