@@ -78,6 +78,8 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | DELETE | [/api/users/{id}/block](#8-unblock-a-user) | Yes | Unblock a user |
 | GET | [/api/users/me/blocked](#9-list-blocked-users) | Yes | List the people you blocked |
 | GET | [/api/users/me/settings](#12-privacy-settings) | Yes | Get your privacy settings |
+| POST | [/api/reports](#reports-endpoints) | Yes | Report someone for spam or abuse (rate limited) |
+| GET | [/api/admin/reports?limit=&before=](#reports-endpoints) | Admin | The server admin's list of reports |
 | PATCH | [/api/users/me/settings](#12-privacy-settings) | Yes | Change your privacy settings |
 | GET | [/api/users/me/sessions](#11-signed-in-devices) | Yes | List the devices you are signed in on |
 | DELETE | [/api/users/me/sessions/{id}](#11-signed-in-devices) | Yes | Sign one device out |
@@ -856,6 +858,62 @@ Send only the fields to change. The reply is all the settings after the change, 
 ```
 
 `400 Bad Request` for a body that isn't an object, or an `online_status` or `group_adds` that isn't one of the three values. Nothing is changed.
+
+## Reports Endpoints
+
+Blocking stops someone reaching you; a report tells the server's admin. Direct messages are end-to-end encrypted, so the server can't see what was said. A report can include a few messages that the reporter's phone attaches as plain text, after asking the reporter.
+
+### Report someone
+
+- **URL:** `/api/reports`
+- **Method:** `POST`
+- **Authentication Required:** `YES`
+- **Rate limit:** a burst of 3, then one every 20 seconds, and at most 20 reports per person per day.
+
+```json
+{
+  "user_id": "<reported user ID>",
+  "reason": "spam",
+  "note": "Keeps sending me links",
+  "messages": [
+    { "from_reported": true, "text": "buy my coins", "at": "<Timestamp>" }
+  ]
+}
+```
+
+`reason` is `spam`, `harassment` or `other`. `note` is optional, up to 500 characters. `messages` is optional: up to 10, each up to 1000 characters, as plain text. Blocking the person is a separate call ([Block a user](#7-block-a-user)).
+
+- `201 Created`: `{ "success": true, "data": { "id": 12 } }`
+- `400 Bad Request`: an invalid user ID, reason, note or messages, or reporting yourself.
+- `404 Not Found`: `"User not found"`.
+- `429 Too Many Requests`: the rate limit or the daily limit.
+
+### List reports (admins)
+
+- **URL:** `/api/admin/reports?limit=50&before=<id>`
+- **Method:** `GET`
+- **Authentication Required:** `YES`, and the user ID must be in the server's `ADMIN_USER_IDS`. Anyone else gets `403` (`"Admins only"`).
+
+Reports, newest first. `limit` is 1 to 200 (default 50); pass the last `id` of a page as `before` to get the next one.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 12,
+      "reporter_id": "<user ID>",
+      "reporter_username": "ava.1234",
+      "reported_user_id": "<user ID>",
+      "reported_username": "spam.5678",
+      "reason": "spam",
+      "note": "Keeps sending me links",
+      "messages": [{ "from_reported": true, "text": "buy my coins", "at": "<Timestamp>" }],
+      "created_at": "<Timestamp>"
+    }
+  ]
+}
+```
 
 ---
 

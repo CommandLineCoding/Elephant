@@ -194,6 +194,7 @@ See [mobile/README.md](mobile/README.md) for details on pointing the app at a lo
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret | — |
 | `GITHUB_REDIRECT_URL` | GitHub OAuth callback URL, e.g. `https://HOST/api/auth/github/callback` | — |
 | `REGISTRATION` | `open` lets anyone create an account. `closed` refuses new accounts (username sign-up and new Google/GitHub accounts); existing users can still sign in. Any other value stops the server from starting | `open` |
+| `ADMIN_USER_IDS` | Comma-separated user IDs of the accounts that may read reports of spam and abuse (`GET /api/admin/reports`). Empty means nobody can | — |
 | `CLEANUP_INTERVAL_MINUTES` | How often the server deletes expired data (sign-in tokens that ran out, push endpoints that keep failing). With several servers on one database only one cleans at a time. `0` turns it off | `10` |
 | `PUSH_ALLOW_PRIVATE_ENDPOINTS` | Let users register [UnifiedPush](https://unifiedpush.org) endpoints on private or loopback addresses over plain HTTP, e.g. a self-hosted ntfy on your LAN. Off by default so the server can't be pointed at your internal network | `false` |
 | `STUN_URLS` | Comma-separated STUN servers for calls. Set it empty for none (calls then only connect on the same network) | `stun:stun.cloudflare.com:3478` |
