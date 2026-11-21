@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mobile/pages/settings/privacy_security.dart';
+import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/themes/theme_provider.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -10,6 +11,17 @@ import 'package:mobile/services/screen_security.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'chat_harness.dart';
+
+/// The screen asks the server for the privacy settings when it opens; here
+/// the server has nothing to say.
+class _QuietServer implements PrivacyApi {
+  @override
+  Future<Map<String, dynamic>> load() async => {};
+
+  @override
+  Future<Map<String, dynamic>> save(Map<String, dynamic> change) async =>
+      change;
+}
 
 /// What the phone was last told about capture, or null if never.
 bool? lastSecure;
@@ -108,6 +120,8 @@ void main() {
     });
 
     testWidgets('the Privacy screen has both switches', (tester) async {
+      PrivacySettings.instance = PrivacySettings(api: _QuietServer());
+      addTearDown(() => PrivacySettings.instance = PrivacySettings());
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(800, 2400);
       addTearDown(tester.view.reset);

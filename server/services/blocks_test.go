@@ -4,12 +4,20 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/commandlinecoding/elephant/server/repository"
 )
 
 // The hub tests run without a database, so by default nobody has blocked
 // anyone. The real lookup is tested in the repository package.
 func init() {
 	blockLookup = func(context.Context, string, string) bool { return false }
+	// Likewise nobody has changed their privacy settings. Tests that care
+	// install their own with setSettings. The hub's own ids aren't UUIDs, so
+	// the real lookup would fail on them.
+	Hub.settings = func(context.Context, string) (repository.UserSettings, error) {
+		return repository.DefaultUserSettings(), nil
+	}
 }
 
 func setBlockLookup(f func(context.Context, string, string) bool) {

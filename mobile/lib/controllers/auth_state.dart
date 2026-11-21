@@ -9,6 +9,7 @@ import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/services/calls/call_log.dart';
 import 'package:mobile/services/chat_folders.dart';
 import 'package:mobile/services/drafts.dart';
+import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/services/db_services.dart';
 import 'package:mobile/services/push/push_prefs.dart';
@@ -245,6 +246,7 @@ class AuthState extends ChangeNotifier {
 
     await SignalService().ensureKeysPublished();
     unawaited(PushService.instance.onSignedIn());
+    unawaited(PrivacySettings.instance.refresh());
     return true;
   }
 
@@ -359,6 +361,7 @@ class AuthState extends ChangeNotifier {
     StarredMessages.instance.clear();
     Drafts.instance.reset();
     ChatFolders.instance.reset();
+    PrivacySettings.instance.reset();
     _token = null;
     _currentUser = null;
     await _authService.logout();
@@ -409,6 +412,7 @@ class AuthState extends ChangeNotifier {
       StarredMessages.instance.clear();
       Drafts.instance.reset();
       ChatFolders.instance.reset();
+      PrivacySettings.instance.reset();
       _token = null;
       _currentUser = null;
       _errorMessage = "Your session expired. Please sign in again.";

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/commandlinecoding/elephant/server/repository"
 	"github.com/gorilla/websocket"
 )
 
@@ -525,5 +526,138 @@ func TestDisconnectSessionClosesOnlyThatDevicesConnection(t *testing.T) {
 	Hub.DisconnectSession("sess-user", "phone-session")
 	if !closed(phone) {
 		t.Error("signing the device out did not close its connection")
+	}
+}
+
+// setSettings installs privacy settings for one test. Anyone not listed has
+// the defaults.
+func setSettings(t *testing.T, byUser map[string]repository.UserSettings) {
+	t.Helper()
+	Hub.mu.Lock()
+	old := Hub.settings
+	Hub.settings = func(_ context.Context, id string) (repository.UserSettings, error) {
+		if s, ok := byUser[id]; ok {
+			return s, nil
+		}
+		return repository.DefaultUserSettings(), nil
+	}
+	Hub.mu.Unlock()
+	t.Cleanup(func() {
+		Hub.mu.Lock()
+		Hub.settings = old
+		Hub.mu.Unlock()
+	})
+}
+
+func online(status string) repository.UserSettings {
+	s := repository.DefaultUserSettings()
+	s.OnlineStatus = status
+	return s
+}
+
+// Someone who hides their status isn't announced, even to contacts, and a
+// status request is answered "offline" even though they are connected.
+func TestNobodyHidesOnlineStatusFromEveryone(t *testing.T) {
+	setContacts(t, map[string][]string{
+		"hide-alice": {"hide-bob"},
+		"hide-bob":   {"hide-alice"},
+	})
+	setSettings(t, map[string]repository.UserSettings{"hide-alice": online(repository.AudienceNobody)})
+	bob := connect(t, "hide-bob")
+	alice := connect(t, "hide-alice")
+
+	if _, got := bob.statusFor("hide-alice", 400*time.Millisecond); got {
+		t.Error("alice came online and a contact was told, although she hides it")
+	}
+	bob.send(t, map[string]interface{}{"type": "request_status", "receiver_id": "hide-alice"})
+	if on, got := bob.statusFor("hide-alice", 3*time.Second); !got || on {
+		t.Errorf("a contact must be told alice is offline (got=%v online=%v)", got, on)
+	}
+
+	_ = alice.phone.Close()
+	if _, got := bob.statusFor("hide-alice", 400*time.Millisecond); got {
+		t.Error("alice went offline and a contact was told, although she hides it")
+	}
+}
+
+// Everyone lets a stranger ask whether the person is online. Contacts is
+// the default and keeps it to people who share a chat or a group.
+func TestEveryoneLetsAStrangerAskButContactsDoesNot(t *testing.T) {
+	setContacts(t, map[string][]string{"open-stranger": nil, "closed-stranger": nil})
+	setSettings(t, map[string]repository.UserSettings{
+		"open-alice": online(repository.AudienceEveryone),
+	})
+	_ = connect(t, "open-alice")
+	_ = connect(t, "closed-alice")
+	stranger := connect(t, "open-stranger")
+
+	stranger.send(t, map[string]interface{}{"type": "request_status", "receiver_id": "open-alice"})
+	if on, got := stranger.statusFor("open-alice", 3*time.Second); !got || !on {
+		t.Errorf("a stranger may see someone who shows their status to everyone (got=%v online=%v)", got, on)
+	}
+	stranger.send(t, map[string]interface{}{"type": "request_status", "receiver_id": "closed-alice"})
+	if on, got := stranger.statusFor("closed-alice", 3*time.Second); !got || on {
+		t.Errorf("a stranger must not see a contacts-only person (got=%v online=%v)", got, on)
+	}
+}
+
+func TestEveryoneStillRespectsBlocks(t *testing.T) {
+	setSettings(t, map[string]repository.UserSettings{"blk-alice": online(repository.AudienceEveryone)})
+	_ = connect(t, "blk-alice")
+	bob := connect(t, "blk-bob")
+
+	setBlocks(t, [2]string{"blk-alice", "blk-bob"})
+	bob.send(t, map[string]interface{}{"type": "request_status", "receiver_id": "blk-alice"})
+	if on, got := bob.statusFor("blk-alice", 3*time.Second); !got || on {
+		t.Errorf("someone alice blocked must not see her status (got=%v online=%v)", got, on)
+	}
+}
+
+// If the settings can't be loaded, nothing is shared.
+func TestPresenceFailsClosedWhenSettingsCantBeLoaded(t *testing.T) {
+	setContacts(t, map[string][]string{"sf-alice": {"sf-bob"}, "sf-bob": {"sf-alice"}})
+	Hub.mu.Lock()
+	old := Hub.settings
+	Hub.settings = func(context.Context, string) (repository.UserSettings, error) {
+		return repository.UserSettings{}, errors.New("database is down")
+	}
+	Hub.mu.Unlock()
+	t.Cleanup(func() { Hub.mu.Lock(); Hub.settings = old; Hub.mu.Unlock() })
+
+	bob := connect(t, "sf-bob")
+	_ = connect(t, "sf-alice")
+	if _, got := bob.statusFor("sf-alice", 400*time.Millisecond); got {
+		t.Error("a presence update went out although settings couldn't be loaded")
+	}
+	bob.send(t, map[string]interface{}{"type": "request_status", "receiver_id": "sf-alice"})
+	if on, got := bob.statusFor("sf-alice", 3*time.Second); !got || on {
+		t.Errorf("a status request must be answered offline (got=%v online=%v)", got, on)
+	}
+}
+
+// With read receipts off the other person is not told, and with them on they are.
+func TestReadReceiptsAreSentOnlyIfThePersonAllowsThem(t *testing.T) {
+	pushTestDB(t)
+	off := repository.DefaultUserSettings()
+	off.ReadReceipts = false
+	setSettings(t, map[string]repository.UserSettings{"rr-quiet": off})
+	setContacts(t, map[string][]string{})
+	sender := connect(t, "rr-sender")
+	quiet := connect(t, "rr-quiet")
+	chatty := connect(t, "rr-chatty")
+
+	quiet.send(t, map[string]interface{}{"type": "read_receipt", "receiver_id": "rr-sender"})
+	chatty.send(t, map[string]interface{}{"type": "read_receipt", "receiver_id": "rr-sender"})
+
+	got := sender.read(t, "read_receipt")
+	if got["sender_id"] != "rr-chatty" {
+		t.Fatalf("the first read receipt came from %v, want rr-chatty (the quiet one must send none)", got["sender_id"])
+	}
+	select {
+	case m, ok := <-sender.inbox:
+		if ok && m["type"] == "read_receipt" {
+			t.Errorf("a second read receipt arrived: %v", m)
+		}
+	case <-time.After(400 * time.Millisecond):
 	}
 }

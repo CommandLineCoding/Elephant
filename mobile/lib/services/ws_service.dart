@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../core/constants.dart';
+import 'privacy_settings.dart';
 
 /// WebSocket link to `/api/ws`.
 ///
@@ -154,11 +155,27 @@ class WebSocketService {
   }
 
   void sendReadReceipt({String? receiverId, String? groupId}) {
-    emit({
+    final frame = readReceiptFrame(
+      receiverId: receiverId,
+      groupId: groupId,
+      enabled: PrivacySettings.instance.readReceipts,
+    );
+    if (frame != null) emit(frame);
+  }
+
+  /// The frame that tells someone their messages were read, or null while read
+  /// receipts are off: then nobody is told. (The server drops them too.)
+  static Map<String, dynamic>? readReceiptFrame({
+    String? receiverId,
+    String? groupId,
+    required bool enabled,
+  }) {
+    if (!enabled) return null;
+    return {
       "type": "read_receipt",
       "receiver_id": receiverId,
       "group_id": groupId,
-    });
+    };
   }
 
   /// Tells the server these direct messages reached this phone, so their

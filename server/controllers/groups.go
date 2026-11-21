@@ -69,6 +69,16 @@ func HandleAddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if reason := whoMayAdd(r.Context(), requesterID(r), req.UserID); reason != "" {
+		status := http.StatusForbidden
+		if reason == errAddCheckFailed {
+			status = http.StatusInternalServerError
+		}
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: reason})
+		return
+	}
+
 	repo := repository.NewGroupRepository()
 	if err := repo.AddMember(r.Context(), groupID, req.UserID); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
