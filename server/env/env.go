@@ -47,6 +47,10 @@ var (
 	// REGISTRATION: "open" (default) or "closed" to stop new accounts being created.
 	REGISTRATION string
 
+	// ADMIN_USER_IDS: comma-separated IDs of the accounts that may read
+	// reports (GET /api/admin/reports). Empty means nobody can.
+	ADMIN_USER_IDS string
+
 	// CLEANUP_INTERVAL_MINUTES: how often the server deletes expired data
 	// (default 10). "0" turns the job off.
 	CLEANUP_INTERVAL_MINUTES string
@@ -122,6 +126,7 @@ func init() {
 	TRUSTED_PROXY_HOPS = getEnv("TRUSTED_PROXY_HOPS", "auto")
 
 	REGISTRATION = getEnv("REGISTRATION", "open")
+	ADMIN_USER_IDS = getEnv("ADMIN_USER_IDS", "")
 	CLEANUP_INTERVAL_MINUTES = getEnv("CLEANUP_INTERVAL_MINUTES", "10")
 	PUSH_ALLOW_PRIVATE_ENDPOINTS = getEnv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "false")
 	APP_LINK_FINGERPRINTS = getEnv("APP_LINK_FINGERPRINTS",

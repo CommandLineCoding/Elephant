@@ -23,4 +23,6 @@ func ApiRoute(router chi.Router) {
 	router.Route("/groups", GroupRoute)
 	router.Route("/e2ee", E2EERoute)
 	router.Route("/calls", CallRoute)
+	router.Route("/reports", ReportRoute)
+	router.Route("/admin", AdminRoute)
 }

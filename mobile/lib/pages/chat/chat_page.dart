@@ -15,6 +15,8 @@ import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/pages/chat/forward_page.dart';
 import 'package:mobile/widgets/mention_widgets.dart';
 import 'package:mobile/pages/chat/block_user.dart';
+import 'package:mobile/pages/chat/report_user.dart';
+import 'package:mobile/services/reports.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
 import 'package:mobile/services/calls/call_log.dart';
@@ -1003,6 +1005,16 @@ class _ChatPageState extends State<ChatPage> {
     );
   }
 
+  /// The end of this chat, to attach to a report if the person agrees.
+  List<AttachedMessage> _messagesForReport() {
+    final me = context.read<AuthState>().currentUser?.id;
+    return messagesForReport([
+      for (final m in _shown)
+        if (!m.isAction && !MessageEnvelope.isUnreadable(m.content))
+          (fromReported: !m.isFrom(me), text: m.plainText, at: m.createdAt),
+    ]);
+  }
+
   Future<void> _onMenu(String value) async {
     if (value == 'block') {
       await confirmAndBlock(
@@ -1012,6 +1024,17 @@ class _ChatPageState extends State<ChatPage> {
           username: widget.username ?? '',
           displayName: _title,
         ),
+      );
+    } else if (value == 'report') {
+      await reportUser(
+        context,
+        user: BlockedUser(
+          id: widget.chatUserId,
+          username: widget.username ?? '',
+          displayName: _title,
+        ),
+        alreadyBlocked: _isBlocked,
+        recentMessages: _messagesForReport,
       );
     } else if (value == 'unblock') {
       await unblock(context, widget.chatUserId, _title);
@@ -1244,6 +1267,11 @@ class _ChatPageState extends State<ChatPage> {
                         PopupMenuItem(
                           value: _isBlocked ? 'unblock' : 'block',
                           child: Text(_isBlocked ? 'Unblock' : 'Block'),
+                        ),
+                      if (!widget.isGroup)
+                        const PopupMenuItem(
+                          value: 'report',
+                          child: Text('Report'),
                         ),
                       PopupMenuItem(
                         value: 'delete',

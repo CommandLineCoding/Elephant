@@ -199,6 +199,11 @@ class ApiService {
   Future<Response> updateMe({required String displayName}) =>
       _dio.patch("/users/me", data: {"display_name": displayName});
 
+  // --- Reports ---
+
+  Future<Response> createReport(Map<String, dynamic> report) =>
+      _dio.post("/reports", data: report);
+
   // --- Privacy settings ---
 
   Future<Response> getSettings() => _dio.get("/users/me/settings");
