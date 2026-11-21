@@ -47,6 +47,10 @@ var (
 	// REGISTRATION: "open" (default) or "closed" to stop new accounts being created.
 	REGISTRATION string
 
+	// CLEANUP_INTERVAL_MINUTES: how often the server deletes expired data
+	// (default 10). "0" turns the job off.
+	CLEANUP_INTERVAL_MINUTES string
+
 	// PUSH_ALLOW_PRIVATE_ENDPOINTS: allow UnifiedPush endpoints on private/loopback
 	// addresses over plain HTTP, e.g. a self-hosted ntfy on your LAN. Default "false".
 	PUSH_ALLOW_PRIVATE_ENDPOINTS string
@@ -118,6 +122,7 @@ func init() {
 	TRUSTED_PROXY_HOPS = getEnv("TRUSTED_PROXY_HOPS", "auto")
 
 	REGISTRATION = getEnv("REGISTRATION", "open")
+	CLEANUP_INTERVAL_MINUTES = getEnv("CLEANUP_INTERVAL_MINUTES", "10")
 	PUSH_ALLOW_PRIVATE_ENDPOINTS = getEnv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "false")
 	APP_LINK_FINGERPRINTS = getEnv("APP_LINK_FINGERPRINTS",
 		"ED:08:4D:C4:C9:06:E1:BB:75:13:80:32:81:2E:BE:0B:A2:2B:A7:8D:A7:3A:26:B8:69:D3:50:53:C0:AB:5F:1D")

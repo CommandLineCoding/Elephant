@@ -21,6 +21,7 @@ func PerformHealthCheck() map[string]interface{} {
 	return map[string]interface{} {
 		"postgres": status,
 		"registration": registration,
+		"cleanup": Cleanup.Status(),
 		"timestamp": time.Now().UTC(),
 	}
 }

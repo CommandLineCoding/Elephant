@@ -46,6 +46,13 @@ func main() {
 	// UnifiedPush pings for users with no live connection
 	services.Push.Start(4)
 
+	// Delete expired data in the background. Only one instance does it at a time.
+	if every := services.CleanupInterval(); every > 0 {
+		services.Cleanup.Start(context.Background(), every)
+	} else {
+		log.Println("Cleanup: CLEANUP_INTERVAL_MINUTES=0, skipping")
+	}
+
 	// app init
 	app := config.App
 

@@ -194,6 +194,9 @@ func (p *PushService) deliver(job pushJob) {
 			// Log the host only: the full URL is a secret.
 			log.Printf("push: ping to %s failed: %v", hostOf(t.Endpoint), err)
 		}
+		if rerr := p.repo.RecordResult(ctx, t.ID, err == nil); rerr != nil {
+			log.Printf("push: could not record a ping result: %v", rerr)
+		}
 	}
 }
 
