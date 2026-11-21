@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile/widgets/two_factor_step.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:mobile/pages/settings/appearance.dart';
@@ -116,7 +117,7 @@ class _LoginPageState extends State<LoginPage> {
                         const SizedBox(height: Insets.xl),
                         _buildForm(auth),
                         const SizedBox(height: Insets.xl),
-                        _buildOAuth(auth),
+                        if (auth.twoFactorChallenge == null) _buildOAuth(auth),
                         const Spacer(),
                         const SizedBox(height: Insets.xl),
                         _ServerRow(onTap: _openServerSettings),
@@ -134,6 +135,16 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Widget _buildForm(AuthState auth) {
+    // The password was right and the account asks for a code from its
+    // authenticator app.
+    if (auth.twoFactorChallenge != null) {
+      return TwoFactorStep(
+        busy: auth.isLoading,
+        error: auth.errorMessage,
+        onSubmit: (code) => auth.handleTwoFactor(code),
+        onCancel: auth.cancelTwoFactor,
+      );
+    }
     final registering = _registering(auth);
     return Form(
       key: _formKey,

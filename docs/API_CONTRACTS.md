@@ -64,6 +64,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/.well-known/assetlinks.json](#profile-links) | No | Android app-link declaration |
 | POST | [/api/auth/register](#1-register-user) | No | Register a new user |
 | POST | [/api/auth/login](#2-login-user) | No | Log in and receive a token pair |
+| POST | [/api/auth/login/2fa](#6-two-step-sign-in) | No | Finish a sign-in that asked for an authenticator code |
 | POST | [/api/auth/refresh](#3-refresh) | No | Rotate a refresh token for a new token pair |
 | GET | [/api/auth/{provider}](#4-oauth-redirect) | No | Start Google / GitHub OAuth sign-in |
 | GET | [/api/auth/{provider}/callback](#5-oauth-callback) | No | OAuth callback that hands tokens back to the app |
@@ -81,6 +82,10 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | POST | [/api/reports](#reports-endpoints) | Yes | Report someone for spam or abuse (rate limited) |
 | GET | [/api/admin/reports?limit=&before=](#reports-endpoints) | Admin | The server admin's list of reports |
 | PATCH | [/api/users/me/settings](#12-privacy-settings) | Yes | Change your privacy settings |
+| GET | [/api/users/me/2fa](#6-two-step-sign-in) | Yes | Whether two-step sign-in is on |
+| POST | [/api/users/me/2fa/setup](#6-two-step-sign-in) | Yes | Get a secret for an authenticator app |
+| POST | [/api/users/me/2fa/enable](#6-two-step-sign-in) | Yes | Confirm a code and turn it on |
+| POST | [/api/users/me/2fa/disable](#6-two-step-sign-in) | Yes | Turn it off (password and a code) |
 | GET | [/api/users/me/sessions](#11-signed-in-devices) | Yes | List the devices you are signed in on |
 | DELETE | [/api/users/me/sessions/{id}](#11-signed-in-devices) | Yes | Sign one device out |
 | DELETE | [/api/users/me/sessions](#11-signed-in-devices) | Yes | Sign out every device but this one |
@@ -315,6 +320,22 @@ The username is trimmed and lowercased before lookup. `device_name` is optional,
 }
 ```
 
+#### `200 OK` with two-step sign-in
+
+If the password is right and the account has [two-step sign-in](#6-two-step-sign-in) on, there are no tokens yet. The reply is a challenge to answer with a code from the authenticator app, within 5 minutes, at [`/api/auth/login/2fa`](#6-two-step-sign-in):
+
+```json
+{
+  "success": true,
+  "data": {
+    "two_factor_required": true,
+    "challenge": "<challenge>"
+  }
+}
+```
+
+An app that doesn't know about this sees `success: true` with no `tokens`, and has to treat that as a failure.
+
 #### `401 Unauthorized`
 
 ```json
@@ -444,6 +465,41 @@ On Android, the page first tries an `intent://…#Intent;scheme=elephant;package
 #### `401 Unauthorized` (HTML)
 
 An "Authentication Failed" HTML page is returned when the state cookie doesn't match, the provider exchange fails, or the account can't be created.
+
+### 6. Two-step sign-in
+
+A second step after the password: a six digit code from an authenticator app (TOTP, RFC 6238: SHA-1, 30 second steps), or a one-time recovery code. It is only for accounts that sign in with a password. Signing in with Google or GitHub is unchanged.
+
+The server keeps the secret encrypted (AES-256-GCM, with the key from `TOTP_ENCRYPTION_KEY`, or `JWT_SECRET` if that is empty). A code is accepted for the current 30 second step and one either side, to allow for a clock that is a little off, and each code works once.
+
+Wrong codes are counted: after 5 in a row, code entry is locked for 15 minutes for that account (`429` with `Retry-After`), and a right code is refused while it is locked. A right code starts the count again.
+
+#### Finish a sign-in: `POST /api/auth/login/2fa`
+
+- **Authentication Required:** `NO`
+- **Rate limit:** a burst of 10 per address, then one every 5 seconds.
+
+```json
+{ "challenge": "<from login>", "code": "123456", "device_name": "Pixel 8" }
+```
+
+`code` is the six digits (spaces are ignored) or a recovery code (`k3f9-p2mx`, in any case, with or without the dash). The reply is the same as a normal [login](#2-login-user): `user` and `tokens`.
+
+- `400 Bad Request`: no challenge or code.
+- `401 Unauthorized`: a wrong or already used code (`"that code didn't work"`), or a challenge that is altered or older than 5 minutes (`"your sign-in took too long. Start again"`).
+- `429 Too Many Requests`: code entry is locked.
+
+An access token is not accepted as a challenge, and a challenge is not accepted as an access token.
+
+#### Turn it on (signed in)
+
+1. `POST /api/users/me/2fa/setup` returns `{ "secret": "<base32>", "otpauth_uri": "otpauth://totp/Elephant:<username>?secret=…" }`. Show the URI as a QR code (and the secret as text) for the authenticator app. It isn't on yet: a password is still enough to sign in. `400` for an account that has no password, `409` if it is already on. Asking again before confirming replaces the secret.
+2. `POST /api/users/me/2fa/enable` with `{ "code": "123456" }` confirms the app works, turns it on and returns `{ "recovery_codes": ["k3f9-p2mx", … 10 codes] }`. **This is the only time they are shown**; the server keeps hashes. `401` for a wrong code, `400` if setup wasn't started, `409` if it is on. Rate limited as above.
+
+#### Look and turn it off (signed in)
+
+- `GET /api/users/me/2fa` returns `{ "enabled": true, "recovery_codes_left": 10 }`.
+- `POST /api/users/me/2fa/disable` with `{ "password": "…", "code": "123456" }` turns it off, so someone holding an unlocked phone can't. The code can be a recovery code. `401` for a wrong password or code, `400` for either missing, `429` while locked.
 
 ---
 

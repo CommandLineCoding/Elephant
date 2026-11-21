@@ -98,6 +98,11 @@ func ParseToken(tokenStr string) (uid, sessionID string, err error) {
 		if !ok {
 			return "", "", fmt.Errorf("invalid token claim structure")
 		}
+		// A token made for another purpose (the step between a password and a
+		// two-step code) is not a sign-in.
+		if _, special := claims["purpose"]; special {
+			return "", "", fmt.Errorf("invalid token claim structure")
+		}
 		sid, _ := claims["sid"].(string)
 		return uid, sid, nil
 	}

@@ -47,6 +47,11 @@ var (
 	// REGISTRATION: "open" (default) or "closed" to stop new accounts being created.
 	REGISTRATION string
 
+	// TOTP_ENCRYPTION_KEY: what two-step sign-in secrets are encrypted with at
+	// rest. Empty means JWT_SECRET is used, but then changing JWT_SECRET locks
+	// everyone with two-step sign-in out, so set this to keep them apart.
+	TOTP_ENCRYPTION_KEY string
+
 	// ADMIN_USER_IDS: comma-separated IDs of the accounts that may read
 	// reports (GET /api/admin/reports). Empty means nobody can.
 	ADMIN_USER_IDS string
@@ -126,6 +131,7 @@ func init() {
 	TRUSTED_PROXY_HOPS = getEnv("TRUSTED_PROXY_HOPS", "auto")
 
 	REGISTRATION = getEnv("REGISTRATION", "open")
+	TOTP_ENCRYPTION_KEY = getEnv("TOTP_ENCRYPTION_KEY", "")
 	ADMIN_USER_IDS = getEnv("ADMIN_USER_IDS", "")
 	CLEANUP_INTERVAL_MINUTES = getEnv("CLEANUP_INTERVAL_MINUTES", "10")
 	PUSH_ALLOW_PRIVATE_ENDPOINTS = getEnv("PUSH_ALLOW_PRIVATE_ENDPOINTS", "false")

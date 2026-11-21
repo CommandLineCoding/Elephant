@@ -151,6 +151,19 @@ class AuthService {
     );
   }
 
+  /// The code that follows a right password for an account with two-step
+  /// sign-in: an authenticator code or a recovery code.
+  Future<Response> loginTwoFactor(String challenge, String code) async {
+    return await _dio.post(
+      "${Env.httpBaseUrl}/auth/login/2fa",
+      data: {
+        "challenge": challenge,
+        "code": code,
+        "device_name": await DeviceName.get(),
+      },
+    );
+  }
+
   Future<Response> register(
     String username,
     String displayName,

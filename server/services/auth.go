@@ -62,6 +62,20 @@ func (s *AuthService) Login(ctx context.Context, username, password, deviceName 
 		return nil, nil, errors.New("invalid username or password credentials")
 	}
 
+	// With two-step sign-in on, the password alone isn't enough: no tokens
+	// yet, only a short challenge to answer with a code.
+	on, err := repository.NewTwoFactorRepository().Enabled(ctx, user.ID)
+	if err != nil {
+		return nil, nil, errors.New("failed to check two-step sign-in")
+	}
+	if on {
+		challenge, err := newChallenge(user.ID)
+		if err != nil {
+			return nil, nil, errors.New("failed to issue tokens")
+		}
+		return nil, nil, &TwoFactorRequiredError{Challenge: challenge}
+	}
+
 	pairs, err := s.StartSession(ctx, user.ID, deviceName)
 	if err != nil {
 		return nil, nil, err

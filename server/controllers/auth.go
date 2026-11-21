@@ -103,6 +103,18 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if respondIfBusy(w, err) {
 		return
 	}
+	// A right password for an account with two-step sign-in: no tokens yet.
+	var needCode *services.TwoFactorRequiredError
+	if errors.As(err, &needCode) {
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{
+			Success: true,
+			Data: map[string]interface{}{
+				"two_factor_required": true,
+				"challenge":           needCode.Challenge,
+			},
+		})
+		return
+	}
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: err.Error()})

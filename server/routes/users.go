@@ -8,6 +8,7 @@ import (
 
 func UserRoute(router chi.Router) {
 	searchLimiter := middlewares.NewRateLimiter(2.0, 10.0).WithMessage("Rate limit exceeded. Too many search requests.")
+	codeLimiter := middlewares.NewRateLimiter(1.0/5, 10).WithMessage("Too many attempts. Please wait a moment and try again.")
 
 	router.Use(middlewares.AuthGuard)
 
@@ -19,6 +20,10 @@ func UserRoute(router chi.Router) {
 	router.Get("/me/blocked", controllers.HandleListBlocked)
 	router.Get("/me/settings", controllers.HandleGetSettings)
 	router.Patch("/me/settings", controllers.HandleUpdateSettings)
+	router.Get("/me/2fa", controllers.HandleTwoFactorStatus)
+	router.Post("/me/2fa/setup", controllers.HandleTwoFactorSetup)
+	router.With(codeLimiter.Limit).Post("/me/2fa/enable", controllers.HandleTwoFactorEnable)
+	router.With(codeLimiter.Limit).Post("/me/2fa/disable", controllers.HandleTwoFactorDisable)
 	router.Get("/me/sessions", controllers.HandleListSessions)
 	router.Delete("/me/sessions", controllers.HandleDeleteOtherSessions)
 	router.Delete("/me/sessions/{id}", controllers.HandleDeleteSession)
