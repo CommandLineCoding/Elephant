@@ -71,7 +71,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/api/users/{id}](#2-get-user-by-id) | Yes | Get a user by ID |
 | GET | [/api/users/search?q=&page=&limit=](#3-search-users) | Yes | Search users by username or display name (rate limited) |
 | DELETE | [/api/users/me](#4-delete-account) | Yes | Permanently delete the authenticated user's account |
-| PATCH | [/api/users/me](#10-update-display-name) | Yes | Change your display name |
+| PATCH | [/api/users/me](#10-update-your-profile) | Yes | Change your display name or username (once every 30 days) |
 | POST | [/api/users/me/push](#5-register-a-push-endpoint) | Yes | Register a UnifiedPush endpoint for new-message pings |
 | DELETE | [/api/users/me/push](#6-remove-a-push-endpoint) | Yes | Remove a UnifiedPush endpoint |
 | POST | [/api/users/{id}/block](#7-block-a-user) | Yes | Block a user |
@@ -461,10 +461,13 @@ An "Authentication Failed" HTML page is returned when the state cookie doesn't m
     "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     "username": "<username>",
     "display_name": "Full Name",
-    "created_at": "<Timestamp>"
+    "created_at": "<Timestamp>",
+    "username_changed_at": "<Timestamp>"
   }
 }
 ```
+
+`username_changed_at` is when you last [changed your username](#10-update-your-profile); it is left out if you never have. Other people's profiles never include it.
 
 #### `404 Not Found`
 
@@ -742,9 +745,9 @@ The people you blocked, most recent first.
 }
 ```
 
-### 10. Update Display Name
+### 10. Update Your Profile
 
-Changes your display name. It is trimmed, and must have 1 to 100 characters (counted as characters, not bytes). Other people see the new name the next time their app loads your profile.
+Changes your display name, your username, or both. Send only what to change; at least one is needed.
 
 - **URL:** `/api/users/me`
 - **Method:** `PATCH`
@@ -755,165 +758,44 @@ Changes your display name. It is trimmed, and must have 1 to 100 characters (cou
 
 ```json
 {
-  "display_name": "Maya Chen"
+  "display_name": "Maya Chen",
+  "username": "maya"
 }
 ```
 
+- `display_name` is trimmed, and must have 1 to 100 characters (counted as characters, not bytes). Other people see the new name the next time their app loads your profile.
+- `username` is the part before the dot, as when signing up: 3 to 25 letters and digits (it is lowercased). The server adds a new four digit number, so `maya` becomes `maya.4821`. It can be changed **once every 30 days**. Your chats are unaffected, since they use user IDs; but signing in needs the new username from then on, and the old one (and profile links with it) stops finding you.
+
+If the username is refused, nothing is changed, not even the display name.
+
 #### `200 OK`
 
-The updated user, as in [User ME](#1-user-me).
+The updated user, as in [User ME](#1-user-me), with `username_changed_at` (only you are told it).
 
 ```json
 {
   "success": true,
   "data": {
     "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-    "username": "maya.2723",
+    "username": "maya.4821",
     "display_name": "Maya Chen",
-    "created_at": "<Timestamp>"
+    "created_at": "<Timestamp>",
+    "username_changed_at": "<Timestamp>"
   }
 }
 ```
 
 #### `400 Bad Request`
 
-`"Expected a display_name"`, `"display name cannot be empty"` or `"display name must be at most 100 characters"`.
+`"Expected a display_name or a username"`, `"display name cannot be empty"`, `"display name must be at most 100 characters"`, `"username prefix must be between 3 and 25 characters"`, `"username prefix must contain only alphanumeric characters"` or `"that is already your username"`.
 
-### 11. Signed-in devices
+#### `409 Conflict`
 
-Each sign-in is a session. These endpoints list them and sign them out. Signing a device out deletes its refresh token and closes its WebSocket at once; the device has to sign in again.
+`"username namespace collision; please try again"`: every number tried for that name was taken. Try again.
 
-- **URL:** `/api/users/me/sessions`
-- **Authentication Required:** `YES`
+#### `429 Too Many Requests`
 
-#### `GET /api/users/me/sessions`
-
-The devices you are signed in on, most recently used first. `current` is true for the device that is asking. `last_used_at` is when it last refreshed its tokens, so it can be up to 15 minutes behind.
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
-      "device_name": "Pixel 8",
-      "started_at": "<Timestamp>",
-      "last_used_at": "<Timestamp>",
-      "current": true
-    }
-  ]
-}
-```
-
-`device_name` is an empty string if the device never sent one.
-
-#### `DELETE /api/users/me/sessions/{id}`
-
-Signs one device out. It can be the device that is asking.
-
-- `200 OK`: `{ "success": true }`
-- `400 Bad Request`: `"Invalid device ID"`
-- `404 Not Found`: `"No such device"`, including a device that belongs to someone else.
-
-#### `DELETE /api/users/me/sessions`
-
-Signs out every device except the one that is asking.
-
-```json
-{ "success": true, "data": { "signed_out": 2 } }
-```
-
-`400 Bad Request` (`"Sign in again to use this"`) for an access token issued before sessions existed, which doesn't say which device is the current one.
-
-### 12. Privacy settings
-
-What a person lets others see and do. **The server enforces every setting**, so a modified app can't get around them. Someone who never changed anything has the defaults, which are how the server behaved before there were settings.
-
-- **URL:** `/api/users/me/settings`
-- **Authentication Required:** `YES`
-
-| Field | Values | Default | What it does |
-|---|---|---|---|
-| `online_status` | `everyone`, `contacts`, `nobody` | `contacts` | Who is told you are online (`user_status` events and `request_status` answers). `contacts` is people who share a chat or a group with you; `everyone` is anyone you haven't blocked and who hasn't blocked you; with `nobody` everyone is told you are offline. |
-| `read_receipts` | `true`, `false` | `true` | When `false`, your `read_receipt` events aren't forwarded, and the people who sent you messages don't see them as read in the history or the chat list. You still see which messages you read. |
-| `group_adds` | `everyone`, `contacts`, `nobody` | `everyone` | Who can add you to a group. [Add Member](#8-add-member-to-group) answers `403` for someone who isn't allowed. |
-
-If the server can't load someone's settings it shares nothing: they are reported offline and no read receipt is forwarded.
-
-#### `GET /api/users/me/settings`
-
-```json
-{
-  "success": true,
-  "data": { "online_status": "contacts", "read_receipts": true, "group_adds": "everyone" }
-}
-```
-
-#### `PATCH /api/users/me/settings`
-
-Send only the fields to change. The reply is all the settings after the change, in the same shape as `GET`.
-
-```json
-{ "online_status": "nobody", "read_receipts": false }
-```
-
-`400 Bad Request` for a body that isn't an object, or an `online_status` or `group_adds` that isn't one of the three values. Nothing is changed.
-
-## Reports Endpoints
-
-Blocking stops someone reaching you; a report tells the server's admin. Direct messages are end-to-end encrypted, so the server can't see what was said. A report can include a few messages that the reporter's phone attaches as plain text, after asking the reporter.
-
-### Report someone
-
-- **URL:** `/api/reports`
-- **Method:** `POST`
-- **Authentication Required:** `YES`
-- **Rate limit:** a burst of 3, then one every 20 seconds, and at most 20 reports per person per day.
-
-```json
-{
-  "user_id": "<reported user ID>",
-  "reason": "spam",
-  "note": "Keeps sending me links",
-  "messages": [
-    { "from_reported": true, "text": "buy my coins", "at": "<Timestamp>" }
-  ]
-}
-```
-
-`reason` is `spam`, `harassment` or `other`. `note` is optional, up to 500 characters. `messages` is optional: up to 10, each up to 1000 characters, as plain text. Blocking the person is a separate call ([Block a user](#7-block-a-user)).
-
-- `201 Created`: `{ "success": true, "data": { "id": 12 } }`
-- `400 Bad Request`: an invalid user ID, reason, note or messages, or reporting yourself.
-- `404 Not Found`: `"User not found"`.
-- `429 Too Many Requests`: the rate limit or the daily limit.
-
-### List reports (admins)
-
-- **URL:** `/api/admin/reports?limit=50&before=<id>`
-- **Method:** `GET`
-- **Authentication Required:** `YES`, and the user ID must be in the server's `ADMIN_USER_IDS`. Anyone else gets `403` (`"Admins only"`).
-
-Reports, newest first. `limit` is 1 to 200 (default 50); pass the last `id` of a page as `before` to get the next one.
-
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "id": 12,
-      "reporter_id": "<user ID>",
-      "reporter_username": "ava.1234",
-      "reported_user_id": "<user ID>",
-      "reported_username": "spam.5678",
-      "reason": "spam",
-      "note": "Keeps sending me links",
-      "messages": [{ "from_reported": true, "text": "buy my coins", "at": "<Timestamp>" }],
-      "created_at": "<Timestamp>"
-    }
-  ]
-}
-```
+The username was changed less than 30 days ago. A `Retry-After` header says how many seconds to wait, and the message says the date.
 
 ---
 

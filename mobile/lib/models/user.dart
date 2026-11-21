@@ -6,12 +6,16 @@ class UserModel {
   final String? email;
   final DateTime? createdAt;
 
+  /// When the person last changed their username. Only their own profile has it.
+  final DateTime? usernameChangedAt;
+
   UserModel({
     required this.id,
     required this.username,
     required this.displayName,
     this.email,
     this.createdAt,
+    this.usernameChangedAt,
   });
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
@@ -25,6 +29,9 @@ class UserModel {
       email: (email == null || email.isEmpty) ? null : email,
       createdAt: DateTime.tryParse(
         json['created_at']?.toString() ?? '',
+      )?.toLocal(),
+      usernameChangedAt: DateTime.tryParse(
+        json['username_changed_at']?.toString() ?? '',
       )?.toLocal(),
     );
   }

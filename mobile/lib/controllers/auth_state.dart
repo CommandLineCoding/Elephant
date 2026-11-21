@@ -20,6 +20,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:app_links/app_links.dart';
 import 'package:mobile/models/user.dart';
 import '../core/constants.dart';
+import '../core/username.dart';
 import '../core/profile_links.dart';
 import '../services/auth_service.dart';
 
@@ -209,6 +210,36 @@ class AuthState extends ChangeNotifier {
       );
     }
   }
+
+  /// Changes the username to [prefix] and a new four digit number, once every
+  /// 30 days. Returns an error message, or null on success. Chats are
+  /// unaffected, since they use user IDs; sign-in needs the new username.
+  Future<String?> changeUsername(String prefix) async {
+    final problem = usernamePrefixProblem(prefix);
+    if (problem != null) return problem;
+    final wait = nextUsernameChange(
+      _currentUser?.usernameChangedAt,
+      DateTime.now(),
+    );
+    if (wait != null) return 'You can change it again after ${_day(wait)}.';
+    try {
+      final res = await ApiService().updateMe(
+        username: prefix.trim().toLowerCase(),
+      );
+      final userData = ApiService.dataMap(res.data);
+      _currentUser = UserModel.fromJson(userData);
+      await _authService.saveUserProfile(jsonEncode(userData));
+      notifyListeners();
+      return null;
+    } catch (e) {
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't change your username.",
+      );
+    }
+  }
+
+  static String _day(DateTime d) => '${d.day}/${d.month}/${d.year}';
 
   Future<String?> checkAutoLogin() async {
     _token = await _authService.getToken();

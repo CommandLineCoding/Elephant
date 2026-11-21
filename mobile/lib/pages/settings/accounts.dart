@@ -7,6 +7,8 @@ import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/core/constants.dart';
+import 'package:mobile/core/username.dart';
+import 'package:mobile/models/user.dart';
 import 'package:mobile/pages/settings/signed_in_devices.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -47,6 +49,95 @@ Future<void> _deleteAccount(BuildContext context, String username) async {
     return;
   }
   await signOut(context);
+}
+
+/// Asks for the new username, and says what changing it means first.
+@visibleForTesting
+class ChangeUsernameDialog extends StatefulWidget {
+  final String current;
+
+  const ChangeUsernameDialog({super.key, required this.current});
+
+  @override
+  State<ChangeUsernameDialog> createState() => ChangeUsernameDialogState();
+}
+
+@visibleForTesting
+class ChangeUsernameDialogState extends State<ChangeUsernameDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: usernamePrefix(widget.current),
+  );
+
+  bool _edited = false;
+
+  String? get _problem {
+    final text = _controller.text;
+    final problem = usernamePrefixProblem(text);
+    if (problem != null) return problem;
+    if (text.trim().toLowerCase() == usernamePrefix(widget.current)) {
+      return 'That is already your username.';
+    }
+    return null;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final problem = _problem;
+    return AlertDialog(
+      title: const Text('Change username'),
+      scrollable: true,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'You will sign in with your new username from now on, and the old '
+            'one stops working. Links and QR codes with the old one stop '
+            'finding you. Your chats are not affected.\n\n'
+            'A new four digit number is added after the dot, and you can '
+            'change it again after 30 days.',
+            style: context.text.bodyMedium,
+          ),
+          const SizedBox(height: Insets.lg),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            autocorrect: false,
+            maxLength: usernamePrefixMax,
+            onChanged: (_) => setState(() => _edited = true),
+            decoration: InputDecoration(
+              prefixText: '@',
+              suffixText: '.####',
+              helperText: 'Letters and numbers only',
+              // Not before they have typed: it starts as the current name.
+              errorText: _edited && _controller.text.isNotEmpty
+                  ? problem
+                  : null,
+            ),
+          ),
+        ],
+      ),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: problem == null
+              ? () => Navigator.pop(context, _controller.text.trim())
+              : null,
+          child: const Text('Change'),
+        ),
+      ],
+    );
+  }
 }
 
 class _DeleteAccountDialog extends StatefulWidget {
@@ -141,6 +232,38 @@ class AccountsSettings extends StatelessWidget {
     }
   }
 
+  String _changeSubtitle(UserModel? user) {
+    final wait = nextUsernameChange(user?.usernameChangedAt, DateTime.now());
+    return wait == null
+        ? 'Once every 30 days. You get a new number after the dot.'
+        : 'You can change it again after ${DateFormat.yMMMd().format(wait)}.';
+  }
+
+  Future<void> _changeUsername(BuildContext context, UserModel user) async {
+    final wait = nextUsernameChange(user.usernameChangedAt, DateTime.now());
+    if (wait != null) {
+      showSnack(
+        context,
+        'You can change your username again after '
+        '${DateFormat.yMMMd().format(wait)}.',
+      );
+      return;
+    }
+    final prefix = await showDialog<String>(
+      context: context,
+      builder: (_) => ChangeUsernameDialog(current: user.username),
+    );
+    if (prefix == null || !context.mounted) return;
+    final error = await context.read<AuthState>().changeUsername(prefix);
+    if (!context.mounted) return;
+    if (error != null) {
+      showSnack(context, error, isError: true);
+      return;
+    }
+    final now = context.read<AuthState>().currentUser?.username;
+    showSnack(context, 'You are now @$now. Sign in with it from now on.');
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = context.watch<AuthState>().currentUser;
@@ -191,6 +314,14 @@ class AccountsSettings extends StatelessWidget {
                   onTap: user == null
                       ? null
                       : () => _copy(context, user.username, 'Username'),
+                ),
+                ElephantTile(
+                  icon: Icons.drive_file_rename_outline_rounded,
+                  title: 'Change username',
+                  subtitle: _changeSubtitle(user),
+                  onTap: user == null
+                      ? null
+                      : () => _changeUsername(context, user),
                 ),
                 ElephantTile(
                   icon: Icons.badge_outlined,
