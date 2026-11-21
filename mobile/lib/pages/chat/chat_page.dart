@@ -14,7 +14,10 @@ import 'package:mobile/models/message.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/pages/chat/forward_page.dart';
 import 'package:mobile/widgets/mention_widgets.dart';
+import 'package:mobile/core/chat_wallpaper.dart';
 import 'package:mobile/pages/chat/block_user.dart';
+import 'package:mobile/pages/settings/chat_wallpaper.dart';
+import 'package:mobile/services/chat_appearance.dart';
 import 'package:mobile/pages/chat/report_user.dart';
 import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/reports.dart';
@@ -1053,6 +1056,14 @@ class _ChatPageState extends State<ChatPage> {
         alreadyBlocked: _isBlocked,
         recentMessages: _messagesForReport,
       );
+    } else if (value == 'wallpaper') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) =>
+              ChatWallpaperPage(chatId: widget.chatUserId, chatName: _title),
+        ),
+      );
     } else if (value == 'unblock') {
       await unblock(context, widget.chatUserId, _title);
     } else if (value == 'delete') {
@@ -1291,6 +1302,10 @@ class _ChatPageState extends State<ChatPage> {
                           value: 'report',
                           child: Text('Report'),
                         ),
+                      const PopupMenuItem(
+                        value: 'wallpaper',
+                        child: Text('Wallpaper'),
+                      ),
                       PopupMenuItem(
                         value: 'delete',
                         child: Text(
@@ -1306,7 +1321,30 @@ class _ChatPageState extends State<ChatPage> {
           child: Stack(
             children: [
               Positioned.fill(
-                child: _buildMessageList(chat, messages, topInset),
+                child: ListenableBuilder(
+                  listenable: ChatAppearance.instance,
+                  builder: (context, _) => WallpaperView(
+                    wallpaper: ChatAppearance.instance.wallpaperFor(
+                      widget.chatUserId,
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: ListenableBuilder(
+                  listenable: ChatAppearance.instance,
+                  // Message text follows the person's size setting, on top of
+                  // the phone's own.
+                  builder: (context, _) => MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      textScaler: TextScaler.linear(
+                        MediaQuery.textScalerOf(context).scale(1) *
+                            ChatAppearance.instance.textSize.scale,
+                      ),
+                    ),
+                    child: _buildMessageList(chat, messages, topInset),
+                  ),
+                ),
               ),
               if (_searchMode)
                 Positioned.fill(top: topInset, child: _buildSearchResults()),
