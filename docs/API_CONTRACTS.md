@@ -108,6 +108,11 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | DELETE | [/api/groups/{id}/members/{userId}](#9-remove-member-from-group) | Admin | Remove a member |
 | DELETE | [/api/groups/{id}/history](#10-clear-group-history) | Member | Clear a group's messages for you only |
 | DELETE | [/api/groups/{id}](#11-delete-group) | Admin | Delete a group, its members and messages |
+| GET, PUT, DELETE | [/api/groups/{id}/invite](#12-group-invite-link) | Admin | See, create or reset, and turn off the group's invite link |
+| GET | [/api/groups/{id}/requests](#13-join-requests) | Admin | Who is waiting to be let in |
+| POST, DELETE | [/api/groups/{id}/requests/{userId}](#13-join-requests) | Admin | Let someone in, or turn them down |
+| GET | [/api/invites/{code}](#14-using-an-invite-link) | Yes | What an invite link is for: the group's name and size |
+| POST | [/api/invites/{code}/join](#14-using-an-invite-link) | Yes | Join with an invite link, or ask to |
 | POST | [/api/e2ee/keys](#1-upload-prekey-bundle) | Yes | Upload identity key, signed prekey and one-time prekeys |
 | GET | [/api/e2ee/bundle/{userId}?device_id=](#2-fetch-prekey-bundle) | Yes | Fetch a user's prekey bundle (consumes one one-time prekey) |
 | POST | [/api/e2ee/verify](#3-set-contact-verification) | Yes | Mark a contact's identity key as verified or unverified |
@@ -164,12 +169,13 @@ Returned when the database ping fails.
 
 ---
 
-## Profile Links
+## Profile and Group Links
 
 Served at the root, outside `/api`.
 
 - **`GET /u/{username}`**: a small HTML page for someone who opens a profile link (`https://<host>/u/alex.4821`) without the app: the username, an **Open in Elephant** link (`elephant://u/alex.4821`) and where to get the app. Anything that isn't a full username (`name.1234`) gives `404`. With the app installed, Android opens the chat instead.
-- **`GET /.well-known/assetlinks.json`**: tells Android that the Elephant app (`in.commandlinecoding.elephant`) may open `https://<host>/u/…` links directly. The certificate fingerprints come from `APP_LINK_FINGERPRINTS`. The app only claims https links for `elephant.commandlinecoding.in`, so on other servers profile links use the `elephant://u/<username>` form.
+- **`GET /g/{code}`**: the same for a [group invite link](#12-group-invite-link) (`https://<host>/g/<code>`, or `elephant://g/<code>`): a page with an **Open in Elephant** link. It doesn't name the group, since anything that sees the link, such as a chat app making a preview, can fetch it. A code that isn't 32 letters, digits, `-` and `_` gives `404`.
+- **`GET /.well-known/assetlinks.json`**: tells Android that the Elephant app (`in.commandlinecoding.elephant`) may open `https://<host>/u/…` and `/g/…` links directly. The certificate fingerprints come from `APP_LINK_FINGERPRINTS`. The app only claims https links for `elephant.commandlinecoding.in`, so on other servers profile and group links use the `elephant://` form.
 
 ---
 
@@ -2079,6 +2085,78 @@ Deletes the group with all its members and messages, for everyone, and sends the
 #### `403 Forbidden`
 
 Returned to members who aren't admins.
+
+### 12. Group Invite Link
+
+Adds people without an admin picking each one. A group has at most one link; its code is 32 random characters, which is the only secret in it. A link is shared as `https://<host>/g/<code>` or, for self-hosted servers, `elephant://g/<code>`.
+
+- **URL:** `/api/groups/{id}/invite`
+- **Authentication Required:** `YES` (admin)
+
+#### `GET`
+
+```json
+{ "success": true, "data": { "enabled": true, "code": "<32 characters>", "require_approval": false } }
+```
+
+With no link: `{ "enabled": false, "require_approval": false }`.
+
+#### `PUT`
+
+Creates the link, or changes it. Send nothing to create it (asking again returns the same code).
+
+```json
+{ "require_approval": true, "reset": true }
+```
+
+- `require_approval`: when `true`, opening the link asks to join and an admin lets the person in ([join requests](#13-join-requests)). Left out, it stays as it is.
+- `reset`: make a new code. The old one stops working at once.
+
+Returns the link as in `GET`.
+
+#### `DELETE`
+
+Turns the link off. Anyone waiting for approval is dropped. `200 OK` with `{ "success": true }`.
+
+### 13. Join Requests
+
+For a group whose link needs approval. Admins only; others get `403`. Each change sends the group's members a [`group_updated`](#11-group-updated) event.
+
+- `GET /api/groups/{id}/requests`: who is waiting, oldest first: `[{ "user_id", "username", "display_name", "requested_at" }]`.
+- `POST /api/groups/{id}/requests/{userId}`: lets the person in as a member.
+- `DELETE /api/groups/{id}/requests/{userId}`: turns them down.
+
+Both answer `404` (`"No such request"`) if there is none, and `400` for a bad user ID.
+
+### 14. Using an Invite Link
+
+Rate limited: a burst of 10, then one every 5 seconds. A code that is malformed, unknown, reset or turned off gives `404` (`"This invite link doesn't work any more"`).
+
+#### `GET /api/invites/{code}`
+
+What the person sees before joining. It names nobody.
+
+```json
+{
+  "success": true,
+  "data": {
+    "group_id": "<id>",
+    "name": "Sunday Ride",
+    "member_count": 12,
+    "require_approval": false,
+    "already_member": false,
+    "already_requested": false
+  }
+}
+```
+
+#### `POST /api/invites/{code}/join`
+
+```json
+{ "success": true, "data": { "status": "joined", "group_id": "<id>" } }
+```
+
+`status` is `joined` (a member now, with the role `member`), `requested` (the group needs approval; an admin will answer) or `already_member`. Joining by link is the person's own choice, so [who can add you to groups](#12-privacy-settings) doesn't apply.
 
 ---
 

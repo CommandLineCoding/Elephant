@@ -25,5 +25,13 @@ func GroupRoute(router chi.Router) {
 		sr.With(middlewares.GroupAdminGuard).Delete("/", controllers.HandleDeleteGroup)                  // DELETE /api/groups/{id}
 		sr.With(middlewares.GroupAdminGuard).Post("/members", controllers.HandleAddMember)               // POST /api/groups/{id}/members
 		sr.With(middlewares.GroupAdminGuard).Delete("/members/{userId}", controllers.HandleRemoveMember) // DELETE /api/groups/{id}/members/{userId}
+
+		// The invite link and who is waiting to be let in (admins).
+		sr.With(middlewares.GroupAdminGuard).Get("/invite", controllers.HandleGetInvite)                      // GET /api/groups/{id}/invite
+		sr.With(middlewares.GroupAdminGuard).Put("/invite", controllers.HandleSetInvite)                      // PUT /api/groups/{id}/invite
+		sr.With(middlewares.GroupAdminGuard).Delete("/invite", controllers.HandleDeleteInvite)                // DELETE /api/groups/{id}/invite
+		sr.With(middlewares.GroupAdminGuard).Get("/requests", controllers.HandleListJoinRequests)             // GET /api/groups/{id}/requests
+		sr.With(middlewares.GroupAdminGuard).Post("/requests/{userId}", controllers.HandleApproveJoinRequest) // POST /api/groups/{id}/requests/{userId}
+		sr.With(middlewares.GroupAdminGuard).Delete("/requests/{userId}", controllers.HandleDenyJoinRequest)  // DELETE /api/groups/{id}/requests/{userId}
 	})
 }

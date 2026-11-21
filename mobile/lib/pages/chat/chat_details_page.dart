@@ -15,6 +15,7 @@ import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/peer_profiles.dart';
+import 'package:mobile/widgets/group_invite_section.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
@@ -710,6 +711,7 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
           ],
         ),
       ],
+      if (iAmAdmin) GroupInviteSection(groupId: widget.chatId),
       SectionLabel(
         'Members',
         trailing: groups.isLoadingDetails && members.isNotEmpty

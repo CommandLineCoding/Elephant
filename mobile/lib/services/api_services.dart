@@ -211,6 +211,32 @@ class ApiService {
     },
   );
 
+  // --- Group invite links ---
+
+  Future<Response> getInvite(String groupId) =>
+      _dio.get("/groups/$groupId/invite");
+
+  Future<Response> setInvite(String groupId, Map<String, dynamic> body) =>
+      _dio.put("/groups/$groupId/invite", data: body);
+
+  Future<Response> deleteInvite(String groupId) =>
+      _dio.delete("/groups/$groupId/invite");
+
+  Future<Response> getJoinRequests(String groupId) =>
+      _dio.get("/groups/$groupId/requests");
+
+  Future<Response> decideJoinRequest(
+    String groupId,
+    String userId, {
+    required bool approve,
+  }) => approve
+      ? _dio.post("/groups/$groupId/requests/$userId")
+      : _dio.delete("/groups/$groupId/requests/$userId");
+
+  Future<Response> getInvitePreview(String code) => _dio.get("/invites/$code");
+
+  Future<Response> joinInvite(String code) => _dio.post("/invites/$code/join");
+
   // --- Reports ---
 
   Future<Response> createReport(Map<String, dynamic> report) =>
