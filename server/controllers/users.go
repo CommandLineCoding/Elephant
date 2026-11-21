@@ -130,26 +130,59 @@ type UpdateMeReq struct {
 	// Username is the part before the dot, as when signing up; the server
 	// picks a new four digit number. Once every 30 days.
 	Username *string `json:"username"`
+
+	// Bio is the "about" text, up to 140 characters. Empty clears it.
+	Bio *string `json:"bio"`
+
+	// Status is the custom status: an emoji and short text, and how many
+	// seconds it lasts. One with neither emoji nor text clears it.
+	Status *services.StatusInput `json:"status"`
 }
 
-// HandleUpdateMe handles PATCH /api/users/me: change your display name,
-// your username, or both.
+// HandleUpdateMe handles PATCH /api/users/me: change your display name, your
+// username, your bio or your custom status.
 func HandleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	uid, _ := r.Context().Value(middlewares.UserIDKey).(string)
 
 	var req UpdateMeReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || (req.DisplayName == nil && req.Username == nil) {
-		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "Expected a display_name or a username"})
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&req); err != nil ||
+		(req.DisplayName == nil && req.Username == nil && req.Bio == nil && req.Status == nil) {
+		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "Expected a display_name, a username, a bio or a status"})
 		return
 	}
 
+	// Everything is checked before anything is changed, so a refused request
+	// changes nothing.
+	var changes repository.ProfileChanges
+	if req.Bio != nil {
+		bio, err := services.NormalizeBio(*req.Bio)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: strings.TrimPrefix(err.Error(), services.ErrInvalidProfile.Error()+": ")})
+			return
+		}
+		changes.Bio = &bio
+	}
+	if req.Status != nil {
+		status, err := services.NormalizeStatus(*req.Status, time.Now())
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: strings.TrimPrefix(err.Error(), services.ErrInvalidProfile.Error()+": ")})
+			return
+		}
+		changes.Status = status
+	}
 	svc := services.NewUserService()
-	var user *models.User
-	var err error
+	if req.DisplayName != nil {
+		if _, err := services.NormalizeDisplayName(*req.DisplayName); err != nil {
+			msg := strings.TrimPrefix(err.Error(), services.ErrInvalidDisplayName.Error()+": ")
+			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: msg})
+			return
+		}
+	}
 
-	// The username goes first: it can be refused, and then nothing changes.
+	// The username goes next: it can still be refused (too soon, taken), and
+	// then nothing else is changed either.
 	if req.Username != nil {
-		user, err = svc.ChangeUsername(r.Context(), uid, *req.Username)
+		_, err := svc.ChangeUsername(r.Context(), uid, *req.Username)
 		var recent repository.ErrUsernameChangedRecently
 		switch {
 		case errors.As(err, &recent):
@@ -176,23 +209,32 @@ func HandleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.DisplayName != nil {
-		user, err = svc.UpdateDisplayName(r.Context(), uid, *req.DisplayName)
-		switch {
-		case errors.Is(err, services.ErrInvalidDisplayName):
-			msg := strings.TrimPrefix(err.Error(), services.ErrInvalidDisplayName.Error()+": ")
-			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: msg})
-			return
-		case errors.Is(err, pgx.ErrNoRows):
-			writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "User profile not found"})
-			return
-		case err != nil:
+		if _, err := svc.UpdateDisplayName(r.Context(), uid, *req.DisplayName); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "User profile not found"})
+				return
+			}
 			log.Printf("Couldn't update a display name: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Couldn't update your profile"})
 			return
 		}
-		if at, aerr := repository.NewUserRepository().UsernameChangedAt(r.Context(), uid); aerr == nil {
-			user.UsernameChangedAt = at
+	}
+	repo := repository.NewUserRepository()
+	if changes.Bio != nil || changes.Status != nil {
+		if err := repo.UpdateProfile(r.Context(), uid, changes); err != nil {
+			log.Printf("Couldn't update a profile: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Couldn't update your profile"})
+			return
 		}
+	}
+
+	user, err := repo.FindByID(r.Context(), uid)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "User profile not found"})
+		return
+	}
+	if at, aerr := repo.UsernameChangedAt(r.Context(), uid); aerr == nil {
+		user.UsernameChangedAt = at
 	}
 	writeJSON(w, http.StatusOK, models.JSONResponse{Success: true, Data: user})
 }

@@ -21,6 +21,7 @@ import 'package:mobile/pages/settings/chat_wallpaper.dart';
 import 'package:mobile/services/chat_appearance.dart';
 import 'package:mobile/pages/chat/report_user.dart';
 import 'package:mobile/services/nicknames.dart';
+import 'package:mobile/services/peer_profiles.dart';
 import 'package:mobile/services/reports.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/pages/call/call_page.dart';
@@ -131,6 +132,7 @@ class _ChatPageState extends State<ChatPage> {
       StarredMessages.instance.load();
       if (!widget.isGroup) {
         Nicknames.instance.load().then((_) => _refreshTitle());
+        PeerProfiles.instance.load(widget.chatUserId);
       }
       final initial = widget.initialMessageId;
       if (initial != null) _showMessage(initial);
@@ -1156,6 +1158,9 @@ class _ChatPageState extends State<ChatPage> {
       final count = group.currentGroupMembers.length;
       return count > 0 ? '$count members · tap for info' : 'Tap for group info';
     }
+    // Their custom status, if they have one. (Online shows on the avatar.)
+    final status = PeerProfiles.instance.of(widget.chatUserId)?.statusLine();
+    if (status != null) return status;
     if (chat.isPeerOnline) return 'online';
     return widget.username != null
         ? '@${widget.username}'
@@ -1169,6 +1174,7 @@ class _ChatPageState extends State<ChatPage> {
         BlockedUsers.instance,
         CallLog.instance,
         StarredMessages.instance,
+        PeerProfiles.instance,
       ]),
       builder: (context, _) => _buildPage(context),
     );
@@ -1283,7 +1289,13 @@ class _ChatPageState extends State<ChatPage> {
                 isOnline: widget.isGroup ? null : chat.isPeerOnline,
                 subtitle: _subtitle(chat, group),
                 highlightSubtitle:
-                    chat.isPeerTyping || (!widget.isGroup && chat.isPeerOnline),
+                    chat.isPeerTyping ||
+                    (!widget.isGroup &&
+                        chat.isPeerOnline &&
+                        PeerProfiles.instance
+                                .of(widget.chatUserId)
+                                ?.hasStatus() !=
+                            true),
                 onTitleTap: _openDetails,
                 actions: [
                   if (!widget.isGroup && !_isBlocked)

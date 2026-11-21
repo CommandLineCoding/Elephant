@@ -14,6 +14,7 @@ import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/nicknames.dart';
+import 'package:mobile/services/peer_profiles.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
@@ -62,13 +63,25 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
   @override
   void initState() {
     super.initState();
+    PeerProfiles.instance.addListener(_onProfiles);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.isGroup) {
         context.read<GroupDetailsController>().fetchGroupMembers(widget.chatId);
       } else {
         _loadVerification();
+        PeerProfiles.instance.load(widget.chatId);
       }
     });
+  }
+
+  void _onProfiles() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    PeerProfiles.instance.removeListener(_onProfiles);
+    super.dispose();
   }
 
   Future<void> _loadVerification() async {
@@ -532,8 +545,37 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     ];
   }
 
+  /// What the person says about themselves: their status and about text.
+  List<Widget> _aboutSection() {
+    final user = PeerProfiles.instance.of(widget.chatId);
+    final status = user?.statusLine();
+    final bio = user?.bio ?? '';
+    if (status == null && bio.isEmpty) return const [];
+    return [
+      const SectionLabel('About'),
+      Section(
+        children: [
+          if (status != null)
+            ElephantTile(
+              icon: Icons.mood_rounded,
+              title: status,
+              subtitle: 'Status',
+              showChevron: false,
+            ),
+          if (bio.isNotEmpty)
+            ElephantTile(
+              icon: Icons.info_outline_rounded,
+              title: bio,
+              showChevron: false,
+            ),
+        ],
+      ),
+    ];
+  }
+
   List<Widget> _buildDirectSections() {
     return [
+      ..._aboutSection(),
       ..._nicknameSection(),
       ..._starredSection(),
       const SectionLabel('Encryption'),

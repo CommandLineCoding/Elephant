@@ -462,12 +462,14 @@ An "Authentication Failed" HTML page is returned when the state cookie doesn't m
     "username": "<username>",
     "display_name": "Full Name",
     "created_at": "<Timestamp>",
-    "username_changed_at": "<Timestamp>"
+    "username_changed_at": "<Timestamp>",
+    "bio": "",
+    "status": { "emoji": "🚴", "text": "On a ride", "expires_at": "<Timestamp>" }
   }
 }
 ```
 
-`username_changed_at` is when you last [changed your username](#10-update-your-profile); it is left out if you never have. Other people's profiles never include it.
+`bio` is the person's "about" text (empty if none). `status` is their custom status, and is left out if they have none or it has expired; `expires_at` is left out for one with no end. Both are in [Get User by ID](#2-get-user-by-id) too, since they are visible to anyone who can look the person up. `username_changed_at` is when you last [changed your username](#10-update-your-profile); it is left out if you never have. Other people's profiles never include it.
 
 #### `404 Not Found`
 
@@ -494,10 +496,14 @@ An "Authentication Failed" HTML page is returned when the state cookie doesn't m
     "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
     "username": "<username>",
     "display_name": "Full Name",
-    "created_at": "<Timestamp>"
+    "created_at": "<Timestamp>",
+    "bio": "Cyclist. Chai first.",
+    "status": { "emoji": "🚴", "text": "On a ride", "expires_at": "<Timestamp>" }
   }
 }
 ```
+
+`bio` and `status` are described under [User ME](#1-user-me). `username_changed_at` is never included for someone else.
 
 #### `404 Not Found`
 
@@ -747,7 +753,7 @@ The people you blocked, most recent first.
 
 ### 10. Update Your Profile
 
-Changes your display name, your username, or both. Send only what to change; at least one is needed.
+Changes your display name, username, bio or custom status. Send only what to change; at least one is needed.
 
 - **URL:** `/api/users/me`
 - **Method:** `PATCH`
@@ -759,14 +765,19 @@ Changes your display name, your username, or both. Send only what to change; at 
 ```json
 {
   "display_name": "Maya Chen",
-  "username": "maya"
+  "username": "maya",
+  "bio": "Cyclist. Chai first.",
+  "status": { "emoji": "🚴", "text": "On a ride", "expires_in": 3600 }
 }
 ```
 
 - `display_name` is trimmed, and must have 1 to 100 characters (counted as characters, not bytes). Other people see the new name the next time their app loads your profile.
 - `username` is the part before the dot, as when signing up: 3 to 25 letters and digits (it is lowercased). The server adds a new four digit number, so `maya` becomes `maya.4821`. It can be changed **once every 30 days**. Your chats are unaffected, since they use user IDs; but signing in needs the new username from then on, and the old one (and profile links with it) stops finding you.
 
-If the username is refused, nothing is changed, not even the display name.
+- `bio` is the "about" text: up to 140 characters, trimmed; an empty string clears it.
+- `status` is the custom status: an `emoji` (up to 16 characters) and `text` (up to 60), either of which can be empty, and `expires_in`, how many seconds it lasts (60 to 604800; `0` or left out means until you change it). A status with neither emoji nor text clears it. An expired status is no longer shown.
+
+Bio and status are visible to anyone who can look you up. If anything in the request is refused, nothing is changed.
 
 #### `200 OK`
 
@@ -780,14 +791,16 @@ The updated user, as in [User ME](#1-user-me), with `username_changed_at` (only 
     "username": "maya.4821",
     "display_name": "Maya Chen",
     "created_at": "<Timestamp>",
-    "username_changed_at": "<Timestamp>"
+    "username_changed_at": "<Timestamp>",
+    "bio": "Cyclist. Chai first.",
+    "status": { "emoji": "🚴", "text": "On a ride", "expires_at": "<Timestamp>" }
   }
 }
 ```
 
 #### `400 Bad Request`
 
-`"Expected a display_name or a username"`, `"display name cannot be empty"`, `"display name must be at most 100 characters"`, `"username prefix must be between 3 and 25 characters"`, `"username prefix must contain only alphanumeric characters"` or `"that is already your username"`.
+`"Expected a display_name, a username, a bio or a status"`, `"your about text can be at most 140 characters"`, `"your status can be at most 60 characters"`, `"the status emoji is too long"`, `"a status lasts from a minute to a week"`, `"display name cannot be empty"`, `"display name must be at most 100 characters"`, `"username prefix must be between 3 and 25 characters"`, `"username prefix must contain only alphanumeric characters"` or `"that is already your username"`.
 
 #### `409 Conflict`
 

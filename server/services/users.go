@@ -181,3 +181,58 @@ func (s *UserService) ChangeUsername(ctx context.Context, userID, prefix string)
 	}
 	return s.repo.ChangeUsername(ctx, userID, prefix, time.Now(), randomUsername)
 }
+
+// MaxBioLength and the status limits are in characters, not bytes.
+const (
+	MaxBioLength        = 140
+	MaxStatusEmoji      = 16
+	MaxStatusText       = 60
+	MinStatusExpirySecs = 60
+	MaxStatusExpirySecs = 7 * 24 * 3600
+)
+
+// ErrInvalidProfile wraps what is wrong with a bio or status.
+var ErrInvalidProfile = errors.New("invalid profile")
+
+// NormalizeBio trims a bio and checks its length.
+func NormalizeBio(bio string) (string, error) {
+	bio = strings.TrimSpace(bio)
+	if utf8.RuneCountInString(bio) > MaxBioLength {
+		return "", fmt.Errorf("%w: your about text can be at most %d characters", ErrInvalidProfile, MaxBioLength)
+	}
+	return bio, nil
+}
+
+// StatusInput is a custom status as a person sends it. ExpiresIn is how many
+// seconds it lasts; nil or 0 means until they change it.
+type StatusInput struct {
+	Emoji     string `json:"emoji"`
+	Text      string `json:"text"`
+	ExpiresIn *int   `json:"expires_in"`
+}
+
+// NormalizeStatus checks a status and works out when it ends. A status with
+// no emoji and no text clears the status.
+func NormalizeStatus(in StatusInput, now time.Time) (*models.UserStatus, error) {
+	emoji := strings.TrimSpace(in.Emoji)
+	text := strings.TrimSpace(in.Text)
+	if utf8.RuneCountInString(emoji) > MaxStatusEmoji {
+		return nil, fmt.Errorf("%w: the status emoji is too long", ErrInvalidProfile)
+	}
+	if utf8.RuneCountInString(text) > MaxStatusText {
+		return nil, fmt.Errorf("%w: your status can be at most %d characters", ErrInvalidProfile, MaxStatusText)
+	}
+	status := &models.UserStatus{Emoji: emoji, Text: text}
+	if emoji == "" && text == "" {
+		return status, nil
+	}
+	if in.ExpiresIn != nil && *in.ExpiresIn != 0 {
+		secs := *in.ExpiresIn
+		if secs < MinStatusExpirySecs || secs > MaxStatusExpirySecs {
+			return nil, fmt.Errorf("%w: a status lasts from a minute to a week", ErrInvalidProfile)
+		}
+		end := now.Add(time.Duration(secs) * time.Second)
+		status.ExpiresAt = &end
+	}
+	return status, nil
+}

@@ -196,14 +196,20 @@ class ApiService {
   /// Deletes a group for everyone (admins only).
   Future<Response> deleteGroup(String groupId) =>
       _dio.delete("/groups/$groupId");
-  Future<Response> updateMe({String? displayName, String? username}) =>
-      _dio.patch(
-        "/users/me",
-        data: {
-          if (displayName != null) "display_name": displayName,
-          if (username != null) "username": username,
-        },
-      );
+  Future<Response> updateMe({
+    String? displayName,
+    String? username,
+    String? bio,
+    Map<String, dynamic>? status,
+  }) => _dio.patch(
+    "/users/me",
+    data: {
+      if (displayName != null) "display_name": displayName,
+      if (username != null) "username": username,
+      if (bio != null) "bio": bio,
+      if (status != null) "status": status,
+    },
+  );
 
   // --- Reports ---
 
