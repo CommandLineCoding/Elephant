@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/commandlinecoding/elephant/server/env"
@@ -28,17 +29,11 @@ func (s *UserService) Register(ctx context.Context, requestedName, dn, passwd st
 		return nil, ErrRegistrationClosed
 	}
 
-	requestedName = strings.ToLower(strings.TrimSpace(requestedName))
+	requestedName, err := NormalizeUsernamePrefix(requestedName)
+	if err != nil {
+		return nil, err
+	}
 	dn = strings.TrimSpace(dn)
-
-	if len(requestedName) < 3 || len(requestedName) > 25 {
-		return nil, errors.New("username prefix must be between 3 and 25 characters")
-	}
-
-	isAlphanumeric := regexp.MustCompile(`^[a-z0-9]+$`).MatchString
-	if !isAlphanumeric(requestedName) {
-		return nil, errors.New("username prefix must contain only alphanumeric characters")
-	}
 
 	if len(passwd) < 8 {
 		return nil, errors.New("password must be at least 8 characters long")
@@ -49,18 +44,13 @@ func (s *UserService) Register(ctx context.Context, requestedName, dn, passwd st
 
 	// Generate format: {userdefinedunique}.{4digitrandomnumber}
 	var finalUsername string
-	maxRetries := 5
 	resolved := false
 
-	for i := 0; i < maxRetries; i++ {
-		nBig, err := rand.Int(rand.Reader, big.NewInt(9000))
+	for i := 0; i < 5; i++ {
+		candidate, err := randomUsername(requestedName)
 		if err != nil {
-			return nil, errors.New("failed to generate secure user discriminator")
+			return nil, err
 		}
-		discriminator := nBig.Int64() + 1000 // forces range [1000, 9999]
-
-		candidate := fmt.Sprintf("%s.%d", requestedName, discriminator)
-
 		exists, err := s.repo.UsernameExists(ctx, candidate)
 		if err != nil {
 			return nil, err
@@ -145,4 +135,49 @@ func (s *UserService) UpdateDisplayName(ctx context.Context, userID, name string
 		return nil, err
 	}
 	return s.repo.UpdateDisplayName(ctx, userID, name)
+}
+
+var usernamePrefixPattern = regexp.MustCompile(`^[a-z0-9]+$`)
+
+// NormalizeUsernamePrefix trims and lowercases the part of a username a person
+// chooses, and checks it: 3 to 25 letters and digits. The same rules apply
+// when signing up and when changing it.
+func NormalizeUsernamePrefix(prefix string) (string, error) {
+	prefix = strings.ToLower(strings.TrimSpace(prefix))
+	if len(prefix) < 3 || len(prefix) > 25 {
+		return "", errors.New("username prefix must be between 3 and 25 characters")
+	}
+	if !usernamePrefixPattern.MatchString(prefix) {
+		return "", errors.New("username prefix must contain only alphanumeric characters")
+	}
+	return prefix, nil
+}
+
+// randomUsername is prefix, a dot and a random four digit number.
+func randomUsername(prefix string) (string, error) {
+	nBig, err := rand.Int(rand.Reader, big.NewInt(9000))
+	if err != nil {
+		return "", errors.New("failed to generate secure user discriminator")
+	}
+	return fmt.Sprintf("%s.%d", prefix, nBig.Int64()+1000), nil // [1000, 9999]
+}
+
+// ErrSameUsername means the new username's prefix is the one already in use.
+var ErrSameUsername = errors.New("that is already your username")
+
+// ChangeUsername gives the user a new username built from prefix, with a new
+// four digit number. It can be done once every 30 days.
+func (s *UserService) ChangeUsername(ctx context.Context, userID, prefix string) (*models.User, error) {
+	prefix, err := NormalizeUsernamePrefix(prefix)
+	if err != nil {
+		return nil, err
+	}
+	current, err := s.repo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasPrefix(current.Username, prefix+".") && strings.Count(current.Username, ".") == 1 {
+		return nil, ErrSameUsername
+	}
+	return s.repo.ChangeUsername(ctx, userID, prefix, time.Now(), randomUsername)
 }

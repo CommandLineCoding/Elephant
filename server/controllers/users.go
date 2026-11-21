@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/commandlinecoding/elephant/server/middlewares"
 	"github.com/commandlinecoding/elephant/server/models"
@@ -71,6 +72,11 @@ func HandleGetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only the person themselves is told when they last changed it.
+	if at, err := repo.UsernameChangedAt(r.Context(), uid); err == nil {
+		user.UsernameChangedAt = at
+	}
+
 	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: user})
 }
 
@@ -117,32 +123,82 @@ func HandleGetUserByID(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: user})
 }
 
-// UpdateMeReq is the body of PATCH /api/users/me.
+// UpdateMeReq is the body of PATCH /api/users/me. Send what to change.
 type UpdateMeReq struct {
 	DisplayName *string `json:"display_name"`
+
+	// Username is the part before the dot, as when signing up; the server
+	// picks a new four digit number. Once every 30 days.
+	Username *string `json:"username"`
 }
 
-// HandleUpdateMe handles PATCH /api/users/me: change your display name.
+// HandleUpdateMe handles PATCH /api/users/me: change your display name,
+// your username, or both.
 func HandleUpdateMe(w http.ResponseWriter, r *http.Request) {
 	uid, _ := r.Context().Value(middlewares.UserIDKey).(string)
 
 	var req UpdateMeReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.DisplayName == nil {
-		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "Expected a display_name"})
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || (req.DisplayName == nil && req.Username == nil) {
+		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: "Expected a display_name or a username"})
 		return
 	}
 
-	user, err := services.NewUserService().UpdateDisplayName(r.Context(), uid, *req.DisplayName)
-	switch {
-	case errors.Is(err, services.ErrInvalidDisplayName):
-		msg := strings.TrimPrefix(err.Error(), services.ErrInvalidDisplayName.Error()+": ")
-		writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: msg})
-	case errors.Is(err, pgx.ErrNoRows):
-		writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "User profile not found"})
-	case err != nil:
-		log.Printf("Couldn't update a display name: %v", err)
-		writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Couldn't update your profile"})
-	default:
-		writeJSON(w, http.StatusOK, models.JSONResponse{Success: true, Data: user})
+	svc := services.NewUserService()
+	var user *models.User
+	var err error
+
+	// The username goes first: it can be refused, and then nothing changes.
+	if req.Username != nil {
+		user, err = svc.ChangeUsername(r.Context(), uid, *req.Username)
+		var recent repository.ErrUsernameChangedRecently
+		switch {
+		case errors.As(err, &recent):
+			w.Header().Set("Retry-After", strconv.Itoa(int(time.Until(recent.Next).Seconds())+1))
+			writeJSON(w, http.StatusTooManyRequests, models.JSONResponse{
+				Success: false,
+				Error:   "You can change your username once every 30 days. Try again after " + recent.Next.UTC().Format("2 January 2006") + ".",
+			})
+			return
+		case errors.Is(err, services.ErrSameUsername), isUsernameRuleError(err):
+			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: err.Error()})
+			return
+		case errors.Is(err, repository.ErrUsernameTaken):
+			writeJSON(w, http.StatusConflict, models.JSONResponse{Success: false, Error: err.Error()})
+			return
+		case errors.Is(err, pgx.ErrNoRows):
+			writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "User profile not found"})
+			return
+		case err != nil:
+			log.Printf("Couldn't change a username: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Couldn't update your profile"})
+			return
+		}
 	}
+
+	if req.DisplayName != nil {
+		user, err = svc.UpdateDisplayName(r.Context(), uid, *req.DisplayName)
+		switch {
+		case errors.Is(err, services.ErrInvalidDisplayName):
+			msg := strings.TrimPrefix(err.Error(), services.ErrInvalidDisplayName.Error()+": ")
+			writeJSON(w, http.StatusBadRequest, models.JSONResponse{Success: false, Error: msg})
+			return
+		case errors.Is(err, pgx.ErrNoRows):
+			writeJSON(w, http.StatusNotFound, models.JSONResponse{Success: false, Error: "User profile not found"})
+			return
+		case err != nil:
+			log.Printf("Couldn't update a display name: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.JSONResponse{Success: false, Error: "Couldn't update your profile"})
+			return
+		}
+		if at, aerr := repository.NewUserRepository().UsernameChangedAt(r.Context(), uid); aerr == nil {
+			user.UsernameChangedAt = at
+		}
+	}
+	writeJSON(w, http.StatusOK, models.JSONResponse{Success: true, Data: user})
+}
+
+// isUsernameRuleError reports whether err is a complaint about the username's
+// length or characters.
+func isUsernameRuleError(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "username prefix must")
 }

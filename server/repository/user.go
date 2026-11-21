@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/commandlinecoding/elephant/server/config"
 	"github.com/commandlinecoding/elephant/server/models"
@@ -202,4 +203,75 @@ func (r *UserRepository) UpdateDisplayName(ctx context.Context, id, displayName 
 		return nil, err
 	}
 	return &user, nil
+}
+
+// ErrUsernameChangedRecently means the username was changed less than
+// UsernameChangeInterval ago. Next is when it can be changed again.
+type ErrUsernameChangedRecently struct{ Next time.Time }
+
+func (e ErrUsernameChangedRecently) Error() string {
+	return "the username was changed recently"
+}
+
+// UsernameChangeInterval is how long someone must wait between changes.
+const UsernameChangeInterval = 30 * 24 * time.Hour
+
+// ErrUsernameTaken means every candidate name tried was in use.
+var ErrUsernameTaken = errors.New("username namespace collision; please try again")
+
+// UsernameChangedAt is when the user last changed their username, or nil.
+func (r *UserRepository) UsernameChangedAt(ctx context.Context, id string) (*time.Time, error) {
+	var at *time.Time
+	err := config.DB.QueryRow(ctx, `SELECT username_changed_at FROM users WHERE id = $1::uuid;`, id).Scan(&at)
+	return at, err
+}
+
+// ChangeUsername gives the user a new username: prefix, a dot and a four
+// digit number that is not taken. It refuses if they changed it less than
+// UsernameChangeInterval before now. pick returns the candidate to try for
+// an attempt, so the caller decides how the number is chosen.
+func (r *UserRepository) ChangeUsername(
+	ctx context.Context, id, prefix string, now time.Time, pick func(prefix string) (string, error),
+) (*models.User, error) {
+	tx, err := config.DB.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	// Locked, so two requests at once can't both pass the check.
+	var changed *time.Time
+	if err := tx.QueryRow(ctx,
+		`SELECT username_changed_at FROM users WHERE id = $1::uuid FOR UPDATE;`, id).Scan(&changed); err != nil {
+		return nil, err
+	}
+	if changed != nil && now.Sub(*changed) < UsernameChangeInterval {
+		return nil, ErrUsernameChangedRecently{Next: changed.Add(UsernameChangeInterval)}
+	}
+
+	for attempt := 0; attempt < 5; attempt++ {
+		candidate, err := pick(prefix)
+		if err != nil {
+			return nil, err
+		}
+		var user models.User
+		var at *time.Time
+		err = tx.QueryRow(ctx, `
+			UPDATE users SET username = $2, username_changed_at = $3
+			WHERE id = $1::uuid AND NOT EXISTS (SELECT 1 FROM users WHERE username = $2)
+			RETURNING id, username, display_name, created_at, username_changed_at;
+		`, id, candidate, now).Scan(&user.ID, &user.Username, &user.DisplayName, &user.CreatedAt, &at)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue // taken (or the user is gone)
+		}
+		if err != nil {
+			return nil, err
+		}
+		user.UsernameChangedAt = at
+		if err := tx.Commit(ctx); err != nil {
+			return nil, err
+		}
+		return &user, nil
+	}
+	return nil, ErrUsernameTaken
 }
