@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../core/constants.dart';
+import 'device_name.dart';
 
 /// Thrown when the server rejects the refresh token, i.e. the session is over.
 class SessionExpiredException implements Exception {
@@ -77,7 +78,10 @@ class AuthService {
     try {
       final res = await _dio.post(
         "${Env.httpBaseUrl}/auth/refresh",
-        data: {"refresh_token": refreshToken},
+        data: {
+          "refresh_token": refreshToken,
+          "device_name": await DeviceName.get(),
+        },
       );
       final data = res.data;
       if (data is! Map || data["success"] != true) {
@@ -139,7 +143,11 @@ class AuthService {
   Future<Response> login(String username, String password) async {
     return await _dio.post(
       "${Env.httpBaseUrl}/auth/login",
-      data: {"username": username, "password": password},
+      data: {
+        "username": username,
+        "password": password,
+        "device_name": await DeviceName.get(),
+      },
     );
   }
 
@@ -154,8 +162,27 @@ class AuthService {
         "username": username,
         "display_name": displayName,
         "password": password,
+        "device_name": await DeviceName.get(),
       },
     );
+  }
+
+  /// The ID of the signed-in device, from the access token, or null if there
+  /// is no token or it predates devices.
+  String? get sessionId {
+    final token = _cachedAccessToken;
+    if (token == null) return null;
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      final sid = payload['sid'];
+      return sid is String && sid.isNotEmpty ? sid : null;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<Response> getCurrentUser(String token) async {

@@ -20,8 +20,12 @@ import (
 // the connection, so a send that races with shutdown can't panic.
 type WSClient struct {
 	UserID string
-	Conn   *websocket.Conn
-	Send   chan []byte
+
+	// SessionID is the signed-in device that opened this connection, or empty
+	// if its token predates sessions.
+	SessionID string
+	Conn      *websocket.Conn
+	Send      chan []byte
 
 	done      chan struct{}
 	closeOnce sync.Once
@@ -277,6 +281,18 @@ func (h *WSHub) Run() {
 // unregisters the client as usual.
 func (h *WSHub) Disconnect(userID string) {
 	if c := h.clientFor(userID); c != nil {
+		c.Close()
+	}
+}
+
+// DisconnectSession closes the user's live WebSocket if it belongs to
+// sessionID, which is how signing a device out cuts it off at once. A
+// connection from another of their devices is left alone.
+func (h *WSHub) DisconnectSession(userID, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	if c := h.clientFor(userID); c != nil && c.SessionID == sessionID {
 		c.Close()
 	}
 }

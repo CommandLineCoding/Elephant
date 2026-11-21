@@ -3,6 +3,7 @@ package controllers
 import (
 	"net/http"
 
+	"github.com/commandlinecoding/elephant/server/repository"
 	"github.com/commandlinecoding/elephant/server/services"
 	"github.com/gorilla/websocket"
 )
@@ -22,10 +23,24 @@ func HandleWSUpgrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	uid, err := services.VerifyAccessToken(token)
+	uid, sid, err := services.ParseToken(token)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
+	}
+
+	// A device that was signed out can't reconnect with the access token it
+	// still holds. (A token from before sessions has no session to check.)
+	if sid != "" {
+		active, err := repository.NewRefreshTokenRepository().SessionActive(r.Context(), uid, sid)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if !active {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -34,6 +49,7 @@ func HandleWSUpgrade(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := services.NewWSClient(uid, conn)
+	client.SessionID = sid
 
 	services.Hub.Register <- client
 

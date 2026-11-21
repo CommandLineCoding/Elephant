@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"time"
 
 	"github.com/commandlinecoding/elephant/server/config"
 	"github.com/commandlinecoding/elephant/server/models"
@@ -35,6 +34,9 @@ type RegisterReq struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"display_name"`
 	Password    string `json:"password"`
+
+	// DeviceName is what the app calls this phone, shown in "Signed-in devices".
+	DeviceName string `json:"device_name"`
 }
 
 func HandleRegister(w http.ResponseWriter, r *http.Request) {
@@ -63,18 +65,8 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokens, err := services.GenerateTokenPair(user.ID)
+	tokens, err := services.NewAuthService().StartSession(r.Context(), user.ID, req.DeviceName)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Token generation failure"})
-		return
-	}
-
-	tokenRepo := repository.NewRefreshTokenRepository()
-	hashedRt := services.HashToken(tokens.RefreshToken)
-	expiry := time.Now().Add(7 * 24 * time.Hour)
-
-	if err := tokenRepo.StoreToken(r.Context(), user.ID, hashedRt, expiry); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Failed to securely record registration token metrics"})
 		return
@@ -91,8 +83,9 @@ func HandleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 type LoginReq struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	DeviceName string `json:"device_name"`
 }
 
 func HandleLogin(w http.ResponseWriter, r *http.Request) {
@@ -106,7 +99,7 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	svc := services.NewAuthService()
-	user, tokens, err := svc.Login(r.Context(), req.Username, req.Password)
+	user, tokens, err := svc.Login(r.Context(), req.Username, req.Password, req.DeviceName)
 	if respondIfBusy(w, err) {
 		return
 	}
@@ -127,6 +120,7 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 
 type RefreshReq struct {
 	RefreshToken string `json:"refresh_token"`
+	DeviceName   string `json:"device_name"`
 }
 
 func HandleRefresh(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +140,7 @@ func HandleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	svc := services.NewAuthService()
-	tokens, err := svc.Refresh(r.Context(), req.RefreshToken)
+	tokens, err := svc.Refresh(r.Context(), req.RefreshToken, req.DeviceName)
 	if err != nil {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: err.Error()})
@@ -237,16 +231,13 @@ func HandleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tokens, err := services.GenerateTokenPair(u.ID)
+	// The browser can't say what phone it is on; the app names the session on
+	// its first refresh.
+	tokens, err := services.NewAuthService().StartSession(r.Context(), u.ID, "")
 	if err != nil {
 		renderHandoffError(w, "Token generation failure.")
 		return
 	}
-
-	tokenRepo := repository.NewRefreshTokenRepository()
-	hashedRt := services.HashToken(tokens.RefreshToken)
-	expiry := time.Now().Add(7 * 24 * time.Hour)
-	_ = tokenRepo.StoreToken(r.Context(), u.ID, hashedRt, expiry)
 
 	customSchemeURL := fmt.Sprintf(
 		"elephant://oauth-callback?access_token=%s&refresh_token=%s",

@@ -79,11 +79,20 @@ class MainActivity : FlutterActivity() {
 
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "elephant/window")
             .setMethodCallHandler { call, result ->
-                if (call.method == "secure") {
-                    setSecure(call.argument<Boolean>("on") == true)
-                    result.success(null)
-                } else {
-                    result.notImplemented()
+                when (call.method) {
+                    "secure" -> {
+                        setSecure(call.argument<Boolean>("on") == true)
+                        result.success(null)
+                    }
+                    // What the phone is called, for the list of signed-in devices.
+                    "deviceName" -> {
+                        val maker = Build.MANUFACTURER.orEmpty().replaceFirstChar { it.uppercase() }
+                        val model = Build.MODEL.orEmpty()
+                        result.success(
+                            if (model.startsWith(maker, ignoreCase = true)) model else "$maker $model".trim()
+                        )
+                    }
+                    else -> result.notImplemented()
                 }
             }
 

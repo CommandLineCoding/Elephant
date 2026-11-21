@@ -13,6 +13,10 @@ import (
 type contextKey string
 const UserIDKey contextKey = "userId"
 
+// SessionIDKey holds the signed-in device a request came from. It is empty for
+// an access token issued before sessions existed.
+const SessionIDKey contextKey = "sessionId"
+
 func AuthGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
@@ -27,13 +31,14 @@ func AuthGuard(next http.Handler) http.Handler {
 			return
 		}
 
-		uid, err := services.VerifyAccessToken(parts[1])
+		uid, sid, err := services.ParseToken(parts[1])
 		if err != nil {
 			respondUnauthorized(w)
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), UserIDKey, uid)
+		ctx = context.WithValue(ctx, SessionIDKey, sid)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
