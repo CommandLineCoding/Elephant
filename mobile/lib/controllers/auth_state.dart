@@ -8,6 +8,7 @@ import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/services/calls/call_log.dart';
 import 'package:mobile/services/chat_folders.dart';
+import 'package:mobile/services/chat_appearance.dart';
 import 'package:mobile/services/drafts.dart';
 import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/privacy_settings.dart';
@@ -248,6 +249,7 @@ class AuthState extends ChangeNotifier {
       await loadUserProfile();
       if (_currentUser != null) {
         unawaited(SignalService().ensureKeysPublished());
+        unawaited(PrivacySettings.instance.refresh());
       }
     }
 
@@ -395,6 +397,7 @@ class AuthState extends ChangeNotifier {
     ChatFolders.instance.reset();
     Nicknames.instance.reset();
     PrivacySettings.instance.reset();
+    ChatAppearance.instance.forgetChats();
     _token = null;
     _currentUser = null;
     await _authService.logout();
@@ -447,6 +450,7 @@ class AuthState extends ChangeNotifier {
       ChatFolders.instance.reset();
       Nicknames.instance.reset();
       PrivacySettings.instance.reset();
+      ChatAppearance.instance.forgetChats();
       _token = null;
       _currentUser = null;
       _errorMessage = "Your session expired. Please sign in again.";

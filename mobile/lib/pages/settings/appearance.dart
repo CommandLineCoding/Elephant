@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mobile/pages/settings/chat_wallpaper.dart';
+import 'package:mobile/services/chat_appearance.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/themes/theme_provider.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -8,6 +10,34 @@ import 'package:provider/provider.dart';
 
 class AppearanceSettings extends StatelessWidget {
   const AppearanceSettings({super.key});
+
+  Future<void> _chooseTextSize(BuildContext context) async {
+    final chosen = await showDialog<MessageTextSize>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Message text size'),
+        children: [
+          for (final size in MessageTextSize.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, size),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      size.label,
+                      style: TextStyle(fontSize: 16 * size.scale),
+                    ),
+                  ),
+                  if (size == ChatAppearance.instance.textSize)
+                    const Icon(Icons.check_rounded),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (chosen != null) await ChatAppearance.instance.setTextSize(chosen);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -42,6 +72,31 @@ class AppearanceSettings extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            const SectionLabel('Chats'),
+            ListenableBuilder(
+              listenable: ChatAppearance.instance,
+              builder: (context, _) => Section(
+                children: [
+                  ElephantTile(
+                    icon: Icons.wallpaper_rounded,
+                    title: 'Chat wallpaper',
+                    subtitle: ChatAppearance.instance.wallpaper.name,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ChatWallpaperPage(),
+                      ),
+                    ),
+                  ),
+                  ElephantTile(
+                    icon: Icons.format_size_rounded,
+                    title: 'Message text size',
+                    subtitle: ChatAppearance.instance.textSize.label,
+                    onTap: () => _chooseTextSize(context),
+                  ),
+                ],
+              ),
             ),
             const SectionLabel('Theme'),
             Padding(

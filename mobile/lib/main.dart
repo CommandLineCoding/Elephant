@@ -10,6 +10,8 @@ import 'core/constants.dart';
 import 'services/auth_service.dart';
 import 'services/push/push_service.dart';
 import 'services/app_lock.dart';
+import 'services/chat_appearance.dart';
+import 'services/privacy_settings.dart';
 import 'services/screen_security.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/home/home_page.dart';
@@ -40,6 +42,8 @@ Future<void> main(List<String> args) async {
 
   await ScreenSecurity.load();
   await AppLock.instance.load();
+  await PrivacySettings.instance.loadLocal();
+  await ChatAppearance.instance.load();
 
   final themeProvider = ThemeProvider();
   await themeProvider.load();
