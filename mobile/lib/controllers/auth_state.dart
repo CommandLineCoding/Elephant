@@ -352,6 +352,7 @@ class AuthState extends ChangeNotifier {
   Future<void> logout() async {
     // Needs the token, so before it's dropped.
     await PushService.instance.onSigningOut();
+    await _endThisSession();
     BlockedUsers.instance.clear();
     CallController.instance?.hangUp();
     CallLog.instance.clear();
@@ -362,6 +363,20 @@ class AuthState extends ChangeNotifier {
     _currentUser = null;
     await _authService.logout();
     notifyListeners();
+  }
+
+  /// Tells the server this device signed out, so it leaves the person's list
+  /// of signed-in devices and its sign-in can't be used again. If the server
+  /// can't be reached, the device is still signed out here, and the entry goes
+  /// when its sign-in expires.
+  Future<void> _endThisSession() async {
+    final id = _authService.sessionId;
+    if (id == null) return;
+    try {
+      await ApiService().signOutSession(id).timeout(const Duration(seconds: 4));
+    } catch (e) {
+      debugPrint("Couldn't end this device's session on the server: $e");
+    }
   }
 
   /// Deletes the account on the server and erases this device's keys and

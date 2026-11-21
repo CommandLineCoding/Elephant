@@ -7,6 +7,7 @@ import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/core/constants.dart';
+import 'package:mobile/pages/settings/signed_in_devices.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
@@ -219,6 +220,22 @@ class AccountsSettings extends StatelessWidget {
                   onTap: user == null
                       ? null
                       : () => _copy(context, user.id, 'User ID'),
+                ),
+              ],
+            ),
+            const SectionLabel('Security'),
+            Section(
+              children: [
+                ElephantTile(
+                  icon: Icons.devices_rounded,
+                  title: 'Signed-in devices',
+                  subtitle: 'See where you\'re signed in, and sign devices out',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SignedInDevicesPage(),
+                    ),
+                  ),
                 ),
               ],
             ),

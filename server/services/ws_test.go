@@ -482,3 +482,48 @@ func TestContactListIsCachedBriefly(t *testing.T) {
 		t.Errorf("after the cache expired it should reload, loads=%d want 2", n)
 	}
 }
+
+// Signing a device out closes the connection that device opened, and only
+// that one: the person's other device keeps its own.
+func TestDisconnectSessionClosesOnlyThatDevicesConnection(t *testing.T) {
+	closed := func(c *WSClient) bool {
+		select {
+		case <-c.done:
+			return true
+		default:
+			return false
+		}
+	}
+	put := func(c *WSClient) {
+		Hub.mu.Lock()
+		Hub.clients[strings.ToLower(c.UserID)] = c
+		Hub.mu.Unlock()
+	}
+	drop := func(id string) {
+		Hub.mu.Lock()
+		delete(Hub.clients, id)
+		Hub.mu.Unlock()
+	}
+
+	phone := NewWSClient("sess-user", nil)
+	phone.SessionID = "phone-session"
+	put(phone)
+	defer drop("sess-user")
+
+	Hub.DisconnectSession("sess-user", "tablet-session")
+	if closed(phone) {
+		t.Fatal("signing out another device closed this one's connection")
+	}
+	Hub.DisconnectSession("someone-else", "phone-session")
+	if closed(phone) {
+		t.Fatal("a session ID from another user closed the connection")
+	}
+	Hub.DisconnectSession("sess-user", "")
+	if closed(phone) {
+		t.Fatal("an empty session closed a connection")
+	}
+	Hub.DisconnectSession("sess-user", "phone-session")
+	if !closed(phone) {
+		t.Error("signing the device out did not close its connection")
+	}
+}

@@ -123,12 +123,12 @@ func TestLoginReportsBusyNotWrongPassword(t *testing.T) {
 	}
 
 	svc := &AuthService{repo: repository.NewUserRepository()}
-	if _, _, err := svc.Login(context.Background(), username, "correct horse battery"); err != nil {
+	if _, _, err := svc.Login(context.Background(), username, "correct horse battery", ""); err != nil {
 		t.Fatalf("a correct password should log in: %v", err)
 	}
 
 	fullPasswordGate(t)
-	_, _, err = svc.Login(context.Background(), username, "correct horse battery")
+	_, _, err = svc.Login(context.Background(), username, "correct horse battery", "")
 	if !errors.Is(err, ErrServerBusy) {
 		t.Errorf("a busy server should say so, got %v", err)
 	}

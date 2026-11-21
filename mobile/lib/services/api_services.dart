@@ -199,6 +199,15 @@ class ApiService {
   Future<Response> updateMe({required String displayName}) =>
       _dio.patch("/users/me", data: {"display_name": displayName});
 
+  // --- Signed-in devices ---
+
+  Future<Response> getSessions() => _dio.get("/users/me/sessions");
+
+  Future<Response> signOutSession(String id) =>
+      _dio.delete("/users/me/sessions/$id");
+
+  Future<Response> signOutOtherSessions() => _dio.delete("/users/me/sessions");
+
   // --- Push notifications (UnifiedPush) ---
 
   Future<Response> registerPushEndpoint(String endpoint) =>

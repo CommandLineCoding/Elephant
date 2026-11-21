@@ -24,6 +24,7 @@ class ChatConnectionController extends ChangeNotifier
   bool _isWsConnecting = false;
   bool _isPaused = false;
   int _failedAttempts = 0;
+  DateTime? _lastSignInCheck;
   Timer? _reconnectTimer;
   StreamSubscription? _connectivitySubscription;
   StreamSubscription? _wsSubscription;
@@ -67,6 +68,26 @@ class ChatConnectionController extends ChangeNotifier
     }
   }
 
+  /// Renews the sign-in. If the server says it has ended (this device was
+  /// signed out from another), [AuthService] signs out here. Any other
+  /// failure, such as being offline, is left for the reconnect to deal with.
+  Future<void> _checkSignIn() async {
+    // Not on every retry: once a minute is plenty.
+    final last = _lastSignInCheck;
+    if (last != null &&
+        DateTime.now().difference(last) < const Duration(minutes: 1)) {
+      return;
+    }
+    _lastSignInCheck = DateTime.now();
+    try {
+      await _auth.refreshTokens();
+    } on SessionExpiredException {
+      // AuthService has already signed this device out.
+    } catch (e) {
+      debugPrint("Sign-in check failed: $e");
+    }
+  }
+
   Future<void> connectWebSocket() async {
     if (_ws.isConnected || _isWsConnecting || isOffline || _isPaused) return;
     _isWsConnecting = true;
@@ -82,6 +103,10 @@ class ChatConnectionController extends ChangeNotifier
       _ws.disconnect();
 
       if (!await _ws.connect(token)) {
+        // The server turns a signed-out device away. Its access token still
+        // looks valid for a while, so renew it now: that finds out the sign-in
+        // is over and returns to the sign-in screen, instead of retrying.
+        unawaited(_checkSignIn());
         _scheduleReconnect();
         return;
       }

@@ -25,8 +25,10 @@ Every JSON response uses the same envelope. `data` is omitted on errors, and `er
 
 | Token | Lifetime | Notes |
 |---|---|---|
-| Access token | 15 minutes | HS256 JWT, `sub` = user ID. Send it as a Bearer token, or as `?token=` for the WebSocket |
-| Refresh token | 7 days | HS256 JWT. Its hash is stored server-side. Each refresh **rotates** it, so the old refresh token stops working |
+| Access token | 15 minutes | HS256 JWT, `sub` = user ID, `sid` = the signed-in device. Send it as a Bearer token, or as `?token=` for the WebSocket |
+| Refresh token | 7 days | HS256 JWT. Its hash is stored server-side. Each refresh **rotates** it, so the old refresh token stops working. The device (`sid`) stays the same across refreshes |
+
+Each sign-in is one *session*, shown to the person as a signed-in device (see [Signed-in devices](#11-signed-in-devices)). Signing a session out deletes its refresh token, so it can't refresh, and its WebSocket is closed. Its current access token still works for HTTP requests until it expires (at most 15 minutes), but it can't open a new WebSocket.
 
 ### Common error: `401 Unauthorized`
 
@@ -75,6 +77,9 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | POST | [/api/users/{id}/block](#7-block-a-user) | Yes | Block a user |
 | DELETE | [/api/users/{id}/block](#8-unblock-a-user) | Yes | Unblock a user |
 | GET | [/api/users/me/blocked](#9-list-blocked-users) | Yes | List the people you blocked |
+| GET | [/api/users/me/sessions](#11-signed-in-devices) | Yes | List the devices you are signed in on |
+| DELETE | [/api/users/me/sessions/{id}](#11-signed-in-devices) | Yes | Sign one device out |
+| DELETE | [/api/users/me/sessions](#11-signed-in-devices) | Yes | Sign out every device but this one |
 | GET | [/api/calls/ice-servers](#ice-servers) | Yes | STUN/TURN servers and credentials for a call (rate limited) |
 | GET | [/api/calls/pending](#pending-call) | Yes | The call ringing for you, after a push woke the app (rate limited) |
 | GET | [/api/ws?token=](#1-connect-to-websocket) | Yes (query) | WebSocket upgrade endpoint |
@@ -179,9 +184,12 @@ Served at the root, outside `/api`.
 {
   "username": "<username>",
   "display_name": "Full Name",
-  "password": "<password>"
+  "password": "<password>",
+  "device_name": "Pixel 8"
 }
 ```
+
+`device_name` is optional: what the app calls this phone, shown in the person's list of signed-in devices. Extra spaces are collapsed and it is cut to 60 characters.
 
 #### Validation rules
 
@@ -270,11 +278,12 @@ Password hashing is capped (`ARGON_MAX_CONCURRENT`) to bound memory. Requests wa
 ```json
 {
   "username": "<username>.1234",
-  "password": "<password>"
+  "password": "<password>",
+  "device_name": "Pixel 8"
 }
 ```
 
-The username is trimmed and lowercased before lookup.
+The username is trimmed and lowercased before lookup. `device_name` is optional, as in [Register](#1-register-user).
 
 #### `200 OK`
 
@@ -343,9 +352,12 @@ Exchanges a refresh token for a new access/refresh pair. The submitted refresh t
 
 ```json
 {
-  "refresh_token": "<refresh_token>"
+  "refresh_token": "<refresh_token>",
+  "device_name": "Pixel 8"
 }
 ```
+
+`device_name` is optional. It names the device if it has no name yet, which is how a phone that signed in with Google or GitHub (in a browser, which can't say what phone it is) gets one.
 
 #### `200 OK`
 
@@ -762,6 +774,52 @@ The updated user, as in [User ME](#1-user-me).
 #### `400 Bad Request`
 
 `"Expected a display_name"`, `"display name cannot be empty"` or `"display name must be at most 100 characters"`.
+
+### 11. Signed-in devices
+
+Each sign-in is a session. These endpoints list them and sign them out. Signing a device out deletes its refresh token and closes its WebSocket at once; the device has to sign in again.
+
+- **URL:** `/api/users/me/sessions`
+- **Authentication Required:** `YES`
+
+#### `GET /api/users/me/sessions`
+
+The devices you are signed in on, most recently used first. `current` is true for the device that is asking. `last_used_at` is when it last refreshed its tokens, so it can be up to 15 minutes behind.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "device_name": "Pixel 8",
+      "started_at": "<Timestamp>",
+      "last_used_at": "<Timestamp>",
+      "current": true
+    }
+  ]
+}
+```
+
+`device_name` is an empty string if the device never sent one.
+
+#### `DELETE /api/users/me/sessions/{id}`
+
+Signs one device out. It can be the device that is asking.
+
+- `200 OK`: `{ "success": true }`
+- `400 Bad Request`: `"Invalid device ID"`
+- `404 Not Found`: `"No such device"`, including a device that belongs to someone else.
+
+#### `DELETE /api/users/me/sessions`
+
+Signs out every device except the one that is asking.
+
+```json
+{ "success": true, "data": { "signed_out": 2 } }
+```
+
+`400 Bad Request` (`"Sign in again to use this"`) for an access token issued before sessions existed, which doesn't say which device is the current one.
 
 ---
 
