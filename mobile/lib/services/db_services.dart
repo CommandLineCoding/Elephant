@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 9,
+      version: 10,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -111,6 +111,7 @@ class DatabaseHelper {
     if (oldVersion < 7) await _createStarred(db);
     if (oldVersion < 8) await _createDrafts(db);
     if (oldVersion < 9) await _createChatFolders(db);
+    if (oldVersion < 10) await _createNicknames(db);
   }
 
   /// Messages the person starred, to find them again. Only on this phone.
@@ -125,6 +126,16 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX starred_messages_chat ON starred_messages (chat_id)',
     );
+  }
+
+  /// Names the person gave their contacts. Only on this phone.
+  Future<void> _createNicknames(Database db) async {
+    await db.execute('''
+      CREATE TABLE contact_nicknames (
+        user_id TEXT PRIMARY KEY COLLATE NOCASE,
+        nickname TEXT NOT NULL
+      )
+    ''');
   }
 
   /// Folders the person made to sort chats. Only on this phone.
@@ -184,6 +195,7 @@ class DatabaseHelper {
     await _createStarred(db);
     await _createDrafts(db);
     await _createChatFolders(db);
+    await _createNicknames(db);
     await db.execute('''
       CREATE TABLE messages (
         id TEXT PRIMARY KEY,
@@ -328,6 +340,33 @@ class DatabaseHelper {
       'group_members',
       where: 'group_id = ?',
       whereArgs: [chatId],
+    );
+  }
+
+  /// Every nickname, by the contact's user ID.
+  Future<Map<String, String>> nicknames() async {
+    final db = await instance.database;
+    final rows = await db.query('contact_nicknames');
+    return {
+      for (final row in rows)
+        row['user_id'] as String: row['nickname'] as String,
+    };
+  }
+
+  Future<void> saveNickname(String userId, String nickname) async {
+    final db = await instance.database;
+    await db.insert('contact_nicknames', {
+      'user_id': userId,
+      'nickname': nickname,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteNickname(String userId) async {
+    final db = await instance.database;
+    await db.delete(
+      'contact_nicknames',
+      where: 'user_id = ?',
+      whereArgs: [userId],
     );
   }
 
@@ -524,6 +563,7 @@ class DatabaseHelper {
     await db.delete('starred_messages');
     await db.delete('chat_drafts');
     await db.delete('chat_folders');
+    await db.delete('contact_nicknames');
     await db.delete('inbox');
     await db.delete('action_queue');
     await db.delete('group_members');

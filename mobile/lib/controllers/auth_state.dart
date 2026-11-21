@@ -9,6 +9,7 @@ import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/services/calls/call_log.dart';
 import 'package:mobile/services/chat_folders.dart';
 import 'package:mobile/services/drafts.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/services/starred_messages.dart';
 import 'package:mobile/services/db_services.dart';
@@ -361,6 +362,7 @@ class AuthState extends ChangeNotifier {
     StarredMessages.instance.clear();
     Drafts.instance.reset();
     ChatFolders.instance.reset();
+    Nicknames.instance.reset();
     PrivacySettings.instance.reset();
     _token = null;
     _currentUser = null;
@@ -412,6 +414,7 @@ class AuthState extends ChangeNotifier {
       StarredMessages.instance.clear();
       Drafts.instance.reset();
       ChatFolders.instance.reset();
+      Nicknames.instance.reset();
       PrivacySettings.instance.reset();
       _token = null;
       _currentUser = null;

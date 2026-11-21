@@ -6,6 +6,7 @@ import 'package:mobile/models/inbox_item.dart';
 import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/auth_service.dart';
 import 'package:mobile/services/db_services.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/push/push_notifier.dart';
 import 'package:mobile/services/push/push_prefs.dart';
 import 'package:unifiedpush/unifiedpush.dart';
@@ -294,6 +295,8 @@ class PushService with WidgetsBindingObserver {
     }
 
     final showName = await PushPrefs.showNames();
+    // Notifications use the names the person gave their contacts.
+    await Nicknames.instance.load();
     for (final chat in due) {
       await _notifier.showChat(chat, showName: showName);
       lastNotified[chat.id] = chat.timestamp.millisecondsSinceEpoch;

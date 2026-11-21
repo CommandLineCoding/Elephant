@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:mobile/models/inbox_item.dart';
 
@@ -34,7 +35,9 @@ List<InboxItem> chatsToNotify(
       : 'New message';
   if (!showName) return (title: 'Elephant', body: body);
   return (
-    title: chat.title.isEmpty ? (chat.username ?? 'Elephant') : chat.title,
+    title: chat.shownTitle.isEmpty
+        ? (chat.username ?? 'Elephant')
+        : chat.shownTitle,
     body: body,
   );
 }

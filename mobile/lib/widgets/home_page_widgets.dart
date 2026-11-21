@@ -5,6 +5,7 @@ import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/chat_prefs.dart';
 import 'package:mobile/services/drafts.dart';
+import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/privacy_settings.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
@@ -103,11 +104,14 @@ class ConversationTile extends StatelessWidget {
             ),
             child: Row(
               children: [
-                ElephantAvatar(
-                  name: conversation.title,
-                  seed: conversation.id,
-                  isGroup: conversation.isGroup,
-                  size: avatarSize,
+                ListenableBuilder(
+                  listenable: Nicknames.instance,
+                  builder: (context, _) => ElephantAvatar(
+                    name: conversation.shownTitle,
+                    seed: conversation.id,
+                    isGroup: conversation.isGroup,
+                    size: avatarSize,
+                  ),
                 ),
                 const SizedBox(width: Insets.lg),
                 Expanded(
@@ -119,16 +123,19 @@ class ConversationTile extends StatelessWidget {
                         textBaseline: TextBaseline.alphabetic,
                         children: [
                           Expanded(
-                            child: Text(
-                              conversation.title.isEmpty
-                                  ? (conversation.username ?? 'Unknown')
-                                  : conversation.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.text.titleMedium?.copyWith(
-                                fontWeight: hasUnread
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
+                            child: ListenableBuilder(
+                              listenable: Nicknames.instance,
+                              builder: (context, _) => Text(
+                                conversation.shownTitle.isEmpty
+                                    ? (conversation.username ?? 'Unknown')
+                                    : conversation.shownTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: context.text.titleMedium?.copyWith(
+                                  fontWeight: hasUnread
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
