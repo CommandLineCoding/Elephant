@@ -17,6 +17,11 @@ func AuthRoute(router chi.Router) {
 
 	router.With(registerLimiter.Limit).Post("/register", controllers.HandleRegister)
 	router.With(loginLimiter.Limit).Post("/login", controllers.HandleLogin)
+	// The code after a right password. The account locks code entry after a few
+	// wrong ones; this keeps a flood from one address cheap.
+	codeLimiter := middlewares.NewRateLimiter(1.0/5, 10).
+		WithMessage("Too many attempts. Please wait a moment and try again.")
+	router.With(codeLimiter.Limit).Post("/login/2fa", controllers.HandleLoginTwoFactor)
 	router.Post("/refresh", controllers.HandleRefresh)
 
 	router.Get("/{provider}", controllers.HandleOAuthRedirect)

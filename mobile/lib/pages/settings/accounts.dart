@@ -11,6 +11,7 @@ import 'package:mobile/core/profile_limits.dart';
 import 'package:mobile/core/username.dart';
 import 'package:mobile/models/user.dart';
 import 'package:mobile/pages/settings/signed_in_devices.dart';
+import 'package:mobile/pages/settings/two_step_page.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
@@ -571,6 +572,20 @@ class AccountsSettings extends StatelessWidget {
             const SectionLabel('Security'),
             Section(
               children: [
+                // Only for accounts that sign in with a password: an account
+                // made with Google or GitHub has none to protect.
+                if (user?.email == null)
+                  ElephantTile(
+                    icon: Icons.shield_outlined,
+                    title: 'Two-step sign-in',
+                    subtitle: 'Ask for a code from an authenticator app',
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const TwoStepSignInPage(),
+                      ),
+                    ),
+                  ),
                 ElephantTile(
                   icon: Icons.devices_rounded,
                   title: 'Signed-in devices',

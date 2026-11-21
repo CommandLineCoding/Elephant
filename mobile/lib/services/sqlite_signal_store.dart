@@ -214,7 +214,7 @@ class SQLiteSignalStore implements SignalProtocolStore, SenderKeyStore {
 
   @override
   Future<List<int>> getSubDeviceSessions(String name) async {
-    return [1]; 
+    return [1];
   }
 
   @override
@@ -257,10 +257,14 @@ class SQLiteSignalStore implements SignalProtocolStore, SenderKeyStore {
   }
 
   @override
-  Future<void> storeSenderKey(SenderKeyName senderKeyName, SenderKeyRecord record) async {
+  Future<void> storeSenderKey(
+    SenderKeyName senderKeyName,
+    SenderKeyRecord record,
+  ) async {
     final db = await DatabaseHelper.instance.database;
-    final keyNameStr = "${senderKeyName.groupId}::${senderKeyName.sender.getName()}";
-    
+    final keyNameStr =
+        "${senderKeyName.groupId}::${senderKeyName.sender.getName()}";
+
     await db.insert('signal_sender_keys', {
       'sender_key_name': keyNameStr,
       'record': _toB64(record.serialize()),
@@ -270,18 +274,20 @@ class SQLiteSignalStore implements SignalProtocolStore, SenderKeyStore {
   @override
   Future<SenderKeyRecord> loadSenderKey(SenderKeyName senderKeyName) async {
     final db = await DatabaseHelper.instance.database;
-    final keyNameStr = "${senderKeyName.groupId}::${senderKeyName.sender.getName()}";
-    
+    final keyNameStr =
+        "${senderKeyName.groupId}::${senderKeyName.sender.getName()}";
+
     final res = await db.query(
       'signal_sender_keys',
       where: 'sender_key_name = ?',
       whereArgs: [keyNameStr],
     );
-    
+
     if (res.isEmpty) {
       return SenderKeyRecord();
     }
-    return SenderKeyRecord.fromSerialized(_fromB64(res.first['record'] as String));
+    return SenderKeyRecord.fromSerialized(
+      _fromB64(res.first['record'] as String),
+    );
   }
-
 }

@@ -342,7 +342,10 @@ class AuthState extends ChangeNotifier {
       final res = await request();
       final data = ApiService.dataMap(res.data);
       final tokens = data['tokens'];
-      if (tokens is Map &&
+      if (data['two_factor_required'] == true && data['challenge'] is String) {
+        // The password was right; a code from the authenticator app is next.
+        twoFactorChallenge = data['challenge'] as String;
+      } else if (tokens is Map &&
           tokens['access_token'] != null &&
           tokens['refresh_token'] != null) {
         final user = data['user'];
@@ -365,6 +368,35 @@ class AuthState extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
     return success;
+  }
+
+  /// Set after a right password for an account with two-step sign-in: the
+  /// sign-in waits for a code. Cleared when it finishes or is cancelled.
+  String? twoFactorChallenge;
+
+  /// Gives the code for [twoFactorChallenge]. If the sign-in step ran out
+  /// (the server says so), it goes back to the password.
+  Future<bool> handleTwoFactor(String code) async {
+    final challenge = twoFactorChallenge;
+    if (challenge == null) return false;
+    final ok = await _runAuthRequest(
+      () => _authService.loginTwoFactor(challenge, code.trim()),
+      "That code didn't work",
+    );
+    if (ok) {
+      twoFactorChallenge = null;
+    } else if ((_errorMessage ?? '').contains('Start again')) {
+      twoFactorChallenge = null;
+      notifyListeners();
+    }
+    return ok;
+  }
+
+  /// Goes back from the code step to the password.
+  void cancelTwoFactor() {
+    twoFactorChallenge = null;
+    _errorMessage = null;
+    notifyListeners();
   }
 
   Future<bool> handleLogin(String username, String password) {

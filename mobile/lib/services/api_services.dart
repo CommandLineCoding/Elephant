@@ -211,6 +211,20 @@ class ApiService {
     },
   );
 
+  // --- Two-step sign-in ---
+
+  Future<Response> getTwoFactor() => _dio.get("/users/me/2fa");
+
+  Future<Response> startTwoFactor() => _dio.post("/users/me/2fa/setup");
+
+  Future<Response> enableTwoFactor(String code) =>
+      _dio.post("/users/me/2fa/enable", data: {"code": code});
+
+  Future<Response> disableTwoFactor(String password, String code) => _dio.post(
+    "/users/me/2fa/disable",
+    data: {"password": password, "code": code},
+  );
+
   // --- Group invite links ---
 
   Future<Response> getInvite(String groupId) =>
