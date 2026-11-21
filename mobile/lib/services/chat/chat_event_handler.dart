@@ -286,7 +286,7 @@ class ChatEventHandler {
       chatId,
       MessageEnvelope.isUnreadable(content)
           ? '🔒 Encrypted message'
-          : message.plainText,
+          : message.summary,
       message.createdAt,
       !isOpen,
       senderId: senderId,

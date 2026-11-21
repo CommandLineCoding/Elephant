@@ -1,6 +1,7 @@
 import '../core/constants.dart';
 import '../core/mention.dart';
 import '../core/message_payload.dart';
+import '../core/message_summary.dart';
 
 class QuotedMessage {
   final String id;
@@ -117,6 +118,10 @@ class Message {
   /// [text] with mentions as plain `@Name`, for a line of text (a quote, a
   /// list).
   String get plainText => plainMentions(text);
+
+  /// A short line for a pinned bar, a quote or a search result: [plainText],
+  /// except that a location or a contact gets a label.
+  String get summary => plainMentions(summarizeMessage(text, payload));
 
   /// An action (a reaction, a vote, a pin) rather than something to show.
   bool get isAction => payload?.isAction ?? false;
