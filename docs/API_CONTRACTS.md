@@ -810,6 +810,144 @@ The updated user, as in [User ME](#1-user-me), with `username_changed_at` (only 
 
 The username was changed less than 30 days ago. A `Retry-After` header says how many seconds to wait, and the message says the date.
 
+### 11. Signed-in devices
+
+Each sign-in is a session. These endpoints list them and sign them out. Signing a device out deletes its refresh token and closes its WebSocket at once; the device has to sign in again.
+
+- **URL:** `/api/users/me/sessions`
+- **Authentication Required:** `YES`
+
+#### `GET /api/users/me/sessions`
+
+The devices you are signed in on, most recently used first. `current` is true for the device that is asking. `last_used_at` is when it last refreshed its tokens, so it can be up to 15 minutes behind.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "device_name": "Pixel 8",
+      "started_at": "<Timestamp>",
+      "last_used_at": "<Timestamp>",
+      "current": true
+    }
+  ]
+}
+```
+
+`device_name` is an empty string if the device never sent one.
+
+#### `DELETE /api/users/me/sessions/{id}`
+
+Signs one device out. It can be the device that is asking.
+
+- `200 OK`: `{ "success": true }`
+- `400 Bad Request`: `"Invalid device ID"`
+- `404 Not Found`: `"No such device"`, including a device that belongs to someone else.
+
+#### `DELETE /api/users/me/sessions`
+
+Signs out every device except the one that is asking.
+
+```json
+{ "success": true, "data": { "signed_out": 2 } }
+```
+
+`400 Bad Request` (`"Sign in again to use this"`) for an access token issued before sessions existed, which doesn't say which device is the current one.
+
+### 12. Privacy settings
+
+What a person lets others see and do. **The server enforces every setting**, so a modified app can't get around them. Someone who never changed anything has the defaults, which are how the server behaved before there were settings.
+
+- **URL:** `/api/users/me/settings`
+- **Authentication Required:** `YES`
+
+| Field | Values | Default | What it does |
+|---|---|---|---|
+| `online_status` | `everyone`, `contacts`, `nobody` | `contacts` | Who is told you are online (`user_status` events and `request_status` answers). `contacts` is people who share a chat or a group with you; `everyone` is anyone you haven't blocked and who hasn't blocked you; with `nobody` everyone is told you are offline. |
+| `read_receipts` | `true`, `false` | `true` | When `false`, your `read_receipt` events aren't forwarded, and the people who sent you messages don't see them as read in the history or the chat list. You still see which messages you read. |
+| `group_adds` | `everyone`, `contacts`, `nobody` | `everyone` | Who can add you to a group. [Add Member](#8-add-member-to-group) answers `403` for someone who isn't allowed. |
+
+If the server can't load someone's settings it shares nothing: they are reported offline and no read receipt is forwarded.
+
+#### `GET /api/users/me/settings`
+
+```json
+{
+  "success": true,
+  "data": { "online_status": "contacts", "read_receipts": true, "group_adds": "everyone" }
+}
+```
+
+#### `PATCH /api/users/me/settings`
+
+Send only the fields to change. The reply is all the settings after the change, in the same shape as `GET`.
+
+```json
+{ "online_status": "nobody", "read_receipts": false }
+```
+
+`400 Bad Request` for a body that isn't an object, or an `online_status` or `group_adds` that isn't one of the three values. Nothing is changed.
+
+---
+
+## Reports Endpoints
+
+Blocking stops someone reaching you; a report tells the server's admin. Direct messages are end-to-end encrypted, so the server can't see what was said. A report can include a few messages that the reporter's phone attaches as plain text, after asking the reporter.
+
+### Report someone
+
+- **URL:** `/api/reports`
+- **Method:** `POST`
+- **Authentication Required:** `YES`
+- **Rate limit:** a burst of 3, then one every 20 seconds, and at most 20 reports per person per day.
+
+```json
+{
+  "user_id": "<reported user ID>",
+  "reason": "spam",
+  "note": "Keeps sending me links",
+  "messages": [
+    { "from_reported": true, "text": "buy my coins", "at": "<Timestamp>" }
+  ]
+}
+```
+
+`reason` is `spam`, `harassment` or `other`. `note` is optional, up to 500 characters. `messages` is optional: up to 10, each up to 1000 characters, as plain text. Blocking the person is a separate call ([Block a user](#7-block-a-user)).
+
+- `201 Created`: `{ "success": true, "data": { "id": 12 } }`
+- `400 Bad Request`: an invalid user ID, reason, note or messages, or reporting yourself.
+- `404 Not Found`: `"User not found"`.
+- `429 Too Many Requests`: the rate limit or the daily limit.
+
+### List reports (admins)
+
+- **URL:** `/api/admin/reports?limit=50&before=<id>`
+- **Method:** `GET`
+- **Authentication Required:** `YES`, and the user ID must be in the server's `ADMIN_USER_IDS`. Anyone else gets `403` (`"Admins only"`).
+
+Reports, newest first. `limit` is 1 to 200 (default 50); pass the last `id` of a page as `before` to get the next one.
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 12,
+      "reporter_id": "<user ID>",
+      "reporter_username": "ava.1234",
+      "reported_user_id": "<user ID>",
+      "reported_username": "spam.5678",
+      "reason": "spam",
+      "note": "Keeps sending me links",
+      "messages": [{ "from_reported": true, "text": "buy my coins", "at": "<Timestamp>" }],
+      "created_at": "<Timestamp>"
+    }
+  ]
+}
+```
+
 ---
 
 ## Calls Endpoints
