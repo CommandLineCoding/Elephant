@@ -93,6 +93,27 @@
                     android:host="elephant.commandlinecoding.in"
                     android:pathPrefix="/u/" />
             </intent-filter>
+
+            <!-- Group invite links: elephant://g/<code> and
+                 https://elephant.commandlinecoding.in/g/<code> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="elephant"
+                    android:host="g" />
+            </intent-filter>
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="elephant.commandlinecoding.in"
+                    android:pathPrefix="/g/" />
+            </intent-filter>
         </activity>
 
         <service

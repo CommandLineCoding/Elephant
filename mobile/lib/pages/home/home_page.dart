@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/services/api_services.dart';
+import 'package:mobile/core/invite_links.dart';
 import 'package:mobile/core/profile_links.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
+import 'package:mobile/pages/chat/join_group_page.dart';
 import 'package:mobile/pages/home/archived_chats_page.dart';
 import 'package:mobile/pages/home/conversation_actions.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
@@ -50,6 +52,8 @@ class _HomePageState extends State<HomePage> {
     PushService.instance.chatToOpen.addListener(_openRequestedChat);
     ProfileLinks.instance.pending.addListener(_openProfileLink);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openProfileLink());
+    InviteLinks.instance.pending.addListener(_openInviteLink);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openInviteLink());
     BlockedUsers.instance.load();
     _inbox.addListener(_openRequestedChat);
     WidgetsBinding.instance.addPostFrameCallback((_) => _openRequestedChat());
@@ -59,8 +63,20 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     PushService.instance.chatToOpen.removeListener(_openRequestedChat);
     ProfileLinks.instance.pending.removeListener(_openProfileLink);
+    InviteLinks.instance.pending.removeListener(_openInviteLink);
     _inbox.removeListener(_openRequestedChat);
     super.dispose();
+  }
+
+  /// Shows the invitation a group invite link points to.
+  void _openInviteLink() {
+    final code = InviteLinks.instance.pending.value;
+    if (code == null || !mounted) return;
+    InviteLinks.instance.pending.value = null;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => JoinGroupPage(code: code)),
+    );
   }
 
   /// Opens the chat a profile link points to, looking the user up by their

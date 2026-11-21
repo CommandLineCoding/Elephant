@@ -23,6 +23,7 @@ import 'package:app_links/app_links.dart';
 import 'package:mobile/models/user.dart';
 import '../core/constants.dart';
 import '../core/profile_limits.dart';
+import '../core/invite_links.dart';
 import '../core/username.dart';
 import '../core/profile_links.dart';
 import '../services/auth_service.dart';
@@ -169,8 +170,8 @@ class AuthState extends ChangeNotifier {
     if (uri.scheme == 'elephant' && uri.host == 'oauth-callback') {
       handleOAuthCallback(uri);
     } else {
-      // A profile link waits until someone is signed in.
-      ProfileLinks.instance.open(uri);
+      // A profile or group link waits until someone is signed in.
+      if (!ProfileLinks.instance.open(uri)) InviteLinks.instance.open(uri);
     }
   }
 
