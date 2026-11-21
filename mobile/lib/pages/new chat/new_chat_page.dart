@@ -23,7 +23,8 @@ class NewChatPage extends StatefulWidget {
 class _NewChatPageState extends State<NewChatPage> {
   final _searchController = TextEditingController();
   Timer? _debounce;
-  late final ChatSearchController _search = context.read<ChatSearchController>();
+  late final ChatSearchController _search = context
+      .read<ChatSearchController>();
 
   @override
   void initState() {
@@ -42,14 +43,18 @@ class _NewChatPageState extends State<NewChatPage> {
   void _onChanged(String value) {
     setState(() {});
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () => _search.queryUsers(value));
+    _debounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _search.queryUsers(value),
+    );
   }
 
   void _open(String id, String name, String? username) {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => ChatPage(chatUserId: id, displayName: name, username: username),
+        builder: (_) =>
+            ChatPage(chatUserId: id, displayName: name, username: username),
       ),
     );
   }
@@ -85,7 +90,12 @@ class _NewChatPageState extends State<NewChatPage> {
       body: ScreenBackground(
         child: Column(
           children: [
-            SizedBox(height: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.md),
+            SizedBox(
+              height:
+                  MediaQuery.paddingOf(context).top +
+                  kToolbarHeight +
+                  Insets.md,
+            ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
               child: SearchField(
@@ -97,11 +107,16 @@ class _NewChatPageState extends State<NewChatPage> {
             ),
             if (search.isSearchLoading)
               const Padding(
-                padding: EdgeInsets.symmetric(horizontal: Insets.page, vertical: Insets.sm),
+                padding: EdgeInsets.symmetric(
+                  horizontal: Insets.page,
+                  vertical: Insets.sm,
+                ),
                 child: LinearProgressIndicator(minHeight: 2),
               ),
             Expanded(
-              child: isSearching ? _buildResults(search, query) : _buildIdle(inbox),
+              child: isSearching
+                  ? _buildResults(search, query)
+                  : _buildIdle(inbox),
             ),
           ],
         ),
@@ -112,7 +127,9 @@ class _NewChatPageState extends State<NewChatPage> {
   Widget _buildIdle(InboxController inbox) {
     final recents = inbox.inbox.where((t) => !t.isGroup).toList();
     return ListView(
-      padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + Insets.xl),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.paddingOf(context).bottom + Insets.xl,
+      ),
       children: [
         const SizedBox(height: Insets.lg),
         Section(
@@ -143,7 +160,9 @@ class _NewChatPageState extends State<NewChatPage> {
             child: Text(
               'Search for someone by their username, like alex.4821, to start an encrypted chat.',
               textAlign: TextAlign.center,
-              style: context.text.bodyMedium?.copyWith(color: context.colors.onSurfaceVariant),
+              style: context.text.bodyMedium?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
           ),
       ],
@@ -170,13 +189,22 @@ class _NewChatPageState extends State<NewChatPage> {
         return false;
       },
       child: ListView.builder(
-        padding: EdgeInsets.only(top: Insets.sm, bottom: MediaQuery.paddingOf(context).bottom + Insets.xl),
+        padding: EdgeInsets.only(
+          top: Insets.sm,
+          bottom: MediaQuery.paddingOf(context).bottom + Insets.xl,
+        ),
         itemCount: users.length + (search.isLoadingMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index == users.length) {
             return const Padding(
               padding: EdgeInsets.all(Insets.lg),
-              child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
             );
           }
           final user = users[index];
@@ -197,7 +225,9 @@ class _NewChatPageState extends State<NewChatPage> {
       child: Text(
         text,
         textAlign: TextAlign.center,
-        style: context.text.bodyMedium?.copyWith(color: context.colors.onSurfaceVariant),
+        style: context.text.bodyMedium?.copyWith(
+          color: context.colors.onSurfaceVariant,
+        ),
       ),
     );
   }
@@ -219,7 +249,10 @@ class _PersonTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: Insets.page, vertical: 2),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: Insets.page,
+        vertical: 2,
+      ),
       leading: ElephantAvatar(name: name, seed: id, size: 46),
       title: Text(name),
       subtitle: username != null ? Text('@$username') : null,

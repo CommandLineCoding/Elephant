@@ -7,11 +7,12 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.WindowManager
-import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+// A FragmentActivity, which the fingerprint prompt (App lock) needs.
+class MainActivity : FlutterFragmentActivity() {
     private var callAudio: CallAudio? = null
     private var locationFinder: LocationFinder? = null
     private var callScreenOpen = false
