@@ -25,7 +25,8 @@ class _SelectContactPageState extends State<SelectContactPage> {
   final Map<String, _Contact> _selected = {};
   final _searchController = TextEditingController();
   Timer? _debounce;
-  late final ChatSearchController _search = context.read<ChatSearchController>();
+  late final ChatSearchController _search = context
+      .read<ChatSearchController>();
 
   @override
   void initState() {
@@ -44,7 +45,10 @@ class _SelectContactPageState extends State<SelectContactPage> {
   void _onChanged(String value) {
     setState(() {});
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 350), () => _search.queryUsers(value));
+    _debounce = Timer(
+      const Duration(milliseconds: 350),
+      () => _search.queryUsers(value),
+    );
   }
 
   void _toggle(String id, String name, String username) {
@@ -73,9 +77,9 @@ class _SelectContactPageState extends State<SelectContactPage> {
     final List<(String, String, String)> people = typed
         ? search.results.map((u) => (u.id, u.displayName, u.username)).toList()
         : inbox.inbox
-            .where((t) => !t.isGroup)
-            .map((t) => (t.id, t.title, t.username ?? ''))
-            .toList();
+              .where((t) => !t.isGroup)
+              .map((t) => (t.id, t.title, t.username ?? ''))
+              .toList();
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -85,8 +89,12 @@ class _SelectContactPageState extends State<SelectContactPage> {
           children: [
             const Text('New group'),
             Text(
-              _selected.isEmpty ? 'Add members' : '${_selected.length} selected',
-              style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+              _selected.isEmpty
+                  ? 'Add members'
+                  : '${_selected.length} selected',
+              style: context.text.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -104,7 +112,12 @@ class _SelectContactPageState extends State<SelectContactPage> {
       body: ScreenBackground(
         child: Column(
           children: [
-            SizedBox(height: MediaQuery.paddingOf(context).top + kToolbarHeight + Insets.md),
+            SizedBox(
+              height:
+                  MediaQuery.paddingOf(context).top +
+                  kToolbarHeight +
+                  Insets.md,
+            ),
             AnimatedSize(
               duration: const Duration(milliseconds: 220),
               curve: Curves.easeOutCubic,
@@ -114,13 +127,19 @@ class _SelectContactPageState extends State<SelectContactPage> {
                       height: 92,
                       child: ListView(
                         scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Insets.page,
+                        ),
                         children: [
                           for (final entry in _selected.entries)
                             Padding(
                               padding: const EdgeInsets.only(right: Insets.md),
                               child: GestureDetector(
-                                onTap: () => _toggle(entry.key, entry.value.name, entry.value.username),
+                                onTap: () => _toggle(
+                                  entry.key,
+                                  entry.value.name,
+                                  entry.value.username,
+                                ),
                                 child: SizedBox(
                                   width: 62,
                                   child: Column(
@@ -128,14 +147,23 @@ class _SelectContactPageState extends State<SelectContactPage> {
                                       Stack(
                                         clipBehavior: Clip.none,
                                         children: [
-                                          ElephantAvatar(name: entry.value.name, seed: entry.key, size: 52),
+                                          ElephantAvatar(
+                                            name: entry.value.name,
+                                            seed: entry.key,
+                                            size: 52,
+                                          ),
                                           Positioned(
                                             right: -4,
                                             top: -4,
                                             child: CircleAvatar(
                                               radius: 10,
-                                              backgroundColor: context.colors.onSurface,
-                                              child: Icon(Icons.close_rounded, size: 13, color: context.colors.surface),
+                                              backgroundColor:
+                                                  context.colors.onSurface,
+                                              child: Icon(
+                                                Icons.close_rounded,
+                                                size: 13,
+                                                color: context.colors.surface,
+                                              ),
                                             ),
                                           ),
                                         ],
@@ -145,7 +173,9 @@ class _SelectContactPageState extends State<SelectContactPage> {
                                         entry.value.name.split(' ').first,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: context.text.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                                        style: context.text.bodySmall?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -166,7 +196,10 @@ class _SelectContactPageState extends State<SelectContactPage> {
             ),
             if (search.isSearchLoading)
               const Padding(
-                padding: EdgeInsets.symmetric(horizontal: Insets.page, vertical: Insets.sm),
+                padding: EdgeInsets.symmetric(
+                  horizontal: Insets.page,
+                  vertical: Insets.sm,
+                ),
                 child: LinearProgressIndicator(minHeight: 2),
               ),
             if (!typed && people.isNotEmpty) const SectionLabel('Recent chats'),
@@ -180,18 +213,30 @@ class _SelectContactPageState extends State<SelectContactPage> {
                                 ? 'No one found.'
                                 : 'Search for people by name or username to add them.'),
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: context.colors.onSurfaceVariant),
+                        style: TextStyle(
+                          color: context.colors.onSurfaceVariant,
+                        ),
                       ),
                     )
                   : ListView.builder(
-                      padding: EdgeInsets.only(bottom: 100 + MediaQuery.paddingOf(context).bottom),
+                      padding: EdgeInsets.only(
+                        bottom: 100 + MediaQuery.paddingOf(context).bottom,
+                      ),
                       itemCount: people.length,
                       itemBuilder: (context, index) {
                         final (id, name, username) = people[index];
                         final selected = _selected.containsKey(id);
                         return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: Insets.page, vertical: 2),
-                          leading: ElephantAvatar(name: name, seed: id, size: 46, showSelected: selected),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: Insets.page,
+                            vertical: 2,
+                          ),
+                          leading: ElephantAvatar(
+                            name: name,
+                            seed: id,
+                            size: 46,
+                            showSelected: selected,
+                          ),
                           title: Text(name),
                           subtitle: Text('@$username'),
                           trailing: Checkbox(
@@ -237,11 +282,18 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     final inbox = context.read<InboxController>();
     final navigator = Navigator.of(context);
 
-    final group = await groups.createGroup(groupName: name, memberIds: widget.members.keys.toList());
+    final group = await groups.createGroup(
+      groupName: name,
+      memberIds: widget.members.keys.toList(),
+    );
     if (!mounted) return;
 
     if (group == null) {
-      showSnack(context, groups.lastError ?? 'Couldn\'t create the group.', isError: true);
+      showSnack(
+        context,
+        groups.lastError ?? 'Couldn\'t create the group.',
+        isError: true,
+      );
       return;
     }
 
@@ -249,7 +301,11 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     navigator.pop(true);
     navigator.pushReplacement(
       MaterialPageRoute(
-        builder: (_) => ChatPage(chatUserId: group.id, displayName: group.name, isGroup: true),
+        builder: (_) => ChatPage(
+          chatUserId: group.id,
+          displayName: group.name,
+          isGroup: true,
+        ),
       ),
     );
     if (groups.failedMemberIds.isNotEmpty) {
@@ -265,7 +321,12 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   Widget build(BuildContext context) {
     final isLoading = context.watch<GroupController>().isLoading;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(Insets.xl, Insets.sm, Insets.xl, Insets.xl),
+      padding: const EdgeInsets.fromLTRB(
+        Insets.xl,
+        Insets.sm,
+        Insets.xl,
+        Insets.xl,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -289,7 +350,10 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                   maxLength: 100,
                   textCapitalization: TextCapitalization.sentences,
                   onSubmitted: (_) => _create(),
-                  decoration: const InputDecoration(hintText: 'Group name', counterText: ''),
+                  decoration: const InputDecoration(
+                    hintText: 'Group name',
+                    counterText: '',
+                  ),
                 ),
               ),
             ],
@@ -297,7 +361,9 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           const SizedBox(height: Insets.lg),
           Text(
             '${widget.members.length + 1} members including you. Group messages are not end-to-end encrypted yet.',
-            style: context.text.bodySmall?.copyWith(color: context.colors.onSurfaceVariant),
+            style: context.text.bodySmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: Insets.xl),
           ValueListenableBuilder(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile/core/link_preview.dart';
 import 'package:mobile/pages/settings/blocked_users.dart';
 import 'package:mobile/services/api_services.dart';
+import 'package:mobile/services/app_lock.dart';
 import 'package:mobile/services/screen_security.dart';
 import 'package:mobile/services/signal_service.dart';
 import 'package:mobile/themes/app_themes.dart';
@@ -33,6 +34,34 @@ class _PrivacySecuritySettingsPageState
   Future<void> _setLinkPreviews(bool on) async {
     setState(() => _linkPreviews = on);
     await LinkPreviewPrefs.setEnabled(on);
+  }
+
+  Future<void> _setAppLock(bool on) async {
+    final error = await AppLock.instance.setEnabled(on);
+    if (error != null && mounted) showSnack(context, error, isError: true);
+  }
+
+  Future<void> _chooseLockAfter() async {
+    final chosen = await showDialog<Duration>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Lock after'),
+        children: [
+          for (final after in AppLock.timeouts)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, after),
+              child: Row(
+                children: [
+                  Expanded(child: Text(lockAfterLabel(after))),
+                  if (after == AppLock.instance.lockAfter)
+                    const Icon(Icons.check_rounded),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (chosen != null) await AppLock.instance.setLockAfter(chosen);
   }
 
   Future<void> _resetSessions() async {
@@ -161,6 +190,34 @@ class _PrivacySecuritySettingsPageState
             const SectionLabel('On this phone'),
             Section(
               children: [
+                ListenableBuilder(
+                  listenable: AppLock.instance,
+                  builder: (context, _) => ElephantTile(
+                    icon: Icons.fingerprint_rounded,
+                    title: 'App lock',
+                    subtitle: AppLock.instance.enabled
+                        ? 'Elephant asks for your fingerprint, face or screen '
+                              'lock to open.'
+                        : 'Ask for your fingerprint, face or screen lock '
+                              'to open Elephant.',
+                    showChevron: false,
+                    trailing: Switch(
+                      value: AppLock.instance.enabled,
+                      onChanged: _setAppLock,
+                    ),
+                  ),
+                ),
+                ListenableBuilder(
+                  listenable: AppLock.instance,
+                  builder: (context, _) => AppLock.instance.enabled
+                      ? ElephantTile(
+                          icon: Icons.timer_outlined,
+                          title: 'Lock after',
+                          subtitle: lockAfterLabel(AppLock.instance.lockAfter),
+                          onTap: _chooseLockAfter,
+                        )
+                      : const SizedBox.shrink(),
+                ),
                 ValueListenableBuilder<bool>(
                   valueListenable: ScreenSecurity.screenSecure,
                   builder: (context, on, _) => ElephantTile(
@@ -250,4 +307,11 @@ class _PrivacySecuritySettingsPageState
       ),
     );
   }
+}
+
+/// How [AppLock.lockAfter] reads in settings.
+String lockAfterLabel(Duration after) {
+  if (after == Duration.zero) return 'Immediately';
+  final minutes = after.inMinutes;
+  return minutes == 1 ? 'After 1 minute' : 'After $minutes minutes';
 }

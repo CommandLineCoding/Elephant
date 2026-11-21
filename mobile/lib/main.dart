@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
 import 'package:mobile/themes/theme_provider.dart';
+import 'package:mobile/widgets/app_lock_gate.dart';
 import 'package:mobile/widgets/ui/surfaces.dart';
 
 import 'core/constants.dart';
 import 'services/auth_service.dart';
 import 'services/push/push_service.dart';
+import 'services/app_lock.dart';
 import 'services/screen_security.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/home/home_page.dart';
@@ -37,6 +39,7 @@ Future<void> main(List<String> args) async {
   if (args.contains(PushService.backgroundArg)) return;
 
   await ScreenSecurity.load();
+  await AppLock.instance.load();
 
   final themeProvider = ThemeProvider();
   await themeProvider.load();
@@ -97,7 +100,7 @@ class MyApp extends StatelessWidget {
       // status bar to match the theme.
       builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
         value: Theme.of(context).appBarTheme.systemOverlayStyle!,
-        child: child!,
+        child: AppLockGate(child: child!),
       ),
       home: const SessionGateway(),
     );

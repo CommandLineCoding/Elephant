@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../controllers/call/call_controller.dart';
+import '../../services/app_lock.dart';
 import '../../services/calls/call_log.dart';
 import '../../themes/app_themes.dart';
 import '../../widgets/ui/avatar.dart';
@@ -36,8 +37,9 @@ class _CallPageState extends State<CallPage> {
   void initState() {
     super.initState();
     _call.addListener(_onChange);
-    // Answering shouldn't need unlocking the phone.
+    // Answering shouldn't need unlocking the phone, or the app lock.
     _call.sounds.overLockScreen(true);
+    AppLock.instance.callScreenOpen.value = true;
     // The call may already have failed to start.
     WidgetsBinding.instance.addPostFrameCallback((_) => _onChange());
     // Redraws the call timer.
@@ -52,6 +54,8 @@ class _CallPageState extends State<CallPage> {
     _call.removeListener(_onChange);
     // Leaving the call screen puts the app back behind the lock screen.
     _call.sounds.overLockScreen(false);
+    // Not while the tree is being torn down: the lock redraws on this.
+    Future.microtask(() => AppLock.instance.callScreenOpen.value = false);
     super.dispose();
   }
 
