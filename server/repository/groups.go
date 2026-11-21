@@ -2,10 +2,12 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/commandlinecoding/elephant/server/config"
 	"github.com/commandlinecoding/elephant/server/models"
+	"github.com/jackc/pgx/v5"
 )
 
 type GroupRepository struct{}
@@ -22,8 +24,8 @@ func (r *GroupRepository) Create(ctx context.Context, name, creatorID string) (*
 	defer tx.Rollback(ctx)
 
 	var g models.Group
-	query := `INSERT INTO groups (name, created_by) VALUES ($1, $2) RETURNING id, name, created_by, created_at;`
-	err = tx.QueryRow(ctx, query, name, creatorID).Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt)
+	query := `INSERT INTO groups (name, created_by) VALUES ($1, $2) RETURNING id, name, created_by, created_at, description, admins_only;`
+	err = tx.QueryRow(ctx, query, name, creatorID).Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt, &g.Description, &g.AdminsOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +41,7 @@ func (r *GroupRepository) Create(ctx context.Context, name, creatorID string) (*
 
 func (r *GroupRepository) ListByUser(ctx context.Context, userID string) ([]models.Group, error) {
 	query := `
-		SELECT g.id, g.name, g.created_by, g.created_at 
+		SELECT g.id, g.name, g.created_by, g.created_at, g.description, g.admins_only
 		FROM groups g
 		JOIN group_members gm ON g.id = gm.group_id
 		WHERE gm.user_id = $1
@@ -54,7 +56,7 @@ func (r *GroupRepository) ListByUser(ctx context.Context, userID string) ([]mode
 	groups := []models.Group{}
 	for rows.Next() {
 		var g models.Group
-		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt); err != nil {
+		if err := rows.Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt, &g.Description, &g.AdminsOnly); err != nil {
 			return nil, err
 		}
 		groups = append(groups, g)
@@ -177,9 +179,9 @@ func (r *GroupRepository) GetMembersDetails(ctx context.Context, groupID string)
 }
 
 func (r *GroupRepository) GetByID(ctx context.Context, groupID string) (*models.Group, error) {
-	query := `SELECT id, name, created_by, created_at FROM groups WHERE id = $1;`
+	query := `SELECT id, name, created_by, created_at, description, admins_only FROM groups WHERE id = $1;`
 	var g models.Group
-	err := config.DB.QueryRow(ctx, query, groupID).Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt)
+	err := config.DB.QueryRow(ctx, query, groupID).Scan(&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt, &g.Description, &g.AdminsOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -190,4 +192,51 @@ func (r *GroupRepository) UpdateName(ctx context.Context, groupID, newName strin
 	query := `UPDATE groups SET name = $1 WHERE id = $2;`
 	_, err := config.DB.Exec(ctx, query, newName, groupID)
 	return err
+}
+
+// GroupChanges is a change to a group. Nil fields stay as they are.
+type GroupChanges struct {
+	Name        *string
+	Description *string
+	AdminsOnly  *bool
+}
+
+// Update applies changes to a group and returns it. The caller has checked
+// the values.
+func (r *GroupRepository) Update(ctx context.Context, groupID string, c GroupChanges) (*models.Group, error) {
+	var g models.Group
+	err := config.DB.QueryRow(ctx, `
+		UPDATE groups SET
+			name        = COALESCE($2::text, name),
+			description = COALESCE($3::text, description),
+			admins_only = COALESCE($4::boolean, admins_only)
+		WHERE id = $1::uuid
+		RETURNING id, name, created_by, created_at, description, admins_only;
+	`, groupID, c.Name, c.Description, c.AdminsOnly).Scan(
+		&g.ID, &g.Name, &g.CreatedBy, &g.CreatedAt, &g.Description, &g.AdminsOnly)
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
+}
+
+// MayPost says whether userID may send an ordinary message to the group:
+// they must be a member, and if the group is admins-only, an admin.
+// isMember is false for someone who isn't in the group at all.
+func (r *GroupRepository) MayPost(ctx context.Context, groupID, userID string) (mayPost, isMember bool, err error) {
+	var role string
+	var adminsOnly bool
+	err = config.DB.QueryRow(ctx, `
+		SELECT gm.role, g.admins_only
+		FROM group_members gm
+		JOIN groups g ON g.id = gm.group_id
+		WHERE gm.group_id = $1::uuid AND gm.user_id = $2::uuid;
+	`, groupID, userID).Scan(&role, &adminsOnly)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return !adminsOnly || role == "admin", true, nil
 }

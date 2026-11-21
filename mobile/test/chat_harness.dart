@@ -121,7 +121,8 @@ class TestAuth extends AuthState {
 
 /// A [GroupDetailsController] whose members are given, not fetched.
 class TestGroups extends GroupDetailsController {
-  TestGroups(List<GroupMember> members) {
+  TestGroups(List<GroupMember> members, {Group? info}) {
+    if (info != null) debugSetInfo(info);
     currentGroupMembers = members;
     for (final m in members) {
       userCache[m.userId.toLowerCase()] = m.displayName;
@@ -130,6 +131,9 @@ class TestGroups extends GroupDetailsController {
 
   @override
   Future<void> fetchGroupMembers(String groupId) async {}
+
+  @override
+  Future<void> fetchGroupInfo(String groupId) async {}
 }
 
 GroupMember testMember(String id, String name, {bool admin = false}) =>
@@ -187,6 +191,9 @@ Future<TestChat> showTestChat(
   InboxController? inbox,
   TestChat? chat,
   List<GroupMember>? members,
+
+  /// The group's description and posting rule, for a group chat.
+  Group? groupInfo,
   Widget Function(Widget page)? wrap,
   AuthState? auth,
 }) async {
@@ -216,8 +223,9 @@ Future<TestChat> showTestChat(
         ChangeNotifierProvider(create: (_) => GroupController()),
         ChangeNotifierProvider(create: (_) => ChatSearchController()),
         ChangeNotifierProvider<GroupDetailsController>(
-          create: (_) =>
-              members == null ? GroupDetailsController() : TestGroups(members),
+          create: (_) => members == null
+              ? GroupDetailsController()
+              : TestGroups(members, info: groupInfo),
         ),
         ChangeNotifierProvider(
           create: (_) => ChatConnectionController(

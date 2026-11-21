@@ -20,10 +20,15 @@ class ChatEventHandler {
   /// Tells the server direct messages reached this phone. Tests replace it.
   late final void Function(List<String> messageIds) acknowledge;
 
+  /// Called when an admin changed a group (its name, description or who may
+  /// post), with the group's ID.
+  final void Function(String groupId)? onGroupUpdated;
+
   ChatEventHandler({
     required this.inboxController,
     required this.activeChatController,
     required this.currentUserIdProvider,
+    this.onGroupUpdated,
     void Function(List<String> messageIds)? acknowledge,
   }) {
     this.acknowledge = acknowledge ?? _ws.sendDelivered;
@@ -108,6 +113,11 @@ class ChatEventHandler {
 
       case 'group_deleted':
         await _handleGroupDeleted(data);
+        break;
+
+      case 'group_updated':
+        final groupId = _id(data['group_id']);
+        if (groupId != null) onGroupUpdated?.call(groupId);
         break;
     }
   }

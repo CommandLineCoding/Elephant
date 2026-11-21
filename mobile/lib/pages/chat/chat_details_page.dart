@@ -149,6 +149,29 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
 
   // --- Group actions ---
 
+  Future<void> _editDescription() async {
+    final groups = context.read<GroupDetailsController>();
+    final text = await promptText(
+      context,
+      title: 'Group description',
+      message: 'Everyone in the group can read it.',
+      initialValue: groups.descriptionOf(widget.chatId),
+      hint: 'What is this group for?',
+      maxLength: 500,
+    );
+    if (text == null || !mounted) return;
+    final error = await groups.updateGroup(widget.chatId, description: text);
+    if (mounted && error != null) showSnack(context, error, isError: true);
+  }
+
+  Future<void> _setAdminsOnly(bool on) async {
+    final error = await context.read<GroupDetailsController>().updateGroup(
+      widget.chatId,
+      adminsOnly: on,
+    );
+    if (mounted && error != null) showSnack(context, error, isError: true);
+  }
+
   Future<void> _rename() async {
     final newName = await promptText(
       context,
@@ -590,7 +613,26 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
     final iAmAdmin = groups.isAdmin(myId);
     final members = groups.currentGroupMembers;
 
+    final description = groups.descriptionOf(widget.chatId);
+    final adminsOnly = groups.adminsOnlyIn(widget.chatId);
+
     return [
+      if (description.isNotEmpty || iAmAdmin) ...[
+        const SectionLabel('Description'),
+        Section(
+          children: [
+            ElephantTile(
+              icon: Icons.info_outline_rounded,
+              title: description.isEmpty ? 'Add a description' : description,
+              subtitle: iAmAdmin && description.isNotEmpty
+                  ? 'Tap to change'
+                  : null,
+              showChevron: false,
+              onTap: iAmAdmin ? _editDescription : null,
+            ),
+          ],
+        ),
+      ],
       ..._starredSection(),
       if (iAmAdmin) ...[
         const SectionLabel('Settings'),
@@ -601,6 +643,27 @@ class _ChatDetailsPageState extends State<ChatDetailsPage> {
               title: 'Rename group',
               subtitle: _name,
               onTap: _rename,
+            ),
+            ElephantTile(
+              icon: Icons.campaign_outlined,
+              title: 'Only admins can send messages',
+              subtitle: adminsOnly
+                  ? 'Members can read, react and vote.'
+                  : 'Everyone in the group can send messages.',
+              showChevron: false,
+              trailing: Switch(value: adminsOnly, onChanged: _setAdminsOnly),
+            ),
+          ],
+        ),
+      ] else if (adminsOnly) ...[
+        const SectionLabel('Messages'),
+        const Section(
+          children: [
+            ElephantTile(
+              icon: Icons.campaign_outlined,
+              title: 'Only admins can send messages',
+              subtitle: 'You can read, react and vote.',
+              showChevron: false,
             ),
           ],
         ),

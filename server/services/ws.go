@@ -345,6 +345,18 @@ func (h *WSHub) Disconnect(userID string) {
 	}
 }
 
+// GroupUpdated tells the live members of a group that its details changed (its
+// name, description or who may post), so their apps load them again.
+func (h *WSHub) GroupUpdated(groupID string) {
+	members, err := repository.NewGroupRepository().GetGroupMembers(context.Background(), groupID)
+	if err != nil {
+		log.Printf("Group update not announced, couldn't load members: %v", err)
+		return
+	}
+	bytes, _ := json.Marshal(map[string]interface{}{"type": "group_updated", "group_id": groupID})
+	h.sendToUsers(members, "", bytes)
+}
+
 // DisconnectSession closes the user's live WebSocket if it belongs to
 // sessionID, which is how signing a device out cuts it off at once. A
 // connection from another of their devices is left alone.
@@ -487,6 +499,13 @@ func (c *WSClient) ReadPump() {
 			// A blocked sender's direct message is dropped: not stored, not
 			// delivered, no push. They aren't told.
 			if incoming.GroupID == "" && blockedBy(context.Background(), incoming.ReceiverID, c.UserID) {
+				continue
+			}
+
+			// Only members post to a group, and in an admins-only group only
+			// admins do (members can still react and vote). Anything else is
+			// dropped, as for a blocked sender.
+			if incoming.GroupID != "" && !mayPostToGroup(context.Background(), incoming) {
 				continue
 			}
 
