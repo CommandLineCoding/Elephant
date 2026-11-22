@@ -10,6 +10,8 @@ import 'core/constants.dart';
 import 'services/auth_service.dart';
 import 'services/push/push_service.dart';
 import 'services/app_lock.dart';
+import 'services/db_services.dart';
+import 'services/expiry_sweeper.dart';
 import 'services/chat_appearance.dart';
 import 'services/privacy_settings.dart';
 import 'services/screen_security.dart';
@@ -57,6 +59,12 @@ Future<void> main(List<String> args) async {
     ..currentUserIdProvider = currentUserId
     ..onMessageEdited = inboxController.updatePreviewForEdit
     ..onMessageDeleted = (_) => inboxController.loadInbox();
+
+  ExpirySweeper(
+    deleteExpired: DatabaseHelper.instance.deleteExpiredMessages,
+    onSweep: activeChatController.pruneExpired,
+    onDeleted: inboxController.loadInbox,
+  ).start();
 
   final callController = createCallController(inboxController);
   CallController.instance = callController;

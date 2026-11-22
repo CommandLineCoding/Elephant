@@ -65,6 +65,10 @@ class Message {
   /// When it reached the recipient's phone (direct messages we sent).
   final DateTime? deliveredAt;
 
+  /// When a disappearing message goes, or null if it stays. The server works it
+  /// out, so both phones agree.
+  final DateTime? expiresAt;
+
   Message({
     required this.id,
     required this.senderId,
@@ -78,9 +82,14 @@ class Message {
     this.editedAt,
     this.deletedAt,
     this.deliveredAt,
+    this.expiresAt,
   });
 
   bool get isEdited => editedAt != null;
+
+  /// Whether it has disappeared by [now].
+  bool isExpired([DateTime? now]) =>
+      expiresAt != null && !expiresAt!.isAfter(now ?? DateTime.now());
 
   /// Reached the recipient's phone. A message that was read was delivered.
   bool get isDelivered => deliveredAt != null || isRead;
@@ -171,6 +180,7 @@ class Message {
       editedAt: _parseDate(json['edited_at']),
       deletedAt: _parseDate(json['deleted_at']),
       deliveredAt: _parseDate(json['delivered_at']),
+      expiresAt: _parseDate(json['expires_at']),
     );
   }
 
@@ -194,6 +204,9 @@ class Message {
       deliveredAt: row['delivered_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(row['delivered_at'] as int)
           : null,
+      expiresAt: row['expires_at'] != null
+          ? DateTime.fromMillisecondsSinceEpoch(row['expires_at'] as int)
+          : null,
     );
   }
 
@@ -216,6 +229,7 @@ class Message {
       'edited_at': editedAt?.millisecondsSinceEpoch,
       'deleted_at': deletedAt?.millisecondsSinceEpoch,
       'delivered_at': deliveredAt?.millisecondsSinceEpoch,
+      'expires_at': expiresAt?.millisecondsSinceEpoch,
     };
   }
 
@@ -242,6 +256,7 @@ class Message {
       editedAt: editedAt ?? this.editedAt,
       deletedAt: deletedAt ?? this.deletedAt,
       deliveredAt: deliveredAt ?? this.deliveredAt,
+      expiresAt: expiresAt,
     );
   }
 }

@@ -14,5 +14,10 @@ type WSMessage struct {
 	CallID           string    `json:"call_id,omitempty"`
 	Reason           string    `json:"reason,omitempty"`
 	Silent           bool      `json:"silent,omitempty"` // an action carried in a chat message (migration 017)
-	MessageIDs       []string  `json:"message_ids,omitempty"`
+
+	// ExpiresIn is how many seconds a disappearing message lives, as the sender
+	// says. The server turns it into ExpiresAt, which is what recipients see.
+	ExpiresIn  int        `json:"expires_in,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+	MessageIDs []string   `json:"message_ids,omitempty"`
 }

@@ -369,11 +369,34 @@ func (h *WSHub) DisconnectSession(userID, sessionID string) {
 	}
 }
 
+// Disappearing messages live from a minute to four weeks. A sender that asks
+// for something outside that gets the nearest end, never a message that stays.
+const (
+	minMessageLife = 60
+	maxMessageLife = 28 * 24 * 3600
+)
+
+// expiryFor is when a message sent at sent, with a life of seconds, goes away,
+// or nil if it doesn't (seconds is zero or less).
+func expiryFor(seconds int, sent time.Time) *time.Time {
+	if seconds <= 0 {
+		return nil
+	}
+	if seconds < minMessageLife {
+		seconds = minMessageLife
+	}
+	if seconds > maxMessageLife {
+		seconds = maxMessageLife
+	}
+	t := sent.Add(time.Duration(seconds) * time.Second)
+	return &t
+}
+
 // storeChat saves a chat event as a message. A client-chosen message ID is
 // kept, which makes a re-sent message idempotent with the sender's own copy.
 func storeChat(ctx context.Context, msg models.WSMessage) error {
 	_, err := config.DB.Exec(ctx, `
-		INSERT INTO messages (sender_id, receiver_id, group_id, content, id, reply_to_message_id, silent)
+		INSERT INTO messages (sender_id, receiver_id, group_id, content, id, reply_to_message_id, silent, expires_at)
 		VALUES (
 			$1::uuid,
 			NULLIF($2, '')::uuid,
@@ -381,9 +404,10 @@ func storeChat(ctx context.Context, msg models.WSMessage) error {
 			$4,
 			COALESCE(NULLIF($5, '')::uuid, gen_random_uuid()),
 			NULLIF($6, '')::uuid,
-			$7
+			$7,
+			$8::timestamptz
 		)`,
-		msg.SenderID, msg.ReceiverID, msg.GroupID, msg.Content, msg.MessageID, msg.ReplyToMessageID, msg.Silent)
+		msg.SenderID, msg.ReceiverID, msg.GroupID, msg.Content, msg.MessageID, msg.ReplyToMessageID, msg.Silent, msg.ExpiresAt)
 	return err
 }
 
@@ -502,6 +526,11 @@ func (c *WSClient) ReadPump() {
 				continue
 			}
 
+			// A disappearing message: the sender says how long it lives, and the
+			// server works out when, so everyone agrees on the time.
+			incoming.ExpiresAt = expiryFor(incoming.ExpiresIn, incoming.Timestamp)
+			incoming.ExpiresIn = 0
+
 			// Only members post to a group, and in an admins-only group only
 			// admins do (members can still react and vote). Anything else is
 			// dropped, as for a blocked sender.
@@ -529,6 +558,7 @@ func (c *WSClient) ReadPump() {
 						"timestamp":           incoming.Timestamp,
 						"quoted_message":      q,
 						"silent":              incoming.Silent,
+						"expires_at":          incoming.ExpiresAt,
 					}
 					outboundBytes, _ = json.Marshal(enriched)
 				} else {

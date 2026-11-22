@@ -42,6 +42,7 @@ class ChatSyncService {
             content: payload['content'],
             replyToMessageId: payload['replyToMessageId'],
             silent: payload['silent'] == true,
+            expiresIn: _life(payload['expiresIn']),
           );
         } else if (type == 'send_group_chat') {
           sent = _ws.sendGroupChat(
@@ -50,6 +51,7 @@ class ChatSyncService {
             content: payload['content'],
             replyToMessageId: payload['replyToMessageId'],
             silent: payload['silent'] == true,
+            expiresIn: _life(payload['expiresIn']),
           );
         }
 
@@ -79,4 +81,8 @@ class ChatSyncService {
       _isSyncing = false;
     }
   }
+
+  /// How long a queued disappearing message lives, in seconds, as saved.
+  static Duration? _life(Object? seconds) =>
+      seconds is int && seconds > 0 ? Duration(seconds: seconds) : null;
 }

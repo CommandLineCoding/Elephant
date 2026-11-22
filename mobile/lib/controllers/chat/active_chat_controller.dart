@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:mobile/core/constants.dart';
 import 'package:mobile/controllers/chat/chat_meta.dart';
+import 'package:mobile/core/disappearing.dart';
 import 'package:mobile/core/link_preview.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/core/message_payload.dart';
@@ -39,6 +40,7 @@ class ActiveChatController extends ChangeNotifier {
   List<Message> _activeChat = [];
   List<Message>? _visibleChat;
   ChatMeta? _meta;
+  DisappearAfter? _timer;
   String? currentChatUserId;
   bool isPeerTyping = false;
   bool isPeerOnline = false;
@@ -54,6 +56,7 @@ class ActiveChatController extends ChangeNotifier {
     _activeChat = messages;
     _visibleChat = null;
     _meta = null;
+    _timer = null;
   }
 
   Set<String>? _groupAdmins;
@@ -64,6 +67,7 @@ class ActiveChatController extends ChangeNotifier {
     if (setEquals(admins, _groupAdmins)) return;
     _groupAdmins = admins;
     _meta = null;
+    _timer = null;
   }
 
   /// What the open chat's actions add up to (reactions, pins).
@@ -73,6 +77,40 @@ class ActiveChatController extends ChangeNotifier {
     isGroup: isCurrentChatGroup,
     admins: _groupAdmins,
   );
+
+  /// How long new messages in the open chat last: its latest timer message, in
+  /// a group only an admin's.
+  DisappearAfter get disappearAfter => _timer ??= currentTimer(
+    _activeChat,
+    _myId,
+    isGroup: isCurrentChatGroup,
+    admins: _groupAdmins,
+  );
+
+  /// Sets the open chat's timer by sending a timer message. Returns an error to
+  /// show, or null on success.
+  Future<String?> setDisappearing(DisappearAfter after) async {
+    final targetId = currentChatUserId;
+    if (targetId == null) return null;
+    final (data, text) = timerPayload(after);
+    final (error, _) = await sendTo(
+      targetId,
+      isGroup: isCurrentChatGroup,
+      text: MessagePayload.encode('timer', data, text: text),
+    );
+    return error;
+  }
+
+  /// Takes the messages that have disappeared out of the open chat.
+  void pruneExpired([DateTime? now]) {
+    final at = now ?? DateTime.now();
+    if (!_activeChat.any((m) => m.isExpired(at))) return;
+    activeChat = [
+      for (final m in _activeChat)
+        if (!m.isExpired(at)) m,
+    ];
+    notifyListeners();
+  }
 
   /// Whether we can pin or unpin in the open chat: anyone in a direct chat,
   /// admins in a group.
@@ -668,6 +706,14 @@ class ActiveChatController extends ChangeNotifier {
     final cleanContent = text.trim();
     if (cleanContent.isEmpty) return (null, null);
 
+    // A message in a chat with a timer disappears when it runs out. The timer
+    // message itself stays, so there is a record of the change.
+    final life =
+        targetId == currentChatUserId &&
+            MessagePayload.split(cleanContent).payload?.kind != 'timer'
+        ? disappearAfter.duration
+        : null;
+
     final byteLimit = isGroup
         ? ServerLimits.maxGroupMessageBytes
         : ServerLimits.maxDirectMessageBytes;
@@ -710,6 +756,7 @@ class ActiveChatController extends ChangeNotifier {
       content: securePayload,
       replyToMessageId: replyingTo?.id,
       silent: silent,
+      expiresIn: life,
     );
     if (WebSocketService.frameSize(frame) > ServerLimits.maxWsFrameBytes) {
       return ('Message is too long.', null);
@@ -732,6 +779,7 @@ class ActiveChatController extends ChangeNotifier {
               content: replyingTo.text,
             ),
       syncStatus: 'pending',
+      expiresAt: life == null ? null : DateTime.now().add(life),
     );
 
     if (currentChatUserId == targetId) {
@@ -753,6 +801,7 @@ class ActiveChatController extends ChangeNotifier {
           'content': securePayload,
           'replyToMessageId': replyingTo?.id,
           'silent': silent,
+          'expiresIn': life?.inSeconds,
         },
       );
 
@@ -894,9 +943,13 @@ class ActiveChatController extends ChangeNotifier {
         whereArgs: [chatId],
         orderBy: 'created_at ASC',
       );
+      final now = DateTime.now();
       return rows
           .map(Message.fromRow)
-          .where((m) => !MessageEnvelope.isUnreadable(m.content))
+          .where(
+            (m) =>
+                !MessageEnvelope.isUnreadable(m.content) && !m.isExpired(now),
+          )
           .toList();
     } catch (e) {
       debugPrint("Error reading local messages: $e");

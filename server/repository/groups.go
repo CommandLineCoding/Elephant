@@ -111,10 +111,11 @@ func (r *GroupRepository) GetGroupMessages(ctx context.Context, groupID, readerI
 	query := `
 		SELECT 
 			m.id, m.sender_id, m.content, m.created_at, m.edited_at, m.reply_to_message_id, m.deleted_at,
-			q.sender_id AS quoted_sender_id, q.content AS quoted_content
+			q.sender_id AS quoted_sender_id, q.content AS quoted_content, m.expires_at
 		FROM messages m
 		LEFT JOIN messages q ON m.reply_to_message_id = q.id
 		WHERE m.group_id = $1::uuid AND m.created_at < $2
+		  AND (m.expires_at IS NULL OR m.expires_at > NOW())
 		  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $4::uuid)
 		  AND m.created_at > COALESCE(
 			(SELECT cleared_at FROM conversation_clears
@@ -134,7 +135,7 @@ func (r *GroupRepository) GetGroupMessages(ctx context.Context, groupID, readerI
 		var m models.Message
 		var qSender, qContent *string
 
-		err := rows.Scan(&m.ID, &m.SenderID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.ReplyToMessageID, &m.DeletedAt, &qSender, &qContent)
+		err := rows.Scan(&m.ID, &m.SenderID, &m.Content, &m.CreatedAt, &m.EditedAt, &m.ReplyToMessageID, &m.DeletedAt, &qSender, &qContent, &m.ExpiresAt)
 		if err != nil {
 			return nil, err
 		}

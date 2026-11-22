@@ -146,7 +146,7 @@ Reports the status of the server and its PostgreSQL connection pool.
     "cleanup": {
       "deleted_total": 12,
       "last_run": "<Timestamp>",
-      "last_deleted": { "refresh_tokens": 12, "push_endpoints": 0 }
+      "last_deleted": { "refresh_tokens": 12, "messages": 3, "push_endpoints": 0 }
     },
     "timestamp": "<Timestamp>"
   }
@@ -155,7 +155,7 @@ Reports the status of the server and its PostgreSQL connection pool.
 
 `registration` is `"open"` or `"closed"` (the server's `REGISTRATION` setting), so clients can hide their sign-up option on servers that don't accept new accounts.
 
-`cleanup` is the background job that deletes expired data (see `CLEANUP_INTERVAL_MINUTES`). It holds counts only: how many rows this server instance has deleted since it started, and what its last run deleted. `last_run` and `last_deleted` are missing until the job has run on this instance, for example when another instance holds the lock.
+`cleanup` is the background job that deletes expired data: refresh tokens, [disappearing messages](#disappearing-messages) and dead push endpoints (see `CLEANUP_INTERVAL_MINUTES`). It holds counts only: how many rows this server instance has deleted since it started, and what its last run deleted. `last_run` and `last_deleted` are missing until the job has run on this instance, for example when another instance holds the lock.
 
 #### `500 Internal Server Error`
 
@@ -1146,6 +1146,8 @@ Apps can send small structured payloads (reactions, poll votes, pins, shared con
 
 Apps that don't understand a payload show only the first part (Markdown hides the definition line). The JSON object has a `kind` (for example `reaction`) and kind-specific fields. Actions (reactions, votes, pins) are sent with `silent: true`. This is a convention between apps; the server treats `content` as opaque.
 
+A `timer` payload, `{"kind": "timer", "seconds": 86400}`, sets how long later messages in the chat last (`0` turns it off). It is a normal, visible message, so it counts as unread and the chat shows it as a note. In a group, apps only honour it from an admin. See [disappearing messages](#disappearing-messages).
+
 #### Mentions
 
 A mention of a group member is written in the message text as `@[Name](user-id)`, where `user-id` is the member's ID (a UUID). The ID is what counts, so a renamed member is still the one mentioned; `Name` (no brackets or parentheses, one line, up to 60 characters) is what apps without mentions show, as a link named `Name`. Apps that know mentions show the member's current name, mark mentions of the person reading, and open the member when one is tapped.
@@ -1168,6 +1170,7 @@ Persists the message and delivers it live to online recipients. Offline recipien
 
 - `message_id` is optional. If you send a client-generated UUID, the server uses it as the stored message ID, which lets offline-queued sends stay idempotent with the local DB. If you omit it, the server generates one.
 - `reply_to_message_id` is optional.
+- `expires_in` is optional: seconds until the message [disappears](#disappearing-messages).
 - `silent` is optional (default `false`). Set it for a message that only carries an [action](#structured-messages) such as a reaction. The server stores it and relays it (with `silent: true`), but it is not the chat's last message in [`/api/messages/conversations`](#3-conversations), doesn't count as unread, and sends no [push ping](#the-ping). It still appears in history. The flag is the only thing the server learns about an action: not what it is. The REST [`POST /api/messages`](#1-send-message) doesn't accept it.
 - For a group, send `group_id` instead of `receiver_id`. The sender must be a member, or the message is dropped without a reply. If the group is [admins-only](#7-update-group-details), only an admin's message is accepted, apart from actions (a reaction, a vote or a pin), which members can still send. The server checks that an action really is one: its text must end with the hidden action line, with a `kind` of `reaction`, `vote` or `pin`.
 
@@ -1250,6 +1253,7 @@ When `reply_to_message_id` resolves to a stored message, the event includes a pr
   "message_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
   "reply_to_message_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
   "timestamp": "<Timestamp>",
+  "expires_at": "<Timestamp>",
   "quoted_message": {
     "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
     "sender_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
@@ -1473,6 +1477,7 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
   "edited_at": "<Timestamp>",
   "deleted_at": "<Timestamp>",
   "delivered_at": "<Timestamp>",
+  "expires_at": "<Timestamp>",
   "reply_to_message_id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
   "quoted_message": {
     "id": "dddddddd-dddd-dddd-dddd-dddddddddddd",
@@ -1482,11 +1487,21 @@ Other events only need `call_id` (plus `content` or `reason`). The server knows 
 }
 ```
 
-`receiver_id`, `group_id`, `edited_at`, `deleted_at`, `delivered_at`, `reply_to_message_id` and `quoted_message` are omitted when empty.
+`receiver_id`, `group_id`, `edited_at`, `deleted_at`, `delivered_at`, `expires_at`, `reply_to_message_id` and `quoted_message` are omitted when empty.
 
 `delivered_at` is when a **direct** message reached the recipient's phone (see the [`delivered`](#5-delivered) event). Reading a message counts as delivering it. It is never set for group messages.
 
 A message deleted for everyone (see [Delete a Message](#7-delete-a-message)) stays in history as a **tombstone**: `deleted_at` is set and `content` is empty. It can no longer be edited, and replies that quoted it have nothing to quote.
+
+### Disappearing messages
+
+A `chat` frame can carry `expires_in`, a number of seconds, for a message that should not last. The server turns it into `expires_at` (the message's timestamp plus `expires_in`), stores that, and includes it in the relayed `chat` event and in the [message object](#message-object). `expires_in` is clamped to between 60 seconds and 28 days, and is ignored when it is zero, negative or missing: the message then lasts as before.
+
+Once `expires_at` has passed the server treats the message as gone: it is left out of [direct](#2-direct-message-history) and [group](#4-group-message-history) history, doesn't count as unread and is never a chat's last message in [`/api/messages/conversations`](#3-conversations). The [cleanup job](#health-endpoint) deletes the rows later, so a message can be unreadable before it is deleted. Apps hide and delete their own copies at `expires_at` too, since a relayed or stored copy is out of the server's reach.
+
+The server does not know a chat's setting, only each message's expiry. The setting itself is a [`timer` message](#structured-messages), end-to-end encrypted in a direct chat, and it is up to each app to put `expires_in` on what it sends afterwards. The Elephant app never gives a timer message an expiry, so the chat keeps a record of the change.
+
+Disappearing messages are not a promise: a recipient can still screenshot or copy a message, and an app that doesn't know about them keeps what it receives.
 
 ### 1. Send Message
 
