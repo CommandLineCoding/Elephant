@@ -9,6 +9,7 @@ import 'package:mobile/controllers/chat/chat_connection_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/chat/join_group_page.dart';
+import 'package:mobile/pages/broadcast/broadcast_lists_page.dart';
 import 'package:mobile/pages/home/archived_chats_page.dart';
 import 'package:mobile/pages/home/conversation_actions.dart';
 import 'package:mobile/pages/home/message_requests_page.dart';
@@ -18,6 +19,7 @@ import 'package:mobile/pages/settings/settings_page.dart';
 import 'package:mobile/models/chat_folder.dart';
 import 'package:mobile/pages/settings/chat_folders.dart';
 import 'package:mobile/services/blocked_users.dart';
+import 'package:mobile/services/broadcast_lists.dart';
 import 'package:mobile/services/chat_folders.dart';
 import 'package:mobile/widgets/chat_filter_bar.dart';
 import 'package:mobile/services/drafts.dart';
@@ -249,6 +251,7 @@ class _ChatsTabState extends State<_ChatsTab> {
   void initState() {
     super.initState();
     ChatFolders.instance.load();
+    BroadcastLists.instance.load();
   }
 
   @override
@@ -259,7 +262,10 @@ class _ChatsTabState extends State<_ChatsTab> {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: ChatFolders.instance,
+    listenable: Listenable.merge([
+      ChatFolders.instance,
+      BroadcastLists.instance,
+    ]),
     builder: (context, _) => _buildTab(context),
   );
 
@@ -290,6 +296,10 @@ class _ChatsTabState extends State<_ChatsTab> {
         inbox.archivedChats.isNotEmpty;
     final showRequests =
         query.isEmpty && filter == ChatFilter.all && inbox.requests.isNotEmpty;
+    final showBroadcasts =
+        query.isEmpty &&
+        filter == ChatFilter.all &&
+        BroadcastLists.instance.lists.isNotEmpty;
     final showFilters = query.isEmpty && inbox.chats.isNotEmpty;
 
     return RefreshIndicator(
@@ -361,6 +371,16 @@ class _ChatsTabState extends State<_ChatsTab> {
                 folders: folders,
                 onSelected: (key) => setState(() => _filter = key),
                 onEditFolder: (folder) => editChatFolder(context, folder),
+              ),
+            ),
+          if (showBroadcasts)
+            SliverToBoxAdapter(
+              child: BroadcastListsRow(
+                count: BroadcastLists.instance.lists.length,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BroadcastListsPage()),
+                ),
               ),
             ),
           if (showRequests)

@@ -143,6 +143,17 @@ class _NewChatPageState extends State<NewChatPage> {
                 MaterialPageRoute(builder: (_) => const SelectContactPage()),
               ),
             ),
+            ElephantTile(
+              icon: Icons.campaign_outlined,
+              title: 'New broadcast',
+              subtitle: 'Send one message to several people, separately',
+              onTap: () => Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SelectContactPage(forBroadcast: true),
+                ),
+              ),
+            ),
           ],
         ),
         if (recents.isNotEmpty) ...[

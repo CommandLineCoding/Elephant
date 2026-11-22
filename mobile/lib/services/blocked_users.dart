@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:mobile/services/api_services.dart';
+import 'package:mobile/services/broadcast_lists.dart';
 
 /// Someone the signed-in user blocked.
 class BlockedUser {
@@ -62,6 +64,9 @@ class BlockedUsers extends ChangeNotifier {
       await ApiService().blockUser(user.id);
       if (!isBlocked(user.id)) _users = [user, ..._users];
       notifyListeners();
+      // Blocked people are dropped from broadcast lists: nothing sent to a list
+      // would reach them.
+      unawaited(BroadcastLists.instance.forgetPerson(user.id));
       return null;
     } catch (e) {
       return ApiService.errorMessage(e, fallback: "Couldn't block them.");
