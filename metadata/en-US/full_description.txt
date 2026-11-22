@@ -13,6 +13,10 @@ Elephant is a privacy-first, open-source messenger. Direct messages are end-to-e
 <li>Share a contact or your location, and link previews made on the sender's phone, so the link's website never sees who read the message</li>
 <li>Delete a message for everyone, and delivered and read ticks</li>
 <li>Pin, archive and mute chats, sort them into folders, and keep unsent drafts</li>
+<li>Disappearing messages, and message requests, so a stranger's first message waits for you to accept it and shows them nothing about you</li>
+<li>Two-step sign-in with an authenticator app, an app lock, a privacy screen, and a list of the devices you are signed in on</li>
+<li>Text status that lasts 24 hours, broadcast lists, group invite links, nicknames and chat wallpapers</li>
+<li>Back up your chats to an encrypted file, locked with a passphrase the app makes, and restore them on a new phone</li>
 <li>Messages stored on your device in an encrypted database (SQLCipher)</li>
 <li>Messages written offline are queued and sent when you reconnect</li>
 <li>Find people by username, by scanning their QR code, or from their profile link</li>
