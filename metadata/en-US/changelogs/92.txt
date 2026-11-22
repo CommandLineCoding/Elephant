@@ -1,0 +1,5 @@
+- New: disappearing messages, and message requests from people you don't know
+- Two-step sign-in, app lock, a privacy screen and privacy settings the server enforces
+- Text status that lasts 24 hours, bio and status on your profile, and broadcast lists
+- Back up your chats to an encrypted file and restore them
+- Group invite links, admins-only groups, nicknames, chat wallpapers, and the chat list beside the open chat on tablets
