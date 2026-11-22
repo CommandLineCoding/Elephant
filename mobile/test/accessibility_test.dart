@@ -13,6 +13,13 @@ import 'package:mobile/pages/auth/login_page.dart';
 import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/home/home_page.dart';
+import 'package:mobile/pages/home/message_requests_page.dart';
+import 'package:mobile/pages/broadcast/broadcast_lists_page.dart';
+import 'package:mobile/pages/new%20chat/select_contact_page.dart';
+import 'package:mobile/pages/settings/backup_page.dart';
+import 'package:mobile/pages/settings/chat_folders.dart';
+import 'package:mobile/pages/settings/chat_wallpaper.dart';
+import 'package:mobile/pages/status/status_composer_page.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/settings/accounts.dart';
 import 'package:mobile/pages/settings/appearance.dart';
@@ -59,9 +66,12 @@ void main() {
     ThemeType theme,
     Widget page, {
     void Function(ActiveChatController)? chat,
+
+    /// The screen's size in logical pixels: a phone held upright by default.
+    Size size = const Size(390, 844),
   }) async {
     tester.view.devicePixelRatio = 3;
-    tester.view.physicalSize = const Size(390, 844) * 3;
+    tester.view.physicalSize = size * 3;
     addTearDown(tester.view.reset);
 
     final now = DateTime.now();
@@ -140,6 +150,13 @@ void main() {
     'privacy': const PrivacySecuritySettingsPage(),
     'notifications': const NotificationsSettingsPage(),
     'help': const HelpAboutPage(),
+    'chat backup': const BackupPage(),
+    'chat folders': const ChatFoldersPage(),
+    'wallpaper': const ChatWallpaperPage(),
+    'broadcast lists': const BroadcastListsPage(),
+    'new broadcast': const SelectContactPage(forBroadcast: true),
+    'message requests': const MessageRequestsPage(),
+    'new status': const StatusComposerPage(),
   };
 
   void chatMessages(ActiveChatController c) {
@@ -197,5 +214,27 @@ void main() {
       await render(tester, ThemeType.nebula, entry.value, chat: chatMessages);
       expect(tester.takeException(), isNull);
     });
+  }
+
+  // A phone on its side is wide and short, a tablet is wide and tall. Nothing
+  // may overflow, and none of the three sizes is narrower than a phone upright.
+  const sizes = <String, Size>{
+    'phone on its side': Size(780, 360),
+    'small tablet on its side': Size(1024, 600),
+    'tablet upright': Size(800, 1280),
+  };
+  for (final size in sizes.entries) {
+    for (final entry in screens.entries) {
+      testWidgets('fits on a ${size.key}: ${entry.key}', (tester) async {
+        await render(
+          tester,
+          ThemeType.nebula,
+          entry.value,
+          chat: chatMessages,
+          size: size.value,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
   }
 }

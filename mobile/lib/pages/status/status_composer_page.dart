@@ -121,7 +121,7 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
                       focusedBorder: InputBorder.none,
                       filled: false,
                       hintText: 'Type a status',
-                      hintStyle: TextStyle(color: Colors.white70),
+                      hintStyle: TextStyle(color: statusMutedWhite),
                     ),
                   ),
                 ),
@@ -131,7 +131,9 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
               child: Text(
                 '${StatusContent.clean(_text.text).runes.length}/${StatusContent.maxLength}',
-                style: context.text.bodySmall?.copyWith(color: Colors.white70),
+                style: context.text.bodySmall?.copyWith(
+                  color: statusMutedWhite,
+                ),
               ),
             ),
             const SizedBox(height: Insets.sm),
@@ -169,19 +171,17 @@ class _StatusComposerPageState extends State<StatusComposerPage> {
             const SizedBox(height: Insets.sm),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: Row(
+              child: Wrap(
+                spacing: Insets.sm,
                 children: [
                   for (var i = 0; i < StatusStyle.fonts.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(right: Insets.sm),
-                      child: ChoiceChip(
-                        label: Text(
-                          StatusStyle.fonts[i].$1,
-                          style: TextStyle(fontFamily: StatusStyle.fonts[i].$2),
-                        ),
-                        selected: i == _font,
-                        onSelected: (_) => setState(() => _font = i),
+                    ChoiceChip(
+                      label: Text(
+                        StatusStyle.fonts[i].$1,
+                        style: TextStyle(fontFamily: StatusStyle.fonts[i].$2),
                       ),
+                      selected: i == _font,
+                      onSelected: (_) => setState(() => _font = i),
                     ),
                 ],
               ),

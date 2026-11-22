@@ -347,7 +347,7 @@ class _StatusViewerPageState extends State<StatusViewerPage>
                             Text(
                               statusAge(post.createdAt, DateTime.now()),
                               style: context.text.bodySmall?.copyWith(
-                                color: Colors.white70,
+                                color: statusMutedWhite,
                               ),
                             ),
                           ],
@@ -406,7 +406,7 @@ class _StatusViewerPageState extends State<StatusViewerPage>
                       onSubmitted: (_) => _sendReply(),
                       decoration: InputDecoration(
                         hintText: 'Reply privately',
-                        hintStyle: const TextStyle(color: Colors.white70),
+                        hintStyle: const TextStyle(color: statusMutedWhite),
                         filled: true,
                         fillColor: Colors.black26,
                         border: OutlineInputBorder(
