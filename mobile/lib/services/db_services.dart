@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 11,
+      version: 12,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -114,6 +114,11 @@ class DatabaseHelper {
     if (oldVersion < 10) await _createNicknames(db);
     if (oldVersion < 11) {
       await db.execute('ALTER TABLE messages ADD COLUMN expires_at INTEGER');
+    }
+    if (oldVersion < 12) {
+      await db.execute(
+        'ALTER TABLE inbox ADD COLUMN is_request INTEGER DEFAULT 0',
+      );
     }
   }
 
@@ -245,7 +250,8 @@ class DatabaseHelper {
         unread_count INTEGER DEFAULT 0,
         last_message_sender TEXT,
         last_message_sync_status TEXT, -- MUST BE ADDED
-        last_message_is_read INTEGER
+        last_message_is_read INTEGER,
+        is_request INTEGER DEFAULT 0
       )
     ''');
 

@@ -20,6 +20,10 @@ func init() {
 	}
 	// And every group lets everyone in it post.
 	groupPosting = func(context.Context, string, string) (bool, bool, error) { return true, true, nil }
+	// And no direct chat is a message request.
+	requestOpen = func(context.Context, string, string) (bool, error) { return false, nil }
+	requestPending = func(context.Context, string, string) (bool, error) { return false, nil }
+	requestAccept = func(context.Context, string, string) (bool, error) { return false, nil }
 }
 
 func setBlockLookup(f func(context.Context, string, string) bool) {

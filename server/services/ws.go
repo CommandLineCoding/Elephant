@@ -475,7 +475,10 @@ func (c *WSClient) ReadPump() {
 					continue
 				}
 				Hub.sendToUsers(members, c.UserID, outboundBytes)
-			} else if !blockedBy(context.Background(), incoming.ReceiverID, c.UserID) {
+			} else if !blockedBy(context.Background(), incoming.ReceiverID, c.UserID) &&
+				!pendingRequestFrom(context.Background(), c.UserID, incoming.ReceiverID) {
+				// Not while the typist has a request of theirs to answer: it
+				// would show the sender they are around.
 				Hub.sendToUser(incoming.ReceiverID, outboundBytes)
 			}
 
@@ -503,7 +506,10 @@ func (c *WSClient) ReadPump() {
 				if err == nil && shareRead {
 					Hub.sendToUsers(members, c.UserID, outboundBytes)
 				}
-			} else if !blockedBy(context.Background(), incoming.ReceiverID, c.UserID) {
+			} else if !blockedBy(context.Background(), incoming.ReceiverID, c.UserID) &&
+				!pendingRequestFrom(context.Background(), c.UserID, incoming.ReceiverID) {
+				// A request that isn't accepted yet isn't marked read, and the
+				// sender isn't told.
 				go func(receiverID, senderID string) {
 					err := msgRepo.MarkAsRead(context.Background(), receiverID, senderID)
 					if err != nil {
@@ -530,6 +536,13 @@ func (c *WSClient) ReadPump() {
 			// server works out when, so everyone agrees on the time.
 			incoming.ExpiresAt = expiryFor(incoming.ExpiresIn, incoming.Timestamp)
 			incoming.ExpiresIn = 0
+
+			// A first message from someone new is a message request for the
+			// receiver, and answering one accepts it. Only the server says so.
+			incoming.Request = false
+			if incoming.GroupID == "" && incoming.ReceiverID != incoming.SenderID {
+				incoming.Request = noteDirectMessage(context.Background(), incoming.SenderID, incoming.ReceiverID)
+			}
 
 			// Only members post to a group, and in an admins-only group only
 			// admins do (members can still react and vote). Anything else is
@@ -559,6 +572,7 @@ func (c *WSClient) ReadPump() {
 						"quoted_message":      q,
 						"silent":              incoming.Silent,
 						"expires_at":          incoming.ExpiresAt,
+						"request":             incoming.Request,
 					}
 					outboundBytes, _ = json.Marshal(enriched)
 				} else {
@@ -578,7 +592,8 @@ func (c *WSClient) ReadPump() {
 				// Members with no live connection get a push ping instead.
 				pingUsers(incoming.Silent, Hub.sendToUsers(members, c.UserID, outboundBytes))
 			} else {
-				if !Hub.sendToUser(incoming.ReceiverID, outboundBytes) {
+				// A request is delivered, but nobody is woken for it.
+				if !Hub.sendToUser(incoming.ReceiverID, outboundBytes) && !incoming.Request {
 					pingUsers(incoming.Silent, []string{incoming.ReceiverID})
 				}
 			}

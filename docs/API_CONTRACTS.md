@@ -100,6 +100,7 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/api/messages/conversations](#3-conversations) | Yes | Inbox: latest message and unread count per chat |
 | PUT | [/api/messages/{id}](#4-edit-message) | Yes | Edit your own message (15-minute window) |
 | POST | [/api/messages/read](#5-mark-direct-messages-read) | Yes | Mark a sender's messages as read |
+| POST | [/api/messages/requests/{userId}/accept](#8-accept-a-message-request) | Yes | Accept a message request |
 | DELETE | [/api/messages/conversations/{userId}?for=me\|everyone](#6-delete-a-direct-conversation) | Yes | Delete a direct conversation for you, or your messages for both people |
 | DELETE | [/api/messages/{id}?for=me\|everyone](#7-delete-a-message) | Yes | Delete one message for you, or one of yours for everyone |
 | POST | [/api/groups](#1-create-group) | Yes | Create a group |
@@ -1290,7 +1291,7 @@ When `reply_to_message_id` resolves to a stored message, the event includes a pr
 
 Sent when a user connects or disconnects, to **their contacts** who are connected, and directly in response to `request_status`.
 
-A user's **contacts** are the people they have exchanged a direct message with (in either direction) and the people they share a group with. Nobody else is told when they are online, and a `request_status` about a non-contact is answered with `online: false`. If the server can't load someone's contacts, it shares nothing rather than falling back to telling everyone.
+A user's **contacts** are the people they have exchanged a direct message with (in either direction) and the people they share a group with. Someone whose [message request](#message-requests) is still waiting is not a contact (unless they share a group), so writing to a stranger doesn't show when they are around. Nobody else is told when they are online, and a `request_status` about a non-contact is answered with `online: false`. If the server can't load someone's contacts, it shares nothing rather than falling back to telling everyone.
 
 Contact lists are cached for about 20 seconds when answering `request_status`, so someone you have only just started a conversation with can show as offline for a short while. Connect and disconnect events always use a fresh list.
 
@@ -1503,6 +1504,19 @@ The server does not know a chat's setting, only each message's expiry. The setti
 
 Disappearing messages are not a promise: a recipient can still screenshot or copy a message, and an app that doesn't know about them keeps what it receives.
 
+### Message requests
+
+A direct message from someone you have never exchanged a direct message with, and who shares no group with you, is a **message request**. Conversations that exist when this is introduced, and everything that involves a shared group, are not requests. The server keeps a request until you accept it, or until you write back (answering accepts it).
+
+While a request is waiting:
+
+- The relayed `chat` event has `"request": true` (only the server sets it; a value from the sender is ignored), and the conversation has `is_request: true` in [`/api/messages/conversations`](#3-conversations). Apps list it apart, without a notification.
+- No [push ping](#the-ping) is sent for it, so a request never wakes the phone. It is stored and delivered like any message.
+- The sender is not told that you saw it: your `read_receipt`, `typing` and `delivered` events about them are not passed on, [`POST /api/messages/read`](#5-mark-direct-messages-read) does not mark their messages read, and neither of you is the other's [contact](#5-user-status) for online status.
+- Deleting the conversation or blocking the sender doesn't end the request: if they write again it comes back as a request. Block them to stop that.
+
+[Accept a request](#8-accept-a-message-request) to turn it into an ordinary chat. If the server can't tell whether something is a request, it delivers the message as an ordinary one, and holds back receipts rather than leak them.
+
 ### 1. Send Message
 
 REST fallback for direct messages. The message is stored but **not** pushed over the WebSocket.
@@ -1624,13 +1638,15 @@ Returns one entry per direct chat and per group you belong to, ordered by latest
       "sender_id": "<sender of the last message>",
       "is_read": false,
       "unread_count": 3,
-      "last_message_deleted": false
+      "last_message_deleted": false,
+      "is_request": false
     }
   ]
 }
 ```
 
 - `type` is `direct` or `group`.
+- `is_request` is `true` for a direct chat that is a [message request](#message-requests) you haven't accepted. It is always `false` for a group.
 - `last_message_deleted` is `true` (and `last_message` empty) when the last message was [deleted for everyone](#7-delete-a-message). It is omitted when `false`. A message you deleted for yourself, and [silent actions](#structured-messages), are never the last message.
 - **Direct:** `is_read` is the read flag of the last message, and `unread_count` counts unread messages sent to you.
 - **Group:** `is_read` is true if the last message is no newer than your `last_read_at`, and `unread_count` counts other members' messages since then.
@@ -1791,6 +1807,29 @@ Both return `cleared_at`: the app should delete its local copies of the conversa
 #### `404 Not Found`
 
 `"Message not found"`: it doesn't exist, you can't see it, or it was already deleted for everyone.
+
+### 8. Accept a Message Request
+
+Accepts the [message request](#message-requests) from a user. The chat becomes an ordinary one: they are told when you read their messages (if you allow it, see [privacy settings](#12-privacy-settings)), and you are contacts for online status. The sender is sent a [`message_delivered`](#10-message-delivered) event for the newest messages (up to 100) that were held back.
+
+- **URL:** `/api/messages/requests/{userId}/accept`
+- **Method:** `POST`
+- **Authentication Required:** `YES`
+- **curl:** `curl -X POST "http://HOST:PORT/api/messages/requests/<user_id>/accept" -H "Authorization: Bearer <access_token>"`
+
+#### `200 OK`
+
+```json
+{ "success": true, "data": { "user_id": "<user_id>" } }
+```
+
+#### `400 Bad Request`
+
+`"Invalid user id"`.
+
+#### `404 Not Found`
+
+`"No message request from this user"`: there is none, or it was already accepted.
 
 ---
 
