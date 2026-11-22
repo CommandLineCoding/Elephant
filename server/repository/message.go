@@ -44,11 +44,12 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 			m.id, m.sender_id, m.receiver_id, m.content, m.created_at,
 			(m.is_read AND (m.sender_id <> $1::uuid OR COALESCE((SELECT us.read_receipts FROM user_settings us WHERE us.user_id = m.receiver_id), TRUE))) AS is_read,
 			m.edited_at, m.reply_to_message_id,
-			q.sender_id AS quoted_sender_id, q.content AS quoted_content, m.deleted_at, m.delivered_at
+			q.sender_id AS quoted_sender_id, q.content AS quoted_content, m.deleted_at, m.delivered_at, m.expires_at
 		FROM messages m
 		LEFT JOIN messages q ON m.reply_to_message_id = q.id
 		WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1))
 		  AND m.group_id IS NULL AND m.created_at < $3
+		  AND (m.expires_at IS NULL OR m.expires_at > NOW())
 		  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $1::uuid)
 		  AND m.created_at > COALESCE(
 			(SELECT cleared_at FROM conversation_clears WHERE user_id = $1 AND peer_id = $2),
@@ -67,7 +68,7 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 		var m models.Message
 		var qSender, qContent *string
 
-		err := rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Content, &m.CreatedAt, &m.IsRead, &m.EditedAt, &m.ReplyToMessageID, &qSender, &qContent, &m.DeletedAt, &m.DeliveredAt)
+		err := rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.Content, &m.CreatedAt, &m.IsRead, &m.EditedAt, &m.ReplyToMessageID, &qSender, &qContent, &m.DeletedAt, &m.DeliveredAt, &m.ExpiresAt)
 		if err != nil {
 			return nil, err
 		}
@@ -86,7 +87,7 @@ func (r *MessageRepository) GetChatHistory(ctx context.Context, userA, userB str
 
 func (r *MessageRepository) GetMessagePreview(ctx context.Context, messageID string) (*models.QuotedMessage, error) {
 	// A message deleted for everyone has no content left to quote.
-	query := `SELECT id, sender_id, content FROM messages WHERE id = $1::uuid AND deleted_at IS NULL;`
+	query := `SELECT id, sender_id, content FROM messages WHERE id = $1::uuid AND deleted_at IS NULL AND (expires_at IS NULL OR expires_at > NOW());`
 	var q models.QuotedMessage
 	err := config.DB.QueryRow(ctx, query, messageID).Scan(&q.ID, &q.SenderID, &q.Content)
 	if err != nil {
@@ -111,6 +112,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			FROM messages
 			WHERE (sender_id = $1::uuid OR receiver_id = $1::uuid) AND group_id IS NULL
 			  AND NOT silent
+			  AND (expires_at IS NULL OR expires_at > NOW())
 			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = messages.id AND h.user_id = $1::uuid)
 			  AND created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
@@ -134,6 +136,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid
 			  AND NOT m.silent
+			  AND (m.expires_at IS NULL OR m.expires_at > NOW())
 			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $1::uuid)
 			  AND m.created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
@@ -146,6 +149,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			FROM messages
 			WHERE receiver_id = $1::uuid AND is_read = FALSE AND group_id IS NULL
 			  AND NOT silent AND deleted_at IS NULL
+			  AND (expires_at IS NULL OR expires_at > NOW())
 			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = messages.id AND h.user_id = $1::uuid)
 			  AND created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc
@@ -159,6 +163,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			JOIN group_members gm ON m.group_id = gm.group_id
 			WHERE gm.user_id = $1::uuid AND m.created_at > gm.last_read_at AND m.sender_id != $1::uuid
 			  AND NOT m.silent AND m.deleted_at IS NULL
+			  AND (m.expires_at IS NULL OR m.expires_at > NOW())
 			  AND NOT EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $1::uuid)
 			  AND m.created_at > COALESCE(
 				(SELECT cleared_at FROM conversation_clears cc

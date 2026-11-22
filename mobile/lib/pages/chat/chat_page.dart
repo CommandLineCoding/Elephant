@@ -9,11 +9,13 @@ import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/controllers/chat/active_chat_controller.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
+import 'package:mobile/core/disappearing.dart';
 import 'package:mobile/core/message_envelope.dart';
 import 'package:mobile/models/message.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/pages/chat/forward_page.dart';
 import 'package:mobile/widgets/admins_only_banner.dart';
+import 'package:mobile/widgets/timer_note_row.dart';
 import 'package:mobile/widgets/mention_widgets.dart';
 import 'package:mobile/core/chat_wallpaper.dart';
 import 'package:mobile/pages/chat/block_user.dart';
@@ -1037,6 +1039,43 @@ class _ChatPageState extends State<ChatPage> {
     return groups.adminsOnlyIn(widget.chatUserId) && !groups.isAdmin(me);
   }
 
+  /// Asks how long messages should last in this chat, and sets it.
+  Future<void> _chooseDisappearing() async {
+    final current = _chat.disappearAfter;
+    final chosen = await showDialog<DisappearAfter>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Disappearing messages'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text(
+              widget.isGroup
+                  ? 'New messages in this group disappear for everyone after '
+                        'this time. Only admins can change it.'
+                  : 'New messages in this chat disappear for both of you after '
+                        'this time. Either of you can change it.',
+              style: dialogContext.text.bodyMedium,
+            ),
+          ),
+          for (final after in DisappearAfter.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, after),
+              child: Row(
+                children: [
+                  Expanded(child: Text(after.label)),
+                  if (after == current) const Icon(Icons.check_rounded),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (chosen == null || chosen == current || !mounted) return;
+    final error = await _chat.setDisappearing(chosen);
+    if (error != null && mounted) showSnack(context, error, isError: true);
+  }
+
   /// The nicknames may finish loading after the page opens.
   void _refreshTitle() {
     if (!mounted || widget.isGroup) return;
@@ -1068,6 +1107,8 @@ class _ChatPageState extends State<ChatPage> {
         alreadyBlocked: _isBlocked,
         recentMessages: _messagesForReport,
       );
+    } else if (value == 'disappearing') {
+      await _chooseDisappearing();
     } else if (value == 'wallpaper') {
       await Navigator.push(
         context,
@@ -1319,6 +1360,11 @@ class _ChatPageState extends State<ChatPage> {
                           value: _isBlocked ? 'unblock' : 'block',
                           child: Text(_isBlocked ? 'Unblock' : 'Block'),
                         ),
+                      if (context.read<ActiveChatController>().canPin)
+                        const PopupMenuItem(
+                          value: 'disappearing',
+                          child: Text('Disappearing messages'),
+                        ),
                       if (!widget.isGroup)
                         const PopupMenuItem(
                           value: 'report',
@@ -1558,6 +1604,25 @@ class _ChatPageState extends State<ChatPage> {
         final prev = i > 0 ? messages[i - 1] : null;
         final next = i < messages.length - 1 ? messages[i + 1] : null;
         final isMe = _isMine(msg);
+
+        final timer = timerOf(msg.payload);
+        if (timer != null) {
+          final newDay =
+              prev == null ||
+              DaySeparator.label(prev.createdAt) !=
+                  DaySeparator.label(msg.createdAt);
+          return Column(
+            key: ValueKey(msg.id),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (newDay) DaySeparator(date: msg.createdAt),
+              TimerNoteRow(
+                who: isMe ? 'You' : _nameOf(msg.senderId),
+                after: timer,
+              ),
+            ],
+          );
+        }
 
         if (_isCallRow(msg)) {
           final newDay =

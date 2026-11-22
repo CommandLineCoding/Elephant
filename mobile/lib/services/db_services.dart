@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 10,
+      version: 11,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -112,6 +112,9 @@ class DatabaseHelper {
     if (oldVersion < 8) await _createDrafts(db);
     if (oldVersion < 9) await _createChatFolders(db);
     if (oldVersion < 10) await _createNicknames(db);
+    if (oldVersion < 11) {
+      await db.execute('ALTER TABLE messages ADD COLUMN expires_at INTEGER');
+    }
   }
 
   /// Messages the person starred, to find them again. Only on this phone.
@@ -208,7 +211,8 @@ class DatabaseHelper {
         sync_status TEXT NOT NULL, -- 'synced' or 'pending'
         edited_at INTEGER,
         deleted_at INTEGER, -- deleted for everyone
-        delivered_at INTEGER -- reached the recipient's phone
+        delivered_at INTEGER, -- reached the recipient's phone
+        expires_at INTEGER -- a disappearing message goes at this time
       )
     ''');
 
@@ -340,6 +344,16 @@ class DatabaseHelper {
       'group_members',
       where: 'group_id = ?',
       whereArgs: [chatId],
+    );
+  }
+
+  /// Deletes the disappearing messages whose time has come. Returns how many.
+  Future<int> deleteExpiredMessages(DateTime now) async {
+    final db = await instance.database;
+    return db.delete(
+      'messages',
+      where: 'expires_at IS NOT NULL AND expires_at <= ?',
+      whereArgs: [now.millisecondsSinceEpoch],
     );
   }
 

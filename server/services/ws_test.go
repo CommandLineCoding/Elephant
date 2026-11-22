@@ -661,3 +661,95 @@ func TestReadReceiptsAreSentOnlyIfThePersonAllowsThem(t *testing.T) {
 	case <-time.After(400 * time.Millisecond):
 	}
 }
+
+func TestExpiryIsClampedAndOnlyForDisappearingMessages(t *testing.T) {
+	sent := time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+	if expiryFor(0, sent) != nil || expiryFor(-5, sent) != nil {
+		t.Error("a message with no life got an expiry")
+	}
+	at := func(secs int) time.Duration {
+		e := expiryFor(secs, sent)
+		if e == nil {
+			t.Fatalf("no expiry for %d", secs)
+		}
+		return e.Sub(sent)
+	}
+	if at(3600) != time.Hour || at(86400) != 24*time.Hour || at(28*24*3600) != 28*24*time.Hour {
+		t.Error("the choices don't add up")
+	}
+	if at(5) != time.Minute {
+		t.Errorf("5 seconds became %v, want a minute", at(5))
+	}
+	if at(10*365*24*3600) != 28*24*time.Hour {
+		t.Errorf("ten years became %v, want four weeks", at(10*365*24*3600))
+	}
+}
+
+// A disappearing message is stored with its time, and recipients are told the
+// time (not the sender's number of seconds).
+func TestADisappearingMessageIsStoredAndRelayedWithItsTime(t *testing.T) {
+	db := pushTestDB(t)
+	aliceID, bobID := newTestUser(t), newTestUser(t)
+	alice, bob := connect(t, aliceID), connect(t, bobID)
+
+	send := func(id string, extra map[string]interface{}) map[string]interface{} {
+		frame := map[string]interface{}{
+			"type": "chat", "receiver_id": bobID, "message_id": id,
+			"content": `{"type":0,"ciphertext":"hi"}`,
+		}
+		for k, v := range extra {
+			frame[k] = v
+		}
+		alice.send(t, frame)
+		return bob.read(t, "chat")
+	}
+	stored := func(id string) *time.Time {
+		var at *time.Time
+		waitFor(t, "the message to be stored", func() bool {
+			var n int
+			_ = db.QueryRow(context.Background(), `SELECT count(*) FROM messages WHERE id = $1::uuid`, id).Scan(&n)
+			return n == 1
+		})
+		_ = db.QueryRow(context.Background(), `SELECT expires_at FROM messages WHERE id = $1::uuid`, id).Scan(&at)
+		return at
+	}
+
+	id1 := "00000000-0000-0000-0000-0000000000b1"
+	got := send(id1, map[string]interface{}{"expires_in": 3600})
+	if _, leaked := got["expires_in"]; leaked {
+		t.Error("the sender's number of seconds was passed on")
+	}
+	exp, _ := got["expires_at"].(string)
+	parsed, err := time.Parse(time.RFC3339Nano, exp)
+	if err != nil || time.Until(parsed) < 59*time.Minute || time.Until(parsed) > 61*time.Minute {
+		t.Errorf("the recipient was told %q", exp)
+	}
+	if at := stored(id1); at == nil || at.Sub(parsed).Abs() > time.Second {
+		t.Errorf("stored %v, relayed %v", at, parsed)
+	}
+
+	// Too short is raised to a minute.
+	id2 := "00000000-0000-0000-0000-0000000000b2"
+	got = send(id2, map[string]interface{}{"expires_in": 2})
+	short, _ := time.Parse(time.RFC3339Nano, got["expires_at"].(string))
+	if d := time.Until(short); d < 55*time.Second || d > 65*time.Second {
+		t.Errorf("a 2 second life lasts %v", d)
+	}
+
+	// An ordinary message has none.
+	id3 := "00000000-0000-0000-0000-0000000000b3"
+	got = send(id3, nil)
+	if _, has := got["expires_at"]; has {
+		t.Errorf("an ordinary message was told it expires: %v", got["expires_at"])
+	}
+	if at := stored(id3); at != nil {
+		t.Errorf("an ordinary message is stored with an expiry %v", at)
+	}
+
+	// A reply (relayed through another path) carries it too.
+	id4 := "00000000-0000-0000-0000-0000000000b4"
+	got = send(id4, map[string]interface{}{"expires_in": 3600, "reply_to_message_id": id3})
+	if got["expires_at"] == nil {
+		t.Error("a reply to a message lost the expiry")
+	}
+}

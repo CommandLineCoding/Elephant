@@ -38,3 +38,14 @@ func (r *CleanupRepository) DeleteFailingPushEndpoints(ctx context.Context, minF
 	`, minFailures, limit)
 	return tag.RowsAffected(), err
 }
+
+// DeleteExpiredMessages removes disappearing messages whose time has come.
+func (r *CleanupRepository) DeleteExpiredMessages(ctx context.Context, limit int) (int64, error) {
+	tag, err := config.DB.Exec(ctx, `
+		DELETE FROM messages
+		WHERE id IN (
+			SELECT id FROM messages WHERE expires_at IS NOT NULL AND expires_at < NOW() LIMIT $1
+		);
+	`, limit)
+	return tag.RowsAffected(), err
+}

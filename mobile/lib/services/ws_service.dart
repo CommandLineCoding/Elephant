@@ -92,6 +92,7 @@ class WebSocketService {
     required String content,
     String? replyToMessageId,
     bool silent = false,
+    Duration? expiresIn,
   }) {
     return {
       "type": "chat",
@@ -102,6 +103,8 @@ class WebSocketService {
       "reply_to_message_id": replyToMessageId,
       // Only sent when set: servers before this flag ignore it.
       "silent": silent ? true : null,
+      // How long a disappearing message lives; the server works out the time.
+      "expires_in": expiresIn?.inSeconds,
     };
   }
 
@@ -111,6 +114,7 @@ class WebSocketService {
     required String content,
     String? replyToMessageId,
     bool silent = false,
+    Duration? expiresIn,
   }) {
     return emit(
       chatFrame(
@@ -119,6 +123,7 @@ class WebSocketService {
         content: content,
         replyToMessageId: replyToMessageId,
         silent: silent,
+        expiresIn: expiresIn,
       ),
     );
   }
@@ -129,6 +134,7 @@ class WebSocketService {
     required String content,
     String? replyToMessageId,
     bool silent = false,
+    Duration? expiresIn,
   }) {
     return emit(
       chatFrame(
@@ -137,6 +143,7 @@ class WebSocketService {
         content: content,
         replyToMessageId: replyToMessageId,
         silent: silent,
+        expiresIn: expiresIn,
       ),
     );
   }
