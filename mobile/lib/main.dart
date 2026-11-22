@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -14,6 +15,7 @@ import 'services/db_services.dart';
 import 'services/expiry_sweeper.dart';
 import 'services/chat_appearance.dart';
 import 'services/privacy_settings.dart';
+import 'services/statuses.dart';
 import 'services/screen_security.dart';
 import 'pages/auth/login_page.dart';
 import 'pages/home/home_page.dart';
@@ -91,6 +93,8 @@ Future<void> main(List<String> args) async {
               activeChatController: activeChatController,
               currentUserIdProvider: currentUserId,
               onGroupUpdated: groupDetailsController.refreshInfo,
+              onStatusChanged: () =>
+                  unawaited(Statuses.instance.refresh(currentUserId())),
             ),
           ),
         ),

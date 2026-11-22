@@ -24,11 +24,15 @@ class ChatEventHandler {
   /// post), with the group's ID.
   final void Function(String groupId)? onGroupUpdated;
 
+  /// Called when someone posted a status for this person, or saw theirs.
+  final void Function()? onStatusChanged;
+
   ChatEventHandler({
     required this.inboxController,
     required this.activeChatController,
     required this.currentUserIdProvider,
     this.onGroupUpdated,
+    this.onStatusChanged,
     void Function(List<String> messageIds)? acknowledge,
   }) {
     this.acknowledge = acknowledge ?? _ws.sendDelivered;
@@ -115,6 +119,10 @@ class ChatEventHandler {
         await _handleGroupDeleted(data);
         break;
 
+      case 'status_posted':
+      case 'status_viewed':
+        onStatusChanged?.call();
+        break;
       case 'group_updated':
         final groupId = _id(data['group_id']);
         if (groupId != null) onGroupUpdated?.call(groupId);

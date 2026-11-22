@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile/services/nicknames.dart';
@@ -21,6 +22,8 @@ import 'package:mobile/pages/settings/backup_page.dart';
 import 'package:mobile/pages/settings/chat_folders.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/broadcast_lists.dart';
+import 'package:mobile/services/statuses.dart';
+import 'package:mobile/widgets/status_strip.dart';
 import 'package:mobile/services/chat_folders.dart';
 import 'package:mobile/widgets/chat_filter_bar.dart';
 import 'package:mobile/services/drafts.dart';
@@ -253,6 +256,12 @@ class _ChatsTabState extends State<_ChatsTab> {
     super.initState();
     ChatFolders.instance.load();
     BroadcastLists.instance.load();
+    _refreshStatuses();
+  }
+
+  Future<void> _refreshStatuses() {
+    final id = context.read<AuthState>().currentUser?.id;
+    return id == null ? Future.value() : Statuses.instance.refresh(id);
   }
 
   @override
@@ -305,7 +314,10 @@ class _ChatsTabState extends State<_ChatsTab> {
 
     return RefreshIndicator(
       edgeOffset: 120,
-      onRefresh: () => inbox.loadInbox(),
+      onRefresh: () async {
+        unawaited(_refreshStatuses());
+        await inbox.loadInbox();
+      },
       child: CustomScrollView(
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         physics: const AlwaysScrollableScrollPhysics(
@@ -349,6 +361,8 @@ class _ChatsTabState extends State<_ChatsTab> {
               onRetry: connection.retryNow,
             ),
           ),
+          if (query.isEmpty && filter == ChatFilter.all)
+            const SliverToBoxAdapter(child: StatusStrip()),
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(

@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 13,
+      version: 14,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -121,6 +121,7 @@ class DatabaseHelper {
       );
     }
     if (oldVersion < 13) await _createBroadcastLists(db);
+    if (oldVersion < 14) await _createStatuses(db);
   }
 
   /// Messages the person starred, to find them again. Only on this phone.
@@ -171,6 +172,21 @@ class DatabaseHelper {
     ''');
   }
 
+  /// Statuses, read once when they came: Signal can't decrypt the same copy
+  /// twice. They go when they run out. Only on this phone.
+  Future<void> _createStatuses(Database db) async {
+    await db.execute('''
+      CREATE TABLE statuses (
+        id TEXT PRIMARY KEY COLLATE NOCASE,
+        author_id TEXT NOT NULL COLLATE NOCASE,
+        content TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL,
+        viewed INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+  }
+
   /// What was typed in a chat but not sent. Only on this phone.
   Future<void> _createDrafts(Database db) async {
     await db.execute('''
@@ -217,6 +233,7 @@ class DatabaseHelper {
     await _createDrafts(db);
     await _createChatFolders(db);
     await _createBroadcastLists(db);
+    await _createStatuses(db);
     await _createNicknames(db);
     await db.execute('''
       CREATE TABLE messages (
@@ -430,6 +447,44 @@ class DatabaseHelper {
     await db.delete('chat_folders', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<List<Map<String, Object?>>> statusRows() async {
+    final db = await instance.database;
+    return db.query('statuses', orderBy: 'created_at');
+  }
+
+  Future<void> saveStatus(Map<String, Object?> row) async {
+    final db = await instance.database;
+    await db.insert(
+      'statuses',
+      row,
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<void> markStatusViewed(String id) async {
+    final db = await instance.database;
+    await db.update(
+      'statuses',
+      {'viewed': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<void> deleteStatus(String id) async {
+    final db = await instance.database;
+    await db.delete('statuses', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteExpiredStatuses(DateTime now) async {
+    final db = await instance.database;
+    await db.delete(
+      'statuses',
+      where: 'expires_at <= ?',
+      whereArgs: [now.millisecondsSinceEpoch],
+    );
+  }
+
   /// The broadcast lists, in the order they were made.
   Future<List<Map<String, Object?>>> broadcastLists() async {
     final db = await instance.database;
@@ -624,6 +679,7 @@ class DatabaseHelper {
     await db.delete('chat_drafts');
     await db.delete('chat_folders');
     await db.delete('broadcast_lists');
+    await db.delete('statuses');
     await db.delete('contact_nicknames');
     await db.delete('inbox');
     await db.delete('action_queue');

@@ -142,6 +142,19 @@ class ApiService {
     queryParameters: {'for': forEveryone ? 'everyone' : 'me'},
   );
 
+  // --- Status ---
+
+  Future<Response> postStatus(List<Map<String, String>> copies) =>
+      _dio.post("/status", data: {'copies': copies});
+
+  Future<Response> getStatuses() => _dio.get("/status");
+
+  Future<Response> getOwnStatuses() => _dio.get("/status/mine");
+
+  Future<Response> deleteStatus(String id) => _dio.delete("/status/$id");
+
+  Future<Response> viewStatus(String id) => _dio.post("/status/$id/view");
+
   /// Accepts the message request from [userId], so it is an ordinary chat.
   Future<Response> acceptMessageRequest(String userId) =>
       _dio.post("/messages/requests/$userId/accept");
