@@ -271,11 +271,15 @@ class _SelectContactPageState extends State<SelectContactPage> {
                           ),
                           title: Text(name),
                           subtitle: Text('@$username'),
-                          trailing: Checkbox(
-                            value: selected,
-                            shape: const CircleBorder(),
-                            onChanged: (_) => _toggle(id, name, username),
+                          // The row is the tap target; the box only shows it.
+                          trailing: ExcludeSemantics(
+                            child: Checkbox(
+                              value: selected,
+                              shape: const CircleBorder(),
+                              onChanged: (_) => _toggle(id, name, username),
+                            ),
                           ),
+                          selected: selected,
                           onTap: () => _toggle(id, name, username),
                         );
                       },

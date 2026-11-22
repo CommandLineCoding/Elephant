@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 
 /// What a text status looks like: its words on a coloured background in one of
 /// a few fonts. Travels inside the encrypted copy, so the server never sees it.
+/// Text that is a little quieter than white on a status's background and still
+/// holds 4.5:1 on all of them.
+const statusMutedWhite = Color(0xEBFFFFFF);
+
 class StatusStyle {
   /// The backgrounds to choose from. All hold white text at 4.5:1 or better.
   static const backgrounds = <Color>[
