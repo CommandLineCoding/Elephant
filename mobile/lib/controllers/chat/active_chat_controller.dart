@@ -216,6 +216,17 @@ class ActiveChatController extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
+  /// Tells the other side we have seen the open chat. A message request holds
+  /// this back until it is accepted, so the app says it again then.
+  void sendReadReceiptForOpenChat() {
+    final id = currentChatUserId;
+    if (id == null) return;
+    _ws.sendReadReceipt(
+      receiverId: isCurrentChatGroup ? null : id,
+      groupId: isCurrentChatGroup ? id : null,
+    );
+  }
+
   /// Tells the server which of the direct messages in [messages] we hadn't yet
   /// said we've received (their senders show a second tick when it does).
   void _acknowledge(List<Message> messages) {

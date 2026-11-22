@@ -45,7 +45,7 @@ func HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	svc := services.NewMessageService()
-	msg, err := svc.SendMessage(r.Context(), senderID, req.ReceiverID, req.Content, req.ReplyToMessageID)
+	msg, isRequest, err := svc.SendMessage(r.Context(), senderID, req.ReceiverID, req.Content, req.ReplyToMessageID)
 	if errors.Is(err, services.ErrDroppedForBlock) {
 		// Answer as if it was sent, so the sender can't tell they're blocked.
 		w.WriteHeader(http.StatusCreated)
@@ -60,7 +60,8 @@ func HandleSendMessage(w http.ResponseWriter, r *http.Request) {
 
 	// This path has no live delivery, so a recipient who isn't connected needs
 	// a push ping to know to fetch.
-	if !services.Hub.IsOnline(req.ReceiverID) {
+	// A message request wakes nobody.
+	if !isRequest && !services.Hub.IsOnline(req.ReceiverID) {
 		services.Push.NotifyUsers([]string{req.ReceiverID})
 	}
 
@@ -145,6 +146,12 @@ func HandleMarkRead(w http.ResponseWriter, r *http.Request) {
 	if req.SenderID == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Sender identification missing"})
+		return
+	}
+
+	// A request that isn't accepted yet isn't marked read: the sender would see it.
+	if services.PendingRequestFrom(r.Context(), uid, req.SenderID) {
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: "Target messages marked read successfully"})
 		return
 	}
 
@@ -234,4 +241,38 @@ func HandleEditMessage(w http.ResponseWriter, r *http.Request) {
 	services.Hub.PublishMessageEdit(r.Context(), updatedMsg)
 
 	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: updatedMsg})
+}
+
+// HandleAcceptRequest accepts a message request: the conversation becomes an
+// ordinary one, and the other person can see when the user reads and is around.
+func HandleAcceptRequest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	uid, ok := r.Context().Value(middlewares.UserIDKey).(string)
+	if !ok {
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Unauthorized context"})
+		return
+	}
+
+	senderID := chi.URLParam(r, "userId")
+	if !uuidPattern.MatchString(senderID) {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Invalid user id"})
+		return
+	}
+
+	accepted, err := services.AcceptRequest(r.Context(), uid, senderID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "Failed to accept the request"})
+		return
+	}
+	if !accepted {
+		w.WriteHeader(http.StatusNotFound)
+		_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: false, Error: "No message request from this user"})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(models.JSONResponse{Success: true, Data: map[string]any{"user_id": senderID}})
 }

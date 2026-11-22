@@ -25,13 +25,15 @@ func NewMessageService() *MessageService {
 	return &MessageService{repo: repository.NewMessageRepository()}
 }
 
-func (s *MessageService) SendMessage(ctx context.Context, senderID, receiverID, content, replyToMessageID string) (*models.Message, error) {
+// SendMessage stores a direct message. isRequest says it is a message request
+// for the receiver, who must not be pinged for it.
+func (s *MessageService) SendMessage(ctx context.Context, senderID, receiverID, content, replyToMessageID string) (msg *models.Message, isRequest bool, err error) {
 	content = strings.TrimSpace(content)
 	if content == "" {
-		return nil, errors.New("message content cannot be empty")
+		return nil, false, errors.New("message content cannot be empty")
 	}
 	if senderID == receiverID {
-		return nil, errors.New("cannot send a message to yourself")
+		return nil, false, errors.New("cannot send a message to yourself")
 	}
 	if IsBlockedBy(ctx, receiverID, senderID) {
 		return &models.Message{
@@ -40,9 +42,11 @@ func (s *MessageService) SendMessage(ctx context.Context, senderID, receiverID, 
 			ReceiverID: receiverID,
 			Content:    content,
 			CreatedAt:  time.Now(),
-		}, ErrDroppedForBlock
+		}, false, ErrDroppedForBlock
 	}
-	return s.repo.CreateMessage(ctx, senderID, receiverID, content, replyToMessageID)
+	isRequest = noteDirectMessage(ctx, senderID, receiverID)
+	msg, err = s.repo.CreateMessage(ctx, senderID, receiverID, content, replyToMessageID)
+	return msg, isRequest, err
 }
 
 // newUUID returns a random (version 4) UUID.

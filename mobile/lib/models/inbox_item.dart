@@ -13,6 +13,10 @@ class InboxItem {
   String? lastMessageSyncStatus;
   bool? lastMessageIsRead;
 
+  /// A direct chat the person hasn't accepted: a first message from someone
+  /// they haven't chatted with. It is listed apart and makes no sound.
+  bool isRequest;
+
   InboxItem({
     required this.id,
     required this.title,
@@ -25,6 +29,7 @@ class InboxItem {
     this.lastMessageSender,
     this.lastMessageIsRead,
     this.lastMessageSyncStatus,
+    this.isRequest = false,
   });
 
   InboxItem copyWith({
@@ -39,6 +44,7 @@ class InboxItem {
     String? lastMessageSender,
     String? lastMessageSyncStatus,
     bool? lastMessageIsRead,
+    bool? isRequest,
   }) {
     return InboxItem(
       id: id ?? this.id,
@@ -53,6 +59,7 @@ class InboxItem {
       lastMessageSyncStatus:
           lastMessageSyncStatus ?? this.lastMessageSyncStatus,
       lastMessageIsRead: lastMessageIsRead ?? this.lastMessageIsRead,
+      isRequest: isRequest ?? this.isRequest,
     );
   }
 
@@ -83,6 +90,7 @@ class InboxItem {
       lastMessageSender: json['sender_id']?.toString(),
       lastMessageSyncStatus: 'synced',
       lastMessageIsRead: isRead,
+      isRequest: !isGroup && json['is_request'] == true,
     );
   }
 
@@ -112,6 +120,7 @@ class InboxItem {
       'last_message_sender': lastMessageSender,
       'last_message_sync_status': lastMessageSyncStatus ?? 'synced',
       'last_message_is_read': (lastMessageIsRead ?? false) ? 1 : 0,
+      'is_request': isRequest ? 1 : 0,
     };
   }
 
@@ -131,6 +140,7 @@ class InboxItem {
       lastMessageIsRead: map['last_message_is_read'] != null
           ? (map['last_message_is_read'] as int) == 1
           : false,
+      isRequest: map['is_request'] == 1,
     );
   }
 }

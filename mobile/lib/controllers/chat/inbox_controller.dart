@@ -32,8 +32,20 @@ class InboxController extends ChangeNotifier {
   /// don't count: they asked not to be noisy.
   int get unreadChats => inbox.where((item) {
     final prefs = prefsOf(item.id);
-    return item.unreadCount > 0 && !prefs.archived && !prefs.isMuted();
+    return item.unreadCount > 0 &&
+        !item.isRequest &&
+        !prefs.archived &&
+        !prefs.isMuted();
   }).length;
+
+  /// The message requests, newest first: first messages from people the
+  /// person hasn't chatted with. They are kept out of the chat list.
+  List<InboxItem> get requests =>
+      inbox.where((item) => item.isRequest).toList();
+
+  /// Whether [chatId] is a message request that hasn't been accepted.
+  bool isRequest(String chatId) =>
+      inbox.any((item) => item.id == chatId && item.isRequest);
 
   // --- Pinned, archived and muted chats ---
 
@@ -58,13 +70,15 @@ class InboxController extends ChangeNotifier {
 
   /// The chats to show, pinned ones first (each group in the order of the
   /// list), without the archived ones.
-  List<InboxItem> get chats => _arranged(inbox);
+  List<InboxItem> get chats =>
+      _arranged(inbox.where((item) => !item.isRequest));
 
   /// Like [chats], for the Groups tab.
   List<InboxItem> get shownGroups => _arranged(groups);
 
-  List<InboxItem> get archivedChats =>
-      inbox.where((item) => prefsOf(item.id).archived).toList();
+  List<InboxItem> get archivedChats => inbox
+      .where((item) => !item.isRequest && prefsOf(item.id).archived)
+      .toList();
 
   List<InboxItem> _arranged(Iterable<InboxItem> items) {
     final shown = items.where((item) => !prefsOf(item.id).archived).toList();
@@ -359,7 +373,9 @@ class InboxController extends ChangeNotifier {
   }
 
   Future<void> markAllRead() async {
-    final unread = inbox.where((item) => item.unreadCount > 0).toList();
+    final unread = inbox
+        .where((item) => item.unreadCount > 0 && !item.isRequest)
+        .toList();
     await Future.wait(unread.map(markReadFor));
   }
 
@@ -454,6 +470,29 @@ class InboxController extends ChangeNotifier {
     } catch (e) {
       return ApiService.errorMessage(e, fallback: "Couldn't delete the chat.");
     }
+  }
+
+  /// Replaces the call that accepts a request, in tests.
+  @visibleForTesting
+  Future<Object?> Function(String userId)? requestAccepter;
+
+  /// Accepts the request from [chatId]. Returns an error to show, or null.
+  Future<String?> acceptRequest(String chatId) async {
+    try {
+      await (requestAccepter ?? _api.acceptMessageRequest)(chatId);
+    } catch (e) {
+      return ApiService.errorMessage(
+        e,
+        fallback: "Couldn't accept the request.",
+      );
+    }
+    final index = inbox.indexWhere((item) => item.id == chatId);
+    if (index != -1) {
+      inbox[index].isRequest = false;
+      notifyListeners();
+      _saveItem(inbox[index]);
+    }
+    return null;
   }
 
   Future<void> removeChat(String chatId) async {

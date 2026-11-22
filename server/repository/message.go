@@ -190,7 +190,11 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 				WHEN rc.type = 'direct' THEN COALESCE(du.count, 0)::INT
 				ELSE COALESCE(gu.count, 0)::INT
 			END AS unread_count,
-			COALESCE(rc.deleted, FALSE) AS last_message_deleted
+			COALESCE(rc.deleted, FALSE) AS last_message_deleted,
+			(rc.type = 'direct' AND EXISTS (
+				SELECT 1 FROM message_requests q
+				WHERE q.recipient_id = $1::uuid AND q.sender_id = rc.chat_user_id
+			)) AS is_request
 		FROM raw_conversations rc
 		LEFT JOIN users u ON rc.chat_user_id = u.id
 		LEFT JOIN groups g ON rc.group_id = g.id
@@ -220,6 +224,7 @@ func (r *MessageRepository) GetConversations(ctx context.Context, userID string)
 			&c.IsRead,
 			&c.UnreadCount,
 			&c.LastMessageDeleted,
+			&c.IsRequest,
 		)
 		if err != nil {
 			return nil, err
@@ -389,6 +394,11 @@ func (r *MessageRepository) MarkDelivered(ctx context.Context, receiverID string
 		UPDATE messages
 		SET delivered_at = NOW()
 		WHERE id = ANY($1::uuid[]) AND receiver_id = $2::uuid AND delivered_at IS NULL
+		  -- A request isn't acknowledged to its sender until it is accepted.
+		  AND NOT EXISTS (
+			SELECT 1 FROM message_requests q
+			WHERE q.recipient_id = messages.receiver_id AND q.sender_id = messages.sender_id
+		  )
 		RETURNING id::text, sender_id::text, delivered_at;
 	`, ids, receiverID)
 	if err != nil {
@@ -406,4 +416,28 @@ func (r *MessageRepository) MarkDelivered(ctx context.Context, receiverID string
 		bySender[sender] = append(bySender[sender], id)
 	}
 	return bySender, at, rows.Err()
+}
+
+// UndeliveredFrom returns the newest messages sender sent to receiver that
+// haven't been marked delivered, up to limit.
+func (r *MessageRepository) UndeliveredFrom(ctx context.Context, receiverID, senderID string, limit int) ([]string, error) {
+	rows, err := config.DB.Query(ctx, `
+		SELECT id::text FROM messages
+		WHERE receiver_id = $1::uuid AND sender_id = $2::uuid
+		  AND group_id IS NULL AND delivered_at IS NULL AND NOT silent
+		ORDER BY created_at DESC
+		LIMIT $3`, receiverID, senderID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }

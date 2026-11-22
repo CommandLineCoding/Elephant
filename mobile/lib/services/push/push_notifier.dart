@@ -7,7 +7,7 @@ import 'package:mobile/models/inbox_item.dart';
 
 /// The conversations that deserve a notification: they have unread messages
 /// newer than both the last one we notified about and [since], and aren't
-/// [muted] (lowercase chat IDs).
+/// [muted] (lowercase chat IDs). A message request never gets one.
 List<InboxItem> chatsToNotify(
   List<InboxItem> conversations,
   Map<String, int> lastNotified, {
@@ -17,6 +17,7 @@ List<InboxItem> chatsToNotify(
   return [
     for (final chat in conversations)
       if (chat.unreadCount > 0 &&
+          !chat.isRequest &&
           !muted.contains(chat.id.toLowerCase()) &&
           chat.timestamp.millisecondsSinceEpoch >
               (lastNotified[chat.id] ?? since.millisecondsSinceEpoch))

@@ -11,6 +11,7 @@ import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/chat/join_group_page.dart';
 import 'package:mobile/pages/home/archived_chats_page.dart';
 import 'package:mobile/pages/home/conversation_actions.dart';
+import 'package:mobile/pages/home/message_requests_page.dart';
 import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
@@ -287,6 +288,8 @@ class _ChatsTabState extends State<_ChatsTab> {
         query.isEmpty &&
         filter == ChatFilter.all &&
         inbox.archivedChats.isNotEmpty;
+    final showRequests =
+        query.isEmpty && filter == ChatFilter.all && inbox.requests.isNotEmpty;
     final showFilters = query.isEmpty && inbox.chats.isNotEmpty;
 
     return RefreshIndicator(
@@ -358,6 +361,18 @@ class _ChatsTabState extends State<_ChatsTab> {
                 folders: folders,
                 onSelected: (key) => setState(() => _filter = key),
                 onEditFolder: (folder) => editChatFolder(context, folder),
+              ),
+            ),
+          if (showRequests)
+            SliverToBoxAdapter(
+              child: MessageRequestsRow(
+                count: inbox.requests.length,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const MessageRequestsPage(),
+                  ),
+                ),
               ),
             ),
           // Above the list, and above its empty state: with every chat

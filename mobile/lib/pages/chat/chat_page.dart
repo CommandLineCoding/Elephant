@@ -15,6 +15,7 @@ import 'package:mobile/models/message.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/pages/chat/forward_page.dart';
 import 'package:mobile/widgets/admins_only_banner.dart';
+import 'package:mobile/widgets/message_request_bar.dart';
 import 'package:mobile/widgets/timer_note_row.dart';
 import 'package:mobile/widgets/mention_widgets.dart';
 import 'package:mobile/core/chat_wallpaper.dart';
@@ -1039,6 +1040,53 @@ class _ChatPageState extends State<ChatPage> {
     return groups.adminsOnlyIn(widget.chatUserId) && !groups.isAdmin(me);
   }
 
+  /// A first message from someone the person hasn't chatted with, not yet
+  /// accepted: the message box gives way to Accept, Delete and Block.
+  bool get _isRequest =>
+      !widget.isGroup &&
+      context.watch<InboxController>().isRequest(widget.chatUserId);
+
+  Future<void> _acceptRequest() async {
+    final error = await context.read<InboxController>().acceptRequest(
+      widget.chatUserId,
+    );
+    if (!mounted) return;
+    if (error != null) {
+      showSnack(context, error, isError: true);
+      return;
+    }
+    // The sender is told it was read now, not before.
+    _chat.sendReadReceiptForOpenChat();
+  }
+
+  Future<void> _blockRequest() async {
+    final blocked = await confirmAndBlock(
+      context,
+      BlockedUser(
+        id: widget.chatUserId,
+        username: widget.username ?? '',
+        displayName: _title,
+      ),
+    );
+    if (!blocked || !mounted) return;
+    await context.read<InboxController>().deleteConversation(
+      widget.chatUserId,
+      isGroup: false,
+      how: ChatDeletion.forMe,
+    );
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _deleteRequest() async {
+    final deleted = await confirmAndDeleteChat(
+      context,
+      chatId: widget.chatUserId,
+      title: _title,
+      isGroup: false,
+    );
+    if (deleted && mounted) Navigator.pop(context);
+  }
+
   /// Asks how long messages should last in this chat, and sets it.
   Future<void> _chooseDisappearing() async {
     final current = _chat.disappearAfter;
@@ -1496,6 +1544,13 @@ class _ChatPageState extends State<ChatPage> {
                             displayName: _title,
                             onUnblock: () =>
                                 unblock(context, widget.chatUserId, _title),
+                          )
+                        : _isRequest
+                        ? MessageRequestBar(
+                            name: _title,
+                            onAccept: _acceptRequest,
+                            onDelete: _deleteRequest,
+                            onBlock: _blockRequest,
                           )
                         : ChatComposer(
                             controller: _composer,

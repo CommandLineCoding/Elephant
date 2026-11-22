@@ -142,6 +142,10 @@ class ApiService {
     queryParameters: {'for': forEveryone ? 'everyone' : 'me'},
   );
 
+  /// Accepts the message request from [userId], so it is an ordinary chat.
+  Future<Response> acceptMessageRequest(String userId) =>
+      _dio.post("/messages/requests/$userId/accept");
+
   Future<Response> blockUser(String userId) =>
       _dio.post("/users/$userId/block");
 
