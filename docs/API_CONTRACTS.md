@@ -81,6 +81,11 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | GET | [/api/users/me/settings](#12-privacy-settings) | Yes | Get your privacy settings |
 | POST | [/api/reports](#reports-endpoints) | Yes | Report someone for spam or abuse (rate limited) |
 | GET | [/api/admin/reports?limit=&before=](#reports-endpoints) | Admin | The server admin's list of reports |
+| POST | [/api/status](#post-a-status) | Yes | Post a text status, encrypted for each contact |
+| GET | [/api/status](#list-statuses) | Yes | The statuses posted for you |
+| GET | [/api/status/mine](#list-your-statuses) | Yes | Your statuses, and who has seen them |
+| DELETE | [/api/status/{id}](#delete-a-status) | Yes | Remove your status early |
+| POST | [/api/status/{id}/view](#mark-a-status-seen) | Yes | Say you saw a status |
 | PATCH | [/api/users/me/settings](#12-privacy-settings) | Yes | Change your privacy settings |
 | GET | [/api/users/me/2fa](#6-two-step-sign-in) | Yes | Whether two-step sign-in is on |
 | POST | [/api/users/me/2fa/setup](#6-two-step-sign-in) | Yes | Get a secret for an authenticator app |
@@ -147,7 +152,7 @@ Reports the status of the server and its PostgreSQL connection pool.
     "cleanup": {
       "deleted_total": 12,
       "last_run": "<Timestamp>",
-      "last_deleted": { "refresh_tokens": 12, "messages": 3, "push_endpoints": 0 }
+      "last_deleted": { "refresh_tokens": 12, "messages": 3, "statuses": 1, "push_endpoints": 0 }
     },
     "timestamp": "<Timestamp>"
   }
@@ -156,7 +161,7 @@ Reports the status of the server and its PostgreSQL connection pool.
 
 `registration` is `"open"` or `"closed"` (the server's `REGISTRATION` setting), so clients can hide their sign-up option on servers that don't accept new accounts.
 
-`cleanup` is the background job that deletes expired data: refresh tokens, [disappearing messages](#disappearing-messages) and dead push endpoints (see `CLEANUP_INTERVAL_MINUTES`). It holds counts only: how many rows this server instance has deleted since it started, and what its last run deleted. `last_run` and `last_deleted` are missing until the job has run on this instance, for example when another instance holds the lock.
+`cleanup` is the background job that deletes expired data: refresh tokens, [disappearing messages](#disappearing-messages), [statuses](#status-endpoints) and dead push endpoints (see `CLEANUP_INTERVAL_MINUTES`). It holds counts only: how many rows this server instance has deleted since it started, and what its last run deleted. `last_run` and `last_deleted` are missing until the job has run on this instance, for example when another instance holds the lock.
 
 #### `500 Internal Server Error`
 
@@ -1013,6 +1018,61 @@ Reports, newest first. `limit` is 1 to 200 (default 50); pass the last `id` of a
 
 ---
 
+## Status Endpoints
+
+A **status** is a short text that lasts 24 hours and goes to the people the author has chatted with. It is end-to-end encrypted like a direct message: the author's app encrypts it separately for each contact, and the server keeps one opaque `content` copy per recipient and never learns what it says or how it looks. All of these need a token.
+
+### Post a status
+
+`POST /api/status`
+
+```json
+{
+  "copies": [
+    { "recipient_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "content": "<ciphertext for this person>" }
+  ]
+}
+```
+
+- 1 to 200 copies, each at most 8 KiB, one per person.
+- Only the author's **contacts** get a copy: people they have exchanged a direct message with (a [message request](#message-requests) that is still waiting doesn't count) or share a group with, and who haven't blocked them and weren't blocked. Anyone else, and the author, is listed in `skipped` and gets nothing. If nobody can receive it the answer is `400`.
+- At most 20 statuses per author in 24 hours (`429` after that), and a rate limit on top.
+
+#### `201 Created`
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+    "created_at": "<Timestamp>",
+    "expires_at": "<Timestamp>",
+    "recipients": 3,
+    "skipped": ["dddddddd-dddd-dddd-dddd-dddddddddddd"]
+  }
+}
+```
+
+Connected recipients are sent a [`status_posted`](#12-status-posted) event. No push ping is sent for a status.
+
+### List statuses
+
+`GET /api/status` returns the statuses posted for you that haven't run out, newest first (at most 500), as `{ "id", "author_id", "content", "created_at", "expires_at", "viewed" }`. `content` is your copy, to decrypt as a direct message from `author_id`. `viewed` is whether you [marked it seen](#mark-a-status-seen). Statuses of someone you blocked, or who blocked you, are left out.
+
+### List your statuses
+
+`GET /api/status/mine` returns your statuses that haven't run out, newest first, as `{ "id", "created_at", "expires_at", "recipients", "viewers": [{ "user_id", "viewed_at" }] }`. Someone who has turned off [read receipts](#12-privacy-settings) is never listed as a viewer, even if they saw it.
+
+### Delete a status
+
+`DELETE /api/status/{id}` removes your status for everyone. `404` if it isn't yours or is gone.
+
+### Mark a status seen
+
+`POST /api/status/{id}/view` records that you saw a status, once. Its author is sent a [`status_viewed`](#13-status-viewed) event, unless you have turned off read receipts. `404` if it wasn't posted for you, or has run out.
+
+---
+
 ## Calls Endpoints
 
 ### ICE Servers
@@ -1385,6 +1445,33 @@ Sent to the live members of a group when an admin changes its name, description 
 {
   "type": "group_updated",
   "group_id": "dddddddd-dddd-dddd-dddd-dddddddddddd"
+}
+```
+
+#### 12. Status Posted
+
+Sent to a connected recipient when someone posts a [status](#post-a-status) for them. It has no content: fetch [`GET /api/status`](#list-statuses).
+
+```json
+{
+  "type": "status_posted",
+  "status_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+  "author_id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  "created_at": "<Timestamp>",
+  "expires_at": "<Timestamp>"
+}
+```
+
+#### 13. Status Viewed
+
+Sent to the author the first time a recipient [marks their status seen](#mark-a-status-seen), unless that person has turned off read receipts.
+
+```json
+{
+  "type": "status_viewed",
+  "status_id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+  "viewer_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+  "viewed_at": "<Timestamp>"
 }
 ```
 
