@@ -27,6 +27,7 @@ import 'controllers/chat/inbox_controller.dart';
 import 'services/chat/chat_event_handler.dart';
 import 'controllers/call/call_controller.dart';
 import 'pages/call/call_page.dart';
+import 'widgets/adaptive_shell.dart';
 import 'services/calls/call_wiring.dart';
 
 /// Lets an incoming call open the call screen from anywhere in the app.
@@ -171,7 +172,7 @@ class _SessionGatewayState extends State<SessionGateway> {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 400),
       child: token != null
-          ? const HomePage(key: ValueKey('home'))
+          ? const AdaptiveShell(key: ValueKey('home'), child: HomePage())
           : const LoginPage(key: ValueKey('login')),
     );
   }

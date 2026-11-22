@@ -415,6 +415,8 @@ class AppThemes {
         ),
       ),
       bottomSheetTheme: const BottomSheetThemeData(
+        // Sheets keep a readable width on a tablet.
+        constraints: BoxConstraints(maxWidth: 640),
         backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
         modalBackgroundColor: Colors.transparent,

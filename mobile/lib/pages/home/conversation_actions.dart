@@ -5,22 +5,29 @@ import 'package:mobile/pages/chat/chat_details_page.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/pages/chat/delete_chat.dart';
 import 'package:mobile/themes/app_themes.dart';
+import 'package:mobile/widgets/adaptive_shell.dart';
 import 'package:mobile/services/nicknames.dart';
 import 'package:mobile/widgets/ui/feedback.dart';
 import 'package:provider/provider.dart';
 
+/// Opens [item]'s chat: beside the chat list on a wide screen, over it
+/// otherwise.
 void openConversation(BuildContext context, InboxItem item) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => ChatPage(
-        chatUserId: item.id,
-        displayName: item.title.isEmpty ? (item.username ?? '') : item.title,
-        username: item.username,
-        isGroup: item.isGroup,
-      ),
-    ),
+  Widget page() => ChatPage(
+    // A new chat in the pane is a new page, not the old one with other
+    // contents.
+    key: ValueKey(item.id),
+    chatUserId: item.id,
+    displayName: item.title.isEmpty ? (item.username ?? '') : item.title,
+    username: item.username,
+    isGroup: item.isGroup,
   );
+  final pane = DetailPane.maybeOf(context);
+  if (pane != null) {
+    pane.show(page(), chatId: item.id);
+    return;
+  }
+  Navigator.push(context, MaterialPageRoute(builder: (_) => page()));
 }
 
 Future<void> showConversationActions(

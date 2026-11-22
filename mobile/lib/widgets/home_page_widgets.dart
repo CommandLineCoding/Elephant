@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mobile/controllers/auth_state.dart';
+import 'package:mobile/widgets/adaptive_shell.dart';
 import 'package:mobile/controllers/chat/group_details_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
 import 'package:mobile/models/chat_prefs.dart';
@@ -91,7 +92,7 @@ class ConversationTile extends StatelessWidget {
       fontStyle: hasMessage ? FontStyle.normal : FontStyle.italic,
     );
 
-    return InkWell(
+    final tile = InkWell(
       onTap: onTap,
       onLongPress: onLongPress,
       child: Column(
@@ -265,6 +266,20 @@ class ConversationTile extends StatelessWidget {
             color: context.tokens.hairline,
           ),
         ],
+      ),
+    );
+
+    // On a wide screen the chat that is open beside the list is marked.
+    final pane = DetailPane.maybeOf(context);
+    if (pane == null) return tile;
+    return ValueListenableBuilder<String?>(
+      valueListenable: pane.shownChat,
+      child: tile,
+      builder: (context, shown, child) => ColoredBox(
+        color: shown == conversation.id
+            ? context.colors.primary.withValues(alpha: 0.10)
+            : Colors.transparent,
+        child: child,
       ),
     );
   }
