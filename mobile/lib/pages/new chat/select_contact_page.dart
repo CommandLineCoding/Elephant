@@ -2,8 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:mobile/controllers/chat/chat_search_controller.dart';
 import 'package:mobile/controllers/chat/inbox_controller.dart';
+import 'package:mobile/models/broadcast_list.dart';
+import 'package:mobile/pages/broadcast/broadcast_page.dart';
 import 'package:mobile/pages/chat/chat_page.dart';
 import 'package:mobile/providers/group_controller_provider.dart';
+import 'package:mobile/services/broadcast_lists.dart';
 import 'package:mobile/themes/app_themes.dart';
 import 'package:mobile/widgets/ui/avatar.dart';
 import 'package:mobile/widgets/ui/components.dart';
@@ -11,9 +14,15 @@ import 'package:mobile/widgets/ui/feedback.dart';
 import 'package:mobile/widgets/ui/surfaces.dart';
 import 'package:provider/provider.dart';
 
-/// Step 1 of creating a group: pick members, then name the group.
+/// Step 1 of creating a group: pick members, then name the group. Also picks
+/// the people for a broadcast list ([forBroadcast], or [editing] one).
 class SelectContactPage extends StatefulWidget {
-  const SelectContactPage({super.key});
+  final bool forBroadcast;
+  final BroadcastList? editing;
+
+  const SelectContactPage({super.key, this.forBroadcast = false, this.editing});
+
+  bool get isBroadcast => forBroadcast || editing != null;
 
   @override
   State<SelectContactPage> createState() => _SelectContactPageState();
@@ -31,6 +40,9 @@ class _SelectContactPageState extends State<SelectContactPage> {
   @override
   void initState() {
     super.initState();
+    for (final m in widget.editing?.members ?? const <BroadcastMember>[]) {
+      _selected[m.id] = (name: m.name, username: '');
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _search.clearSearch());
   }
 
@@ -60,6 +72,20 @@ class _SelectContactPageState extends State<SelectContactPage> {
   }
 
   void _next() {
+    if (widget.isBroadcast) {
+      showSheet<bool>(
+        context,
+        title: widget.editing == null ? 'Name your list' : 'Edit list',
+        builder: (_) => _BroadcastSheet(
+          members: [
+            for (final e in _selected.entries)
+              BroadcastMember(id: e.key, name: e.value.name),
+          ],
+          editing: widget.editing,
+        ),
+      );
+      return;
+    }
     showSheet<bool>(
       context,
       title: 'Name your group',
@@ -87,10 +113,16 @@ class _SelectContactPageState extends State<SelectContactPage> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('New group'),
+            Text(
+              widget.editing != null
+                  ? 'Edit list'
+                  : widget.forBroadcast
+                  ? 'New broadcast'
+                  : 'New group',
+            ),
             Text(
               _selected.isEmpty
-                  ? 'Add members'
+                  ? (widget.isBroadcast ? 'Pick people' : 'Add members')
                   : '${_selected.length} selected',
               style: context.text.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
@@ -373,6 +405,106 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
               icon: Icons.check_rounded,
               isLoading: isLoading,
               onPressed: value.text.trim().isEmpty ? null : _create,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Names a broadcast list and saves it, or saves the changes to one.
+class _BroadcastSheet extends StatefulWidget {
+  final List<BroadcastMember> members;
+  final BroadcastList? editing;
+
+  const _BroadcastSheet({required this.members, this.editing});
+
+  @override
+  State<_BroadcastSheet> createState() => _BroadcastSheetState();
+}
+
+class _BroadcastSheetState extends State<_BroadcastSheet> {
+  late final _name = TextEditingController(text: widget.editing?.name ?? '');
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final lists = BroadcastLists.instance;
+    final navigator = Navigator.of(context);
+    setState(() => _saving = true);
+    final editing = widget.editing;
+    String? error;
+    BroadcastList? made;
+    if (editing == null) {
+      (made, error) = await lists.create(_name.text, widget.members);
+    } else {
+      error = await lists.update(editing.id, _name.text, widget.members);
+    }
+    if (!mounted) return;
+    if (error != null) {
+      setState(() => _saving = false);
+      showSnack(context, error, isError: true);
+      return;
+    }
+    // Close the sheet and the picker.
+    navigator.pop(true);
+    navigator.pop();
+    if (made != null) {
+      navigator.push(
+        MaterialPageRoute(builder: (_) => BroadcastPage(listId: made!.id)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Insets.xl,
+        Insets.sm,
+        Insets.xl,
+        Insets.xl,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _name,
+            autofocus: true,
+            maxLength: BroadcastLists.maxNameLength,
+            textCapitalization: TextCapitalization.sentences,
+            onSubmitted: (_) => _save(),
+            decoration: const InputDecoration(
+              hintText: 'List name',
+              counterText: '',
+            ),
+          ),
+          const SizedBox(height: Insets.lg),
+          Text(
+            '${widget.members.length} '
+            '${widget.members.length == 1 ? 'person' : 'people'}. A message to '
+            'the list goes to each of them on their own, end-to-end encrypted. '
+            'They can\'t see each other, and their replies come back in your '
+            'chat with them.',
+            style: context.text.bodySmall?.copyWith(
+              color: context.colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: Insets.xl),
+          ValueListenableBuilder(
+            valueListenable: _name,
+            builder: (_, value, _) => PrimaryButton(
+              label: widget.editing == null ? 'Create list' : 'Save',
+              icon: Icons.check_rounded,
+              isLoading: _saving,
+              onPressed: value.text.trim().isEmpty ? null : _save,
             ),
           ),
         ],

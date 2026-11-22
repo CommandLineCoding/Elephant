@@ -89,7 +89,7 @@ class DatabaseHelper {
   Future<Database> _open(String path, String password) {
     return openDatabase(
       path,
-      version: 12,
+      version: 13,
       password: password,
       onCreate: _createDB,
       onUpgrade: _upgradeDB,
@@ -120,6 +120,7 @@ class DatabaseHelper {
         'ALTER TABLE inbox ADD COLUMN is_request INTEGER DEFAULT 0',
       );
     }
+    if (oldVersion < 13) await _createBroadcastLists(db);
   }
 
   /// Messages the person starred, to find them again. Only on this phone.
@@ -153,6 +154,18 @@ class DatabaseHelper {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         chat_ids TEXT NOT NULL,
+        position INTEGER NOT NULL
+      )
+    ''');
+  }
+
+  /// Lists of people to send one message to, one by one. Only on this phone.
+  Future<void> _createBroadcastLists(Database db) async {
+    await db.execute('''
+      CREATE TABLE broadcast_lists (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        members TEXT NOT NULL,
         position INTEGER NOT NULL
       )
     ''');
@@ -203,6 +216,7 @@ class DatabaseHelper {
     await _createStarred(db);
     await _createDrafts(db);
     await _createChatFolders(db);
+    await _createBroadcastLists(db);
     await _createNicknames(db);
     await db.execute('''
       CREATE TABLE messages (
@@ -416,6 +430,32 @@ class DatabaseHelper {
     await db.delete('chat_folders', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// The broadcast lists, in the order they were made.
+  Future<List<Map<String, Object?>>> broadcastLists() async {
+    final db = await instance.database;
+    return db.query('broadcast_lists', orderBy: 'position');
+  }
+
+  Future<void> saveBroadcastList(
+    String id,
+    String name,
+    String members,
+    int position,
+  ) async {
+    final db = await instance.database;
+    await db.insert('broadcast_lists', {
+      'id': id,
+      'name': name,
+      'members': members,
+      'position': position,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteBroadcastList(String id) async {
+    final db = await instance.database;
+    await db.delete('broadcast_lists', where: 'id = ?', whereArgs: [id]);
+  }
+
   static Set<String> decodeChatIds(String json) {
     try {
       return {for (final id in jsonDecode(json) as List) id as String};
@@ -583,6 +623,7 @@ class DatabaseHelper {
     await db.delete('starred_messages');
     await db.delete('chat_drafts');
     await db.delete('chat_folders');
+    await db.delete('broadcast_lists');
     await db.delete('contact_nicknames');
     await db.delete('inbox');
     await db.delete('action_queue');

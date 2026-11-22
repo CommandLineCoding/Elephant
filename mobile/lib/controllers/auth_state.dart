@@ -7,6 +7,7 @@ import 'package:mobile/services/api_services.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/controllers/call/call_controller.dart';
 import 'package:mobile/services/calls/call_log.dart';
+import 'package:mobile/services/broadcast_lists.dart';
 import 'package:mobile/services/chat_folders.dart';
 import 'package:mobile/services/chat_appearance.dart';
 import 'package:mobile/services/drafts.dart';
@@ -472,6 +473,7 @@ class AuthState extends ChangeNotifier {
     StarredMessages.instance.clear();
     Drafts.instance.reset();
     ChatFolders.instance.reset();
+    BroadcastLists.instance.reset();
     Nicknames.instance.reset();
     PeerProfiles.instance.reset();
     PrivacySettings.instance.reset();
@@ -526,6 +528,7 @@ class AuthState extends ChangeNotifier {
       StarredMessages.instance.clear();
       Drafts.instance.reset();
       ChatFolders.instance.reset();
+      BroadcastLists.instance.reset();
       Nicknames.instance.reset();
       PeerProfiles.instance.reset();
       PrivacySettings.instance.reset();
