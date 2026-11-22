@@ -201,6 +201,10 @@ class EmptyState extends StatelessWidget {
   final String? actionLabel;
   final VoidCallback? onAction;
 
+  /// A quieter second choice, below the main action.
+  final String? secondaryLabel;
+  final VoidCallback? onSecondary;
+
   const EmptyState({
     super.key,
     required this.icon,
@@ -208,6 +212,8 @@ class EmptyState extends StatelessWidget {
     required this.message,
     this.actionLabel,
     this.onAction,
+    this.secondaryLabel,
+    this.onSecondary,
   });
 
   @override
@@ -255,6 +261,10 @@ class EmptyState extends StatelessWidget {
                   child: Text(actionLabel!),
                 ),
               ),
+            ],
+            if (secondaryLabel != null && onSecondary != null) ...[
+              const SizedBox(height: Insets.sm),
+              TextButton(onPressed: onSecondary, child: Text(secondaryLabel!)),
             ],
           ],
         ),

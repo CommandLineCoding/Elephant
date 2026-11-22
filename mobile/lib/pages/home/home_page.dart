@@ -17,6 +17,7 @@ import 'package:mobile/pages/new%20chat/new_chat_page.dart';
 import 'package:mobile/pages/new%20chat/select_contact_page.dart';
 import 'package:mobile/pages/settings/settings_page.dart';
 import 'package:mobile/models/chat_folder.dart';
+import 'package:mobile/pages/settings/backup_page.dart';
 import 'package:mobile/pages/settings/chat_folders.dart';
 import 'package:mobile/services/blocked_users.dart';
 import 'package:mobile/services/broadcast_lists.dart';
@@ -438,6 +439,12 @@ class _ChatsTabState extends State<_ChatsTab> {
                       onAction: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const NewChatPage()),
+                      ),
+                      // On a new phone, this is where the old chats come back.
+                      secondaryLabel: 'Restore from a backup',
+                      onSecondary: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const BackupPage()),
                       ),
                     ),
             )

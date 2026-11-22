@@ -155,3 +155,17 @@ sequenceDiagram
   H->>D: persist via pgx pool
   C->>D: replay history on reconnect
 ```
+
+## 5. Chat backup (on the phone)
+
+Messages live only on the phone, and the server can't read them, so a backup is made by the app and never touches the server.
+
+**Settings → Chat backup → Back up now** writes one file (`elephant-backup-YYYY-MM-DD.elbk`) wherever the person picks with Android's file picker. **Restore from a backup** reads one back.
+
+- **What is in it:** messages, chats, call history, pins/archive/mute, starred messages, chat folders, broadcast lists and nicknames, as rows of the local tables. Messages that were never sent are left out.
+- **What is not:** the Signal keys, sessions and identity, the queue of unsent messages, drafts, wallpapers and other settings, and anything the server can say again (such as group members).
+- **Passphrase:** 30 random digits made by the app (about 100 bits), shown once in six groups of five. It is the only way in: it can't be recovered. Spaces and dashes are ignored when it is typed.
+- **Format:** `"ELEPHBK"`, a version byte (1), scrypt's `log2(N)`, `r` and `p` (one byte each; the app writes 15, 8 and 1), a 16-byte salt and a 12-byte nonce, then the gzipped JSON snapshot encrypted with AES-256-GCM and its 16-byte tag. The 32-byte key is `scrypt(passphrase, salt)`. The header is the GCM associated data, so changing the cost or salt makes the file unreadable instead of weaker. A reader refuses a version it doesn't know and cost settings that would take unreasonable memory.
+- **Restoring** replaces the chat tables in one transaction, so a wrong passphrase, a damaged file or another account's backup changes nothing. The backup records the account it was made for and only restores onto that account.
+
+**Why the Signal keys are not included.** A Signal session is a ratchet: if two phones used the same copy of it, each would break the other's messages. Restoring only the identity key would keep safety numbers, but then sessions would still have to be started again. Rather than carry a half-working copy, a restored phone signs in and makes new keys like any new device. Contacts see a changed safety number (and may be asked to verify again), and messages sent to the old phone before then can't be read. Old messages are fine: they are stored decrypted on the phone and are what the backup holds.

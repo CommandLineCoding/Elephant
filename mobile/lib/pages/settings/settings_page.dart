@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile/core/profile_links.dart';
 import 'package:mobile/pages/chat/starred_messages_page.dart';
+import 'package:mobile/pages/settings/backup_page.dart';
 import 'package:mobile/pages/settings/chat_folders.dart';
 import 'package:mobile/controllers/auth_state.dart';
 import 'package:mobile/core/constants.dart';
@@ -223,6 +224,12 @@ class SettingsPage extends StatelessWidget {
                   title: 'Chat folders',
                   subtitle: 'Sort your chats',
                   onTap: () => _push(context, const ChatFoldersPage()),
+                ),
+                ElephantTile(
+                  icon: Icons.cloud_upload_outlined,
+                  title: 'Chat backup',
+                  subtitle: 'Save your chats to a file, or restore them',
+                  onTap: () => _push(context, const BackupPage()),
                 ),
                 ElephantTile(
                   icon: Icons.star_outline_rounded,
