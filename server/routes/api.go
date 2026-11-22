@@ -25,5 +25,6 @@ func ApiRoute(router chi.Router) {
 	router.Route("/calls", CallRoute)
 	router.Route("/reports", ReportRoute)
 	router.Route("/invites", InviteRoute)
+	router.Route("/status", StatusRoute)
 	router.Route("/admin", AdminRoute)
 }

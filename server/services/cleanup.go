@@ -84,6 +84,7 @@ func defaultCleanupTasks() []CleanupTask {
 	return []CleanupTask{
 		{Name: "refresh_tokens", Run: repo.DeleteExpiredRefreshTokens},
 		{Name: "messages", Run: repo.DeleteExpiredMessages},
+		{Name: "statuses", Run: repo.DeleteExpiredStatuses},
 		{Name: "push_endpoints", Run: func(ctx context.Context, limit int) (int64, error) {
 			return repo.DeleteFailingPushEndpoints(ctx, pushFailureLimit, limit)
 		}},

@@ -280,3 +280,37 @@ func TestCleanupIntervalReadsTheSetting(t *testing.T) {
 
 func cleanupEnv() string     { return env.CLEANUP_INTERVAL_MINUTES }
 func setCleanupEnv(v string) { env.CLEANUP_INTERVAL_MINUTES = v }
+
+func TestCleanupDeletesExpiredStatusesAndKeepsLiveOnes(t *testing.T) {
+	db := pushTestDB(t)
+	author := newTestUser(t)
+	add := func(life string) string {
+		var id string
+		if err := db.QueryRow(context.Background(),
+			`INSERT INTO statuses (author_id, expires_at) VALUES ($1::uuid, NOW() + $2::interval) RETURNING id::text`,
+			author, life).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	gone, live := add("-1 minute"), add("1 hour")
+
+	report, ran, err := NewCleaner(defaultCleanupTasks()...).RunOnce(context.Background())
+	if err != nil || !ran {
+		t.Fatalf("RunOnce: ran=%v err=%v", ran, err)
+	}
+	if report["statuses"] < 1 {
+		t.Errorf("deleted %d statuses, want at least the expired one", report["statuses"])
+	}
+	exists := func(id string) bool {
+		var n int
+		_ = db.QueryRow(context.Background(), `SELECT count(*) FROM statuses WHERE id = $1::uuid`, id).Scan(&n)
+		return n == 1
+	}
+	if exists(gone) {
+		t.Error("an expired status is still there")
+	}
+	if !exists(live) {
+		t.Error("a status that is still live was deleted")
+	}
+}
