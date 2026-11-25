@@ -49,6 +49,11 @@ class FakeRemote implements StatusRemote {
   List<RemoteStatus> inbox = [];
   List<RemoteOwnStatus> mine = [];
   final List<List<Map<String, String>>> posted = [];
+
+  /// When a post is said to have been made. The service tests run on a fake
+  /// clock, so a fixed time suits them; the widget tests run on the real one,
+  /// and set this to now, or the status would run out as the calendar moves on.
+  DateTime postedAt = t0;
   final List<String> deleted = [];
   final List<String> viewed = [];
   Object? failReceived;
@@ -72,8 +77,8 @@ class FakeRemote implements StatusRemote {
     posted.add(copies);
     return PostedStatus(
       id: 'posted-${posted.length}',
-      createdAt: t0,
-      expiresAt: t0.add(const Duration(hours: 24)),
+      createdAt: postedAt,
+      expiresAt: postedAt.add(const Duration(hours: 24)),
       recipients: copies.length,
     );
   }
@@ -648,7 +653,7 @@ void main() {
       SharedPreferences.setMockInitialValues({});
       Nicknames.instance = Nicknames(store: _NoNicknames());
       store = MemoryStore();
-      server = FakeRemote();
+      server = FakeRemote()..postedAt = DateTime.now();
       crypto = FakeCrypto();
       statuses = Statuses(
         store: store,
