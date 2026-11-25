@@ -69,9 +69,15 @@ void main() {
 
     /// The screen's size in logical pixels: a phone held upright by default.
     Size size = const Size(390, 844),
+
+    /// Bottom keyboard inset in logical pixels.
+    double keyboardHeight = 0,
   }) async {
     tester.view.devicePixelRatio = 3;
     tester.view.physicalSize = size * 3;
+    if (keyboardHeight > 0) {
+      tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight * 3);
+    }
     addTearDown(tester.view.reset);
 
     final now = DateTime.now();
@@ -237,4 +243,19 @@ void main() {
       });
     }
   }
+
+  testWidgets(
+    'fits on a phone on its side with a full-screen keyboard: new chat',
+    (tester) async {
+      await render(
+        tester,
+        ThemeType.nebula,
+        const NewChatPage(),
+        chat: chatMessages,
+        size: const Size(780, 360),
+        keyboardHeight: 250,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

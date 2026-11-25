@@ -88,146 +88,174 @@ class _NewChatPageState extends State<NewChatPage> {
         ],
       ),
       body: ScreenBackground(
-        child: Column(
-          children: [
-            SizedBox(
-              height:
-                  MediaQuery.paddingOf(context).top +
-                  kToolbarHeight +
-                  Insets.md,
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: Insets.page),
-              child: SearchField(
-                controller: _searchController,
-                hint: 'Search name or username',
-                autofocus: true,
-                onChanged: _onChanged,
-              ),
-            ),
-            if (search.isSearchLoading)
-              const Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: Insets.page,
-                  vertical: Insets.sm,
-                ),
-                child: LinearProgressIndicator(minHeight: 2),
-              ),
-            Expanded(
-              child: isSearching
-                  ? _buildResults(search, query)
-                  : _buildIdle(inbox),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIdle(InboxController inbox) {
-    final recents = inbox.inbox.where((t) => !t.isGroup).toList();
-    return ListView(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom + Insets.xl,
-      ),
-      children: [
-        const SizedBox(height: Insets.lg),
-        Section(
-          children: [
-            ElephantTile(
-              icon: Icons.group_add_rounded,
-              title: 'New group',
-              subtitle: 'Chat with several people at once',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const SelectContactPage()),
-              ),
-            ),
-            ElephantTile(
-              icon: Icons.campaign_outlined,
-              title: 'New broadcast',
-              subtitle: 'Send one message to several people, separately',
-              onTap: () => Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const SelectContactPage(forBroadcast: true),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: (n) {
+            if (isSearching &&
+                query.length >= ChatSearchController.minQueryLength &&
+                search.error == null &&
+                search.results.isNotEmpty &&
+                n.metrics.extentAfter < 200) {
+              search.loadMore();
+            }
+            return false;
+          },
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height:
+                      MediaQuery.paddingOf(context).top +
+                      kToolbarHeight +
+                      Insets.md,
                 ),
               ),
-            ),
-          ],
-        ),
-        if (recents.isNotEmpty) ...[
-          const SectionLabel('Recent'),
-          for (final thread in recents)
-            _PersonTile(
-              id: thread.id,
-              name: thread.title,
-              username: thread.username,
-              onTap: () => _open(thread.id, thread.title, thread.username),
-            ),
-        ] else
-          Padding(
-            padding: const EdgeInsets.all(Insets.xxl),
-            child: Text(
-              'Search for someone by their username, like alex.4821, to start an encrypted chat.',
-              textAlign: TextAlign.center,
-              style: context.text.bodyMedium?.copyWith(
-                color: context.colors.onSurfaceVariant,
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: Insets.page),
+                  child: SearchField(
+                    controller: _searchController,
+                    hint: 'Search name or username',
+                    autofocus: true,
+                    onChanged: _onChanged,
+                  ),
+                ),
               ),
-            ),
+              if (search.isSearchLoading)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: Insets.page,
+                      vertical: Insets.sm,
+                    ),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                ),
+              ...(isSearching
+                  ? _buildResultsSlivers(search, query)
+                  : _buildIdleSlivers(inbox)),
+            ],
           ),
-      ],
+        ),
+      ),
     );
   }
 
-  Widget _buildResults(ChatSearchController search, String query) {
+  List<Widget> _buildIdleSlivers(InboxController inbox) {
+    final recents = inbox.inbox.where((t) => !t.isGroup).toList();
+    return [
+      SliverPadding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.paddingOf(context).bottom + Insets.xl,
+        ),
+        sliver: SliverList.list(
+          children: [
+            const SizedBox(height: Insets.lg),
+            Section(
+              children: [
+                ElephantTile(
+                  icon: Icons.group_add_rounded,
+                  title: 'New group',
+                  subtitle: 'Chat with several people at once',
+                  onTap: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const SelectContactPage(),
+                    ),
+                  ),
+                ),
+                ElephantTile(
+                  icon: Icons.campaign_outlined,
+                  title: 'New broadcast',
+                  subtitle: 'Send one message to several people, separately',
+                  onTap: () => Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const SelectContactPage(forBroadcast: true),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (recents.isNotEmpty) ...[
+              const SectionLabel('Recent'),
+              for (final thread in recents)
+                _PersonTile(
+                  id: thread.id,
+                  name: thread.title,
+                  username: thread.username,
+                  onTap: () => _open(thread.id, thread.title, thread.username),
+                ),
+            ] else
+              Padding(
+                padding: const EdgeInsets.all(Insets.xxl),
+                child: Text(
+                  'Search for someone by their username, like alex.4821, to start an encrypted chat.',
+                  textAlign: TextAlign.center,
+                  style: context.text.bodyMedium?.copyWith(
+                    color: context.colors.onSurfaceVariant,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildResultsSlivers(ChatSearchController search, String query) {
     if (query.length < ChatSearchController.minQueryLength) {
-      return _hint('Keep typing…');
+      return [SliverToBoxAdapter(child: _hint('Keep typing…'))];
     }
-    if (search.error != null) return _hint(search.error!);
+    if (search.error != null) {
+      return [SliverToBoxAdapter(child: _hint(search.error!))];
+    }
     if (!search.isSearchLoading && search.results.isEmpty) {
-      return const EmptyState(
-        icon: Icons.person_search_rounded,
-        title: 'No one found',
-        message: 'Check the spelling, or ask them for their full username.',
-      );
+      return [
+        const SliverFillRemaining(
+          hasScrollBody: false,
+          child: EmptyState(
+            icon: Icons.person_search_rounded,
+            title: 'No one found',
+            message: 'Check the spelling, or ask them for their full username.',
+          ),
+        ),
+      ];
     }
 
     final List<UserModel> users = search.results;
-    return NotificationListener<ScrollNotification>(
-      onNotification: (n) {
-        if (n.metrics.extentAfter < 200) search.loadMore();
-        return false;
-      },
-      child: ListView.builder(
+    return [
+      SliverPadding(
         padding: EdgeInsets.only(
           top: Insets.sm,
           bottom: MediaQuery.paddingOf(context).bottom + Insets.xl,
         ),
-        itemCount: users.length + (search.isLoadingMore ? 1 : 0),
-        itemBuilder: (context, index) {
-          if (index == users.length) {
-            return const Padding(
-              padding: EdgeInsets.all(Insets.lg),
-              child: Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+        sliver: SliverList.builder(
+          itemCount: users.length + (search.isLoadingMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == users.length) {
+              return const Padding(
+                padding: EdgeInsets.all(Insets.lg),
+                child: Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
-              ),
+              );
+            }
+            final user = users[index];
+            return _PersonTile(
+              id: user.id,
+              name: user.displayName,
+              username: user.username,
+              onTap: () => _open(user.id, user.displayName, user.username),
             );
-          }
-          final user = users[index];
-          return _PersonTile(
-            id: user.id,
-            name: user.displayName,
-            username: user.username,
-            onTap: () => _open(user.id, user.displayName, user.username),
-          );
-        },
+          },
+        ),
       ),
-    );
+    ];
   }
 
   Widget _hint(String text) {
