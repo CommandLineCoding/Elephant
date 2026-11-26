@@ -1023,7 +1023,7 @@ The reply has `Cache-Control: no-store`. Every list is `[]` when there is nothin
 | `message_requests` | First messages from strangers waiting for the person to accept them. |
 | `groups`, `group_join_requests` | Groups they are in, their role, and invite link requests an admin hasn't answered. |
 | `messages` | Direct messages they sent or received, and the group messages they sent, oldest first. Messages they deleted for themselves or cleared are still here, because the other person still has them; `hidden_messages` and `cleared_chats` say which. A message that ran out is not. |
-| `statuses`, `received_statuses` | Statuses they posted (how many copies were made, not who saw them) and the copies encrypted for them. |
+| `statuses`, `received_statuses` | Statuses they posted (how many copies were made, not who saw them) and the copies encrypted for them that they can still see, as in [List statuses](#list-statuses): not ones that ran out, nor ones from someone either of them blocked. |
 | `reports` | Reports they sent, with the messages they chose to attach. |
 
 `content` is what the sending phone uploaded. For direct messages and statuses that is Signal ciphertext, which only the phones can read; the readable chats come from the phone's export. Group messages are a plaintext envelope (`type` 0), since they are not end to end encrypted yet.

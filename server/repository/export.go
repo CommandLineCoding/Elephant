@@ -180,10 +180,14 @@ func (r *ExportRepository) Export(ctx context.Context, userID string, now time.T
 		return nil, err
 	}
 
+	// The same statuses the person can see in the app: one that ran out is
+	// gone for them, and one from someone either of them blocked would give
+	// the block away.
 	if out.ReceivedStatuses, err = exportRows(ctx, tx, `
 		SELECT s.id::text, s.author_id::text, c.content, s.created_at, s.expires_at, c.viewed_at
 		FROM status_copies c JOIN statuses s ON s.id = c.status_id
-		WHERE c.recipient_id = $1::uuid ORDER BY s.created_at;
+		WHERE `+statusVisibleTo+`
+		ORDER BY s.created_at;
 	`, userID, func(rows pgx.Rows, s *models.ExportReceivedStatus) error {
 		return rows.Scan(&s.ID, &s.AuthorID, &s.Content, &s.CreatedAt, &s.ExpiresAt, &s.ViewedAt)
 	}); err != nil {

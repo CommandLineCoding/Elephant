@@ -144,3 +144,39 @@ func TestTheExportLeavesOutSecrets(t *testing.T) {
 		t.Errorf("two_factor %+v, push %+v", got.TwoFactor, got.Push)
 	}
 }
+
+// The statuses in the export are the ones the app would show: not one that ran
+// out, and not one from someone either person blocked, which would give the
+// block away.
+func TestTheExportHasOnlyTheStatusesThePersonCanSee(t *testing.T) {
+	me, friend, blocker, blocked := sessionUser(t), sessionUser(t), sessionUser(t), sessionUser(t)
+	tok := startSession(t, me, "Pixel 8").AccessToken
+	mustExec(t, `INSERT INTO blocked_users (user_id, blocked_user_id) VALUES ($1::uuid, $2::uuid), ($3::uuid, $1::uuid)`, me, blocked, blocker)
+
+	post := func(author, content, expires string) {
+		t.Helper()
+		var id string
+		if err := config.DB.QueryRow(context.Background(),
+			`INSERT INTO statuses (author_id, expires_at) VALUES ($1::uuid, NOW() + $2::interval) RETURNING id::text`,
+			author, expires).Scan(&id); err != nil {
+			t.Fatal(err)
+		}
+		mustExec(t, `INSERT INTO status_copies (status_id, recipient_id, content) VALUES ($1::uuid, $2::uuid, $3)`, id, me, content)
+	}
+	post(friend, "visible", "1 hour")
+	post(friend, "ran out", "-1 hour")
+	post(blocker, "from someone who blocked me", "1 hour")
+	post(blocked, "from someone I blocked", "1 hour")
+
+	code, _, got := exportFor(t, tok)
+	if code != http.StatusOK {
+		t.Fatalf("export: %d", code)
+	}
+	var contents []string
+	for _, s := range got.ReceivedStatuses {
+		contents = append(contents, s.Content)
+	}
+	if strings.Join(contents, "|") != "visible" {
+		t.Errorf("received statuses: %q, want only the visible one", contents)
+	}
+}
