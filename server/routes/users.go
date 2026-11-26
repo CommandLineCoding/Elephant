@@ -9,12 +9,15 @@ import (
 func UserRoute(router chi.Router) {
 	searchLimiter := middlewares.NewRateLimiter(2.0, 10.0).WithMessage("Rate limit exceeded. Too many search requests.")
 	codeLimiter := middlewares.NewRateLimiter(1.0/5, 10).WithMessage("Too many attempts. Please wait a moment and try again.")
+	// An export reads everything the person has, so a few in a row is plenty.
+	exportLimiter := middlewares.NewRateLimiter(1.0/60, 3).WithMessage("Too many exports. Please wait a minute and try again.")
 
 	router.Use(middlewares.AuthGuard)
 
 	router.Get("/me", controllers.HandleGetMe)
 	router.Delete("/me", controllers.HandleDeleteMe)
 	router.Patch("/me", controllers.HandleUpdateMe)
+	router.With(exportLimiter.Limit).Get("/me/export", controllers.HandleExportMe)
 	router.Post("/me/push", controllers.HandlePushRegister)
 	router.Delete("/me/push", controllers.HandlePushUnregister)
 	router.Get("/me/blocked", controllers.HandleListBlocked)
