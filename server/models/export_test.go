@@ -1,10 +1,11 @@
 package models
 
 import (
-	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Columns that would let whoever holds an export act as the person. None of
@@ -57,28 +58,78 @@ func TestTheAccountExportHasNoSecretFields(t *testing.T) {
 	}
 }
 
-// The sections are the ones docs/API_CONTRACTS.md describes, so a new one
-// isn't added without saying what it holds.
-func TestTheAccountExportNamesEverySection(t *testing.T) {
-	raw, err := json.Marshal(AccountExport{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var top map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &top); err != nil {
-		t.Fatal(err)
-	}
-	for _, key := range []string{
-		"app", "format", "exported_at", "account", "settings", "two_factor", "sessions", "devices",
+// exportFields is every field each part of the export may have. A new field
+// fails this test until it is added here, so someone decides on purpose that
+// it is the person's to take, and not a secret or someone else's. The
+// sections are the ones docs/API_CONTRACTS.md describes.
+var exportFields = map[string][]string{
+	"AccountExport": {"app", "format", "exported_at", "account", "settings", "two_factor", "sessions", "devices",
 		"push_endpoints", "blocked_users", "verified_contacts", "message_requests", "groups",
 		"group_join_requests", "messages", "hidden_messages", "cleared_chats", "statuses",
-		"received_statuses", "reports",
-	} {
-		if _, ok := top[key]; !ok {
-			t.Errorf("no %q in the export", key)
+		"received_statuses", "reports"},
+	"ExportAccount": {"id", "username", "display_name", "email", "google_id", "github_id", "created_at",
+		"username_changed_at", "bio", "status_emoji", "status_text", "status_expires_at"},
+	"ExportSettings":       {"online_status", "read_receipts", "group_adds"},
+	"ExportTwoFactor":      {"enabled", "created_at", "recovery_codes_left"},
+	"ExportSession":        {"id", "device_name", "started_at", "last_used_at", "expires_at"},
+	"ExportDevice":         {"device_id", "identity_key", "signed_prekey", "signed_prekey_signature", "one_time_prekeys", "updated_at"},
+	"ExportPush":           {"created_at", "updated_at", "failures"},
+	"ExportBlock":          {"user_id", "blocked_at"},
+	"ExportVerification":   {"user_id", "is_verified", "updated_at"},
+	"ExportRequest":        {"sender_id", "created_at"},
+	"ExportGroup":          {"id", "name", "description", "admins_only", "created_by", "created_at", "role", "joined_at", "last_read_at"},
+	"ExportJoinRequest":    {"group_id", "requested_at"},
+	"ExportMessage":        {"id", "sender_id", "receiver_id", "group_id", "content", "created_at", "is_read", "delivered_at", "edited_at", "deleted_at", "expires_at", "reply_to_message_id", "silent"},
+	"ExportHidden":         {"message_id"},
+	"ExportCleared":        {"peer_id", "group_id", "cleared_at"},
+	"ExportStatus":         {"id", "created_at", "expires_at", "recipients"},
+	"ExportReceivedStatus": {"id", "author_id", "content", "created_at", "expires_at", "viewed_at"},
+	"ExportReport":         {"id", "reported_user_id", "reason", "note", "messages", "created_at"},
+}
+
+// structFields maps each struct reachable from t (by value, pointer or slice)
+// to the JSON keys it produces. time.Time is a value, not a part.
+func structFields(t reflect.Type, out map[string][]string) {
+	for t.Kind() == reflect.Pointer || t.Kind() == reflect.Slice {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct || t == reflect.TypeOf(time.Time{}) {
+		return
+	}
+	if _, done := out[t.Name()]; done {
+		return
+	}
+	out[t.Name()] = []string{}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if name == "-" || !f.IsExported() {
+			continue
+		}
+		if name == "" {
+			name = f.Name
+		}
+		out[t.Name()] = append(out[t.Name()], name)
+		structFields(f.Type, out)
+	}
+}
+
+func TestTheAccountExportHasOnlyTheFieldsChosenForIt(t *testing.T) {
+	got := map[string][]string{}
+	structFields(reflect.TypeOf(AccountExport{}), got)
+	for name, keys := range got {
+		want, ok := exportFields[name]
+		if !ok {
+			t.Errorf("%s is part of the export but not in exportFields: decide what it may hold", name)
+			continue
+		}
+		if !slices.Equal(keys, want) {
+			t.Errorf("%s has %v, want %v: decide whether the new field belongs in an export", name, keys, want)
 		}
 	}
-	if len(top) != 20 {
-		t.Errorf("%d sections, want 20: update this test and docs/API_CONTRACTS.md together", len(top))
+	for name := range exportFields {
+		if _, ok := got[name]; !ok {
+			t.Errorf("exportFields lists %s, which is no longer in the export", name)
+		}
 	}
 }
