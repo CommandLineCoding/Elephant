@@ -961,7 +961,7 @@ Send only the fields to change. The reply is all the settings after the change, 
 
 ### 13. Export your data
 
-Everything the server keeps about the signed-in user, in one JSON document they can save. The app offers it next to the chat backup and saves it as `elephant-account-<date>.json`; the chats on the phone are exported separately (see [docs/EXPORT.md](EXPORT.md)).
+Everything the server keeps about the signed-in user, in one JSON document they can save (see [docs/EXPORT.md](EXPORT.md)).
 
 - **URL:** `/api/users/me/export`
 - **Method:** `GET`
@@ -1026,7 +1026,7 @@ The reply has `Cache-Control: no-store`. Every list is `[]` when there is nothin
 | `statuses`, `received_statuses` | Statuses they posted (how many copies were made, not who saw them) and the copies encrypted for them that they can still see, as in [List statuses](#list-statuses): not ones that ran out, nor ones from someone either of them blocked. |
 | `reports` | Reports they sent, with the messages they chose to attach. |
 
-`content` is what the sending phone uploaded. For direct messages and statuses that is Signal ciphertext, which only the phones can read; the readable chats come from the phone's export. Group messages are a plaintext envelope (`type` 0), since they are not end to end encrypted yet.
+`content` is what the sending phone uploaded. For direct messages and statuses that is Signal ciphertext, which only the phones can read. Group messages are a plaintext envelope (`type` 0), since they are not end to end encrypted yet.
 
 Left out on purpose:
 
