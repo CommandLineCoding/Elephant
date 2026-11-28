@@ -15,9 +15,10 @@ type ExportRepository struct{}
 func NewExportRepository() *ExportRepository { return &ExportRepository{} }
 
 // Export gathers what the server keeps about userID, read in one snapshot so
-// the parts agree with each other. It returns pgx.ErrNoRows if there is no
-// such user. What is left out, and why, is on models.AccountExport.
-func (r *ExportRepository) Export(ctx context.Context, userID string, now time.Time) (*models.AccountExport, error) {
+// the parts agree with each other, with the first page of messages. It
+// returns pgx.ErrNoRows if there is no such user. What is left out, and why,
+// is on models.AccountExport.
+func (r *ExportRepository) Export(ctx context.Context, userID string, now time.Time, messages models.ExportMessageQuery) (*models.AccountExport, error) {
 	tx, err := config.DB.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, err
@@ -131,35 +132,15 @@ func (r *ExportRepository) Export(ctx context.Context, userID string, now time.T
 		return nil, err
 	}
 
-	// Direct messages both ways, and what the person said in groups. Other
-	// people's group messages are theirs. A message that has run out is
-	// already gone for everyone and only waits for the cleanup job. Whether a
-	// sent message was read follows the recipient's read receipts setting,
-	// as in the chat history.
-	if out.Messages, err = exportRows(ctx, tx, `
-		SELECT m.id::text, m.sender_id::text, m.receiver_id::text, m.group_id::text, m.content, m.created_at,
-		       (m.is_read AND (m.sender_id <> $1::uuid OR m.receiver_id IS NULL OR
-		        COALESCE((SELECT us.read_receipts FROM user_settings us WHERE us.user_id = m.receiver_id), TRUE))),
-		       m.delivered_at, m.edited_at, m.deleted_at, m.expires_at, m.reply_to_message_id::text, m.silent
-		FROM messages m
-		WHERE (m.sender_id = $1::uuid OR m.receiver_id = $1::uuid)
-		  AND (m.expires_at IS NULL OR m.expires_at > NOW())
-		ORDER BY m.created_at, m.id;
-	`, userID, func(rows pgx.Rows, m *models.ExportMessage) error {
-		return rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.GroupID, &m.Content, &m.CreatedAt,
-			&m.IsRead, &m.DeliveredAt, &m.EditedAt, &m.DeletedAt, &m.ExpiresAt, &m.ReplyToMessageID, &m.Silent)
-	}); err != nil {
+	// Messages are the one part that grows without end, so only the first
+	// page is here. Which ones the person deleted for themselves is on each
+	// message, so that grows with the page too.
+	if out.Messages, out.MessagesNext, err = exportMessages(ctx, tx, userID, messages); err != nil {
 		return nil, err
 	}
+	out.MessagesTruncated = out.MessagesNext != nil
 
-	if out.Hidden, err = exportRows(ctx, tx, `
-		SELECT message_id::text FROM message_hides WHERE user_id = $1::uuid ORDER BY message_id;
-	`, userID, func(rows pgx.Rows, h *models.ExportHidden) error {
-		return rows.Scan(&h.MessageID)
-	}); err != nil {
-		return nil, err
-	}
-
+	// At most one row per chat, however many messages it has.
 	if out.Cleared, err = exportRows(ctx, tx, `
 		SELECT peer_id::text, group_id::text, cleared_at FROM conversation_clears WHERE user_id = $1::uuid ORDER BY cleared_at;
 	`, userID, func(rows pgx.Rows, c *models.ExportCleared) error {
@@ -206,6 +187,87 @@ func (r *ExportRepository) Export(ctx context.Context, userID string, now time.T
 	}
 
 	return out, nil
+}
+
+// ExportMessages returns one page of userID's messages, for the pages after
+// the first one in Export.
+func (r *ExportRepository) ExportMessages(ctx context.Context, userID string, q models.ExportMessageQuery) (*models.ExportMessagePage, error) {
+	page := &models.ExportMessagePage{}
+	var err error
+	if page.Messages, page.Next, err = exportMessages(ctx, config.DB, userID, q); err != nil {
+		return nil, err
+	}
+	return page, nil
+}
+
+// querier is what exportMessages needs, so it runs in Export's snapshot or
+// on its own.
+type querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
+// exportMessages returns up to q.Limit of userID's messages after q.After,
+// oldest first, and the cursor for the next page (nil if there is none).
+// What the person said in groups is always in it: other people's group
+// messages are theirs. Direct messages, both ways, only with
+// q.DirectMessages. A message that has run out is already gone for everyone
+// and only waits for the cleanup job. Whether a sent message was read
+// follows the recipient's read receipts setting, as in the chat history.
+//
+// The page goes on from the last (created_at, id) instead of skipping rows,
+// so each one costs the same however deep it is and none is skipped or
+// repeated when messages come or go in between.
+func exportMessages(ctx context.Context, db querier, userID string, q models.ExportMessageQuery) ([]models.ExportMessage, *string, error) {
+	whose := `m.group_id IS NOT NULL AND m.sender_id = $1::uuid`
+	if q.DirectMessages {
+		whose = `(m.sender_id = $1::uuid OR m.receiver_id = $1::uuid)`
+	}
+	// One more than the page, to know whether there is a next one.
+	args := []any{userID, q.Limit + 1}
+	after := ``
+	if q.After != nil {
+		after = `AND (m.created_at, m.id) > ($3::timestamptz, $4::uuid)`
+		args = append(args, q.After.CreatedAt, q.After.ID)
+	}
+
+	rows, err := db.Query(ctx, `
+		SELECT m.id::text, m.sender_id::text, m.receiver_id::text, m.group_id::text, m.content, m.created_at,
+		       (m.is_read AND (m.sender_id <> $1::uuid OR m.receiver_id IS NULL OR
+		        COALESCE((SELECT us.read_receipts FROM user_settings us WHERE us.user_id = m.receiver_id), TRUE))),
+		       m.delivered_at, m.edited_at, m.deleted_at, m.expires_at, m.reply_to_message_id::text, m.silent,
+		       EXISTS (SELECT 1 FROM message_hides h WHERE h.message_id = m.id AND h.user_id = $1::uuid)
+		FROM messages m
+		WHERE `+whose+`
+		  AND (m.expires_at IS NULL OR m.expires_at > NOW())
+		  `+after+`
+		ORDER BY m.created_at, m.id
+		LIMIT $2;
+	`, args...)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	out := []models.ExportMessage{}
+	for rows.Next() {
+		var m models.ExportMessage
+		if err := rows.Scan(&m.ID, &m.SenderID, &m.ReceiverID, &m.GroupID, &m.Content, &m.CreatedAt,
+			&m.IsRead, &m.DeliveredAt, &m.EditedAt, &m.DeletedAt, &m.ExpiresAt, &m.ReplyToMessageID, &m.Silent,
+			&m.Hidden); err != nil {
+			return nil, nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+	if len(out) <= q.Limit {
+		return out, nil, nil
+	}
+	out = out[:q.Limit]
+	last := out[len(out)-1]
+	next := models.ExportCursor{CreatedAt: last.CreatedAt, ID: last.ID}.String()
+	return out, &next, nil
 }
 
 // exportRows runs query with userID and scans each row with scan. It returns

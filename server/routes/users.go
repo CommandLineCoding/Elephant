@@ -11,6 +11,9 @@ func UserRoute(router chi.Router) {
 	codeLimiter := middlewares.NewRateLimiter(1.0/5, 10).WithMessage("Too many attempts. Please wait a moment and try again.")
 	// An export reads everything the person has, so a few in a row is plenty.
 	exportLimiter := middlewares.NewRateLimiter(1.0/60, 3).WithMessage("Too many exports. Please wait a minute and try again.")
+	// Each page of messages is bounded, so paging through a big account only
+	// has to be slow enough that pages don't pile up in memory.
+	exportPageLimiter := middlewares.NewRateLimiter(1.0/2, 3).WithMessage("Too many export pages. Please wait a moment and try again.")
 
 	router.Use(middlewares.AuthGuard)
 
@@ -18,6 +21,7 @@ func UserRoute(router chi.Router) {
 	router.Delete("/me", controllers.HandleDeleteMe)
 	router.Patch("/me", controllers.HandleUpdateMe)
 	router.With(exportLimiter.Limit).Get("/me/export", controllers.HandleExportMe)
+	router.With(exportPageLimiter.Limit).Get("/me/export/messages", controllers.HandleExportMessages)
 	router.Post("/me/push", controllers.HandlePushRegister)
 	router.Delete("/me/push", controllers.HandlePushUnregister)
 	router.Get("/me/blocked", controllers.HandleListBlocked)

@@ -1,7 +1,12 @@
 package models
 
 import (
+	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -34,9 +39,12 @@ type AccountExport struct {
 	Groups       []ExportGroup       `json:"groups"`
 	JoinRequests []ExportJoinRequest `json:"group_join_requests"`
 
-	Messages []ExportMessage `json:"messages"`
-	Hidden   []ExportHidden  `json:"hidden_messages"`
-	Cleared  []ExportCleared `json:"cleared_chats"`
+	// Messages is the first page only; MessagesNext is the cursor for
+	// GET /api/users/me/export/messages, or nil when there is no more.
+	Messages          []ExportMessage `json:"messages"`
+	MessagesNext      *string         `json:"messages_next"`
+	MessagesTruncated bool            `json:"messages_truncated"`
+	Cleared           []ExportCleared `json:"cleared_chats"`
 
 	Statuses         []ExportStatus         `json:"statuses"`
 	ReceivedStatuses []ExportReceivedStatus `json:"received_statuses"`
@@ -161,11 +169,119 @@ type ExportMessage struct {
 	ExpiresAt        *time.Time `json:"expires_at"`
 	ReplyToMessageID *string    `json:"reply_to_message_id"`
 	Silent           bool       `json:"silent"`
+	Hidden           bool       `json:"hidden"`
 }
 
-// ExportHidden is a message the person deleted for themselves only.
-type ExportHidden struct {
-	MessageID string `json:"message_id"`
+// ExportMessagePage is one page of GET /api/users/me/export/messages. Next is
+// the cursor for the page after it, or nil on the last one.
+type ExportMessagePage struct {
+	Messages []ExportMessage `json:"messages"`
+	Next     *string         `json:"next"`
+}
+
+// One request reads at most ExportMessagesMax messages, so its memory stays
+// the same whatever the size of the account. A message is at most 4 KB, so a
+// full page is around 10 MB of JSON.
+const (
+	ExportMessagesDefault = 1000
+	ExportMessagesMax     = 2000
+)
+
+// ExportMessageQuery is which page of messages to export.
+type ExportMessageQuery struct {
+	// After is where the previous page ended, or nil for the first page.
+	After *ExportCursor
+	Limit int
+	// DirectMessages adds the direct messages, sent and received. They are
+	// ciphertext only the phones can read, so they are left out by default.
+	DirectMessages bool
+}
+
+var (
+	ErrExportLimit   = errors.New("limit must be a whole number from 1 to " + strconv.Itoa(ExportMessagesMax))
+	ErrExportInclude = errors.New("include can only be direct_messages")
+	ErrExportCursor  = errors.New("after is not a cursor from a previous page")
+)
+
+// ParseExportMessageQuery reads limit, include and after from q. An empty or
+// missing value takes the default; anything else that isn't valid is an
+// error, so a client never gets a different page than it asked for.
+func ParseExportMessageQuery(q url.Values) (ExportMessageQuery, error) {
+	out := ExportMessageQuery{Limit: ExportMessagesDefault}
+	if s := q.Get("limit"); s != "" {
+		n, err := strconv.Atoi(s)
+		if err != nil || n < 1 || n > ExportMessagesMax {
+			return out, ErrExportLimit
+		}
+		out.Limit = n
+	}
+	for _, list := range q["include"] {
+		for _, v := range strings.Split(list, ",") {
+			switch strings.TrimSpace(v) {
+			case "":
+			case "direct_messages":
+				out.DirectMessages = true
+			default:
+				return out, ErrExportInclude
+			}
+		}
+	}
+	if s := q.Get("after"); s != "" {
+		c, err := ParseExportCursor(s)
+		if err != nil {
+			return out, err
+		}
+		out.After = &c
+	}
+	return out, nil
+}
+
+// ExportCursor is the last message of a page: the next page starts after it
+// in (created_at, id) order.
+type ExportCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+// String is the cursor as the client gets it. Clients should treat it as
+// opaque.
+func (c ExportCursor) String() string {
+	return base64.RawURLEncoding.EncodeToString([]byte(c.CreatedAt.UTC().Format(time.RFC3339Nano) + " " + c.ID))
+}
+
+// ParseExportCursor reads a cursor made by String.
+func ParseExportCursor(s string) (ExportCursor, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return ExportCursor{}, ErrExportCursor
+	}
+	at, id, ok := strings.Cut(string(raw), " ")
+	if !ok || !isUUID(id) {
+		return ExportCursor{}, ErrExportCursor
+	}
+	t, err := time.Parse(time.RFC3339Nano, at)
+	if err != nil {
+		return ExportCursor{}, ErrExportCursor
+	}
+	return ExportCursor{CreatedAt: t, ID: id}, nil
+}
+
+// isUUID reports whether s is a UUID in its usual lowercase text form.
+func isUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch {
+		case i == 8 || i == 13 || i == 18 || i == 23:
+			if r != '-' {
+				return false
+			}
+		case (r < '0' || r > '9') && (r < 'a' || r > 'f'):
+			return false
+		}
+	}
+	return true
 }
 
 // ExportCleared is a chat the person cleared: they no longer see what came

@@ -1,6 +1,9 @@
 package models
 
 import (
+	"encoding/base64"
+	"errors"
+	"net/url"
 	"reflect"
 	"slices"
 	"strings"
@@ -44,6 +47,7 @@ func jsonKeys(t reflect.Type, path string, seen map[reflect.Type]bool, out map[s
 func TestTheAccountExportHasNoSecretFields(t *testing.T) {
 	keys := map[string]string{}
 	jsonKeys(reflect.TypeOf(AccountExport{}), "data", map[reflect.Type]bool{}, keys)
+	jsonKeys(reflect.TypeOf(ExportMessagePage{}), "page", map[reflect.Type]bool{}, keys)
 	for _, secret := range exportSecrets {
 		if path, ok := keys[secret]; ok {
 			t.Errorf("the export has %s", path)
@@ -65,7 +69,7 @@ func TestTheAccountExportHasNoSecretFields(t *testing.T) {
 var exportFields = map[string][]string{
 	"AccountExport": {"app", "format", "exported_at", "account", "settings", "two_factor", "sessions", "devices",
 		"push_endpoints", "blocked_users", "verified_contacts", "message_requests", "groups",
-		"group_join_requests", "messages", "hidden_messages", "cleared_chats", "statuses",
+		"group_join_requests", "messages", "messages_next", "messages_truncated", "cleared_chats", "statuses",
 		"received_statuses", "reports"},
 	"ExportAccount": {"id", "username", "display_name", "email", "google_id", "github_id", "created_at",
 		"username_changed_at", "bio", "status_emoji", "status_text", "status_expires_at"},
@@ -79,8 +83,8 @@ var exportFields = map[string][]string{
 	"ExportRequest":        {"sender_id", "created_at"},
 	"ExportGroup":          {"id", "name", "description", "admins_only", "created_by", "created_at", "role", "joined_at", "last_read_at"},
 	"ExportJoinRequest":    {"group_id", "requested_at"},
-	"ExportMessage":        {"id", "sender_id", "receiver_id", "group_id", "content", "created_at", "is_read", "delivered_at", "edited_at", "deleted_at", "expires_at", "reply_to_message_id", "silent"},
-	"ExportHidden":         {"message_id"},
+	"ExportMessage":        {"id", "sender_id", "receiver_id", "group_id", "content", "created_at", "is_read", "delivered_at", "edited_at", "deleted_at", "expires_at", "reply_to_message_id", "silent", "hidden"},
+	"ExportMessagePage":    {"messages", "next"},
 	"ExportCleared":        {"peer_id", "group_id", "cleared_at"},
 	"ExportStatus":         {"id", "created_at", "expires_at", "recipients"},
 	"ExportReceivedStatus": {"id", "author_id", "content", "created_at", "expires_at", "viewed_at"},
@@ -117,6 +121,7 @@ func structFields(t reflect.Type, out map[string][]string) {
 func TestTheAccountExportHasOnlyTheFieldsChosenForIt(t *testing.T) {
 	got := map[string][]string{}
 	structFields(reflect.TypeOf(AccountExport{}), got)
+	structFields(reflect.TypeOf(ExportMessagePage{}), got)
 	for name, keys := range got {
 		want, ok := exportFields[name]
 		if !ok {
@@ -130,6 +135,81 @@ func TestTheAccountExportHasOnlyTheFieldsChosenForIt(t *testing.T) {
 	for name := range exportFields {
 		if _, ok := got[name]; !ok {
 			t.Errorf("exportFields lists %s, which is no longer in the export", name)
+		}
+	}
+}
+
+func TestAnExportCursorComesBackAsItWent(t *testing.T) {
+	want := ExportCursor{
+		// Postgres keeps microseconds, so the cursor must keep them too.
+		CreatedAt: time.Date(2026, 11, 27, 10, 30, 0, 123456000, time.UTC),
+		ID:        "0b6c3f1e-8a2d-4c5e-9f10-1a2b3c4d5e6f",
+	}
+	got, err := ParseExportCursor(want.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.CreatedAt.Equal(want.CreatedAt) || got.ID != want.ID {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestABadExportCursorIsRefused(t *testing.T) {
+	enc := base64.RawURLEncoding.EncodeToString
+	for name, s := range map[string]string{
+		"not base64":     "%%%",
+		"no id":          enc([]byte("2026-11-27T10:30:00Z")),
+		"not a uuid":     enc([]byte("2026-11-27T10:30:00Z x'); DROP TABLE messages; --")),
+		"uppercase uuid": enc([]byte("2026-11-27T10:30:00Z 0B6C3F1E-8A2D-4C5E-9F10-1A2B3C4D5E6F")),
+		"not a time":     enc([]byte("yesterday 0b6c3f1e-8a2d-4c5e-9f10-1a2b3c4d5e6f")),
+	} {
+		if _, err := ParseExportCursor(s); !errors.Is(err, ErrExportCursor) {
+			t.Errorf("%s: %v, want ErrExportCursor", name, err)
+		}
+	}
+}
+
+func TestTheExportMessageQueryHasDefaultsAndBounds(t *testing.T) {
+	cursor := ExportCursor{CreatedAt: time.Date(2026, 11, 27, 0, 0, 0, 0, time.UTC), ID: "0b6c3f1e-8a2d-4c5e-9f10-1a2b3c4d5e6f"}.String()
+	ok := []struct {
+		query  string
+		limit  int
+		direct bool
+		after  bool
+	}{
+		{"", ExportMessagesDefault, false, false},
+		{"limit=1", 1, false, false},
+		{"limit=2000", ExportMessagesMax, false, false},
+		{"include=direct_messages", ExportMessagesDefault, true, false},
+		{"include=direct_messages,&limit=10", 10, true, false},
+		{"after=" + cursor, ExportMessagesDefault, false, true},
+	}
+	for _, c := range ok {
+		q, _ := url.ParseQuery(c.query)
+		got, err := ParseExportMessageQuery(q)
+		if err != nil {
+			t.Errorf("%q: %v", c.query, err)
+			continue
+		}
+		if got.Limit != c.limit || got.DirectMessages != c.direct || (got.After != nil) != c.after {
+			t.Errorf("%q: %+v", c.query, got)
+		}
+	}
+
+	bad := map[string]error{
+		"limit=0":                        ErrExportLimit,
+		"limit=-5":                       ErrExportLimit,
+		"limit=2001":                     ErrExportLimit,
+		"limit=ten":                      ErrExportLimit,
+		"limit=1.5":                      ErrExportLimit,
+		"include=photos":                 ErrExportInclude,
+		"include=direct_messages,photos": ErrExportInclude,
+		"after=nope":                     ErrExportCursor,
+	}
+	for query, want := range bad {
+		q, _ := url.ParseQuery(query)
+		if _, err := ParseExportMessageQuery(q); !errors.Is(err, want) {
+			t.Errorf("%q: %v, want %v", query, err, want)
 		}
 	}
 }
