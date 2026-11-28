@@ -133,7 +133,9 @@ func messageContents(messages []models.ExportMessage) string {
 	return strings.Join(contents, "|")
 }
 
-func exportPage(t *testing.T, token, query string) (int, models.ExportMessagePage) {
+// exportPage reads the page as a client does, by its JSON keys, so a key that
+// differs from the export's messages_next shows up here.
+func exportPage(t *testing.T, token, query string) (int, messagePage) {
 	t.Helper()
 	req := httptest.NewRequest("GET", "/api/users/me/export/messages?"+query, nil)
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -141,13 +143,18 @@ func exportPage(t *testing.T, token, query string) (int, models.ExportMessagePag
 	newTestRouter().ServeHTTP(w, req)
 
 	var resp struct {
-		Data models.ExportMessagePage `json:"data"`
+		Data messagePage `json:"data"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if w.Code == http.StatusOK && w.Header().Get("Cache-Control") != "no-store" {
 		t.Errorf("a page may be cached: Cache-Control %q", w.Header().Get("Cache-Control"))
 	}
 	return w.Code, resp.Data
+}
+
+type messagePage struct {
+	Messages []models.ExportMessage `json:"messages"`
+	Next     *string                `json:"messages_next"`
 }
 
 // A big account comes out in bounded pages: the export has the first one and
