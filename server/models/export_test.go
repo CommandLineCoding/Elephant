@@ -84,7 +84,7 @@ var exportFields = map[string][]string{
 	"ExportGroup":          {"id", "name", "description", "admins_only", "created_by", "created_at", "role", "joined_at", "last_read_at"},
 	"ExportJoinRequest":    {"group_id", "requested_at"},
 	"ExportMessage":        {"id", "sender_id", "receiver_id", "group_id", "content", "created_at", "is_read", "delivered_at", "edited_at", "deleted_at", "expires_at", "reply_to_message_id", "silent", "hidden"},
-	"ExportMessagePage":    {"messages", "next"},
+	"ExportMessagePage":    {"messages", "messages_next"},
 	"ExportCleared":        {"peer_id", "group_id", "cleared_at"},
 	"ExportStatus":         {"id", "created_at", "expires_at", "recipients"},
 	"ExportReceivedStatus": {"id", "author_id", "content", "created_at", "expires_at", "viewed_at"},

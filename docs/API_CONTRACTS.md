@@ -1074,18 +1074,18 @@ The messages after the first page of the export, so one request reads the same a
 
 | Query | Default | Meaning |
 |---|---|---|
-| `after` | none | The `messages_next` of the export, or the `next` of the page before. Without it, the first page. |
+| `after` | none | The `messages_next` of the export or of the page before. Without it, the first page. |
 | `limit` | `1000` | How many messages, from `1` to `2000`. |
 | `include` | none | `direct_messages`, as in the export. Send the same value on every page. |
 
-The reply has `Cache-Control: no-store`. The messages are as in the export, in the same order (`created_at`, then `id`). `next` is the cursor for the page after this one, or `null` on the last page. A cursor is opaque: pass it back as it came. Each page starts right after the last message of the one before, so a message sent or removed while paging doesn't make one skip or repeat.
+The reply has `Cache-Control: no-store`. The messages are as in the export, in the same order (`created_at`, then `id`). `messages_next` is the cursor for the page after this one, as in the export, or `null` on the last page. A cursor is opaque: pass it back as it came. Each page starts right after the last message of the one before, so a message sent or removed while paging doesn't make one skip or repeat.
 
 ```json
 {
   "success": true,
   "data": {
     "messages": [ { "id": "<UUID>", "sender_id": "<UUID>", "receiver_id": null, "group_id": "<UUID>", "content": "<envelope>", "created_at": "<Timestamp>", "is_read": false, "delivered_at": null, "edited_at": null, "deleted_at": null, "expires_at": null, "reply_to_message_id": null, "silent": false, "hidden": false } ],
-    "next": "<cursor>"
+    "messages_next": "<cursor>"
   }
 }
 ```

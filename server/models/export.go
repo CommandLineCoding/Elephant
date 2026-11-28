@@ -173,10 +173,11 @@ type ExportMessage struct {
 }
 
 // ExportMessagePage is one page of GET /api/users/me/export/messages. Next is
-// the cursor for the page after it, or nil on the last one.
+// the cursor for the page after it, or nil on the last one. Its key is the
+// export's messages_next, so a client follows the same key on every page.
 type ExportMessagePage struct {
 	Messages []ExportMessage `json:"messages"`
-	Next     *string         `json:"next"`
+	Next     *string         `json:"messages_next"`
 }
 
 // One request reads at most ExportMessagesMax messages, so its memory stays
