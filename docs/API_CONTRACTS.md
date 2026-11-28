@@ -87,6 +87,8 @@ A request to a route that doesn't exist returns `404`, and a known path with the
 | DELETE | [/api/status/{id}](#delete-a-status) | Yes | Remove your status early |
 | POST | [/api/status/{id}/view](#mark-a-status-seen) | Yes | Say you saw a status |
 | PATCH | [/api/users/me/settings](#12-privacy-settings) | Yes | Change your privacy settings |
+| GET | [/api/users/me/export](#13-export-your-data) | Yes | Everything the server keeps about you, as one JSON document (rate limited) |
+| GET | [/api/users/me/export/messages](#more-pages-of-messages) | Yes | The next pages of messages for the export (rate limited) |
 | GET | [/api/users/me/2fa](#6-two-step-sign-in) | Yes | Whether two-step sign-in is on |
 | POST | [/api/users/me/2fa/setup](#6-two-step-sign-in) | Yes | Get a secret for an authenticator app |
 | POST | [/api/users/me/2fa/enable](#6-two-step-sign-in) | Yes | Confirm a code and turn it on |
@@ -957,6 +959,138 @@ Send only the fields to change. The reply is all the settings after the change, 
 ```
 
 `400 Bad Request` for a body that isn't an object, or an `online_status` or `group_adds` that isn't one of the three values. Nothing is changed.
+
+### 13. Export your data
+
+Everything the server keeps about the signed-in user, in one JSON document they can save (see [docs/EXPORT.md](EXPORT.md)). Messages are the one part that grows without end, so the document has only the first page of them, and [the rest come in pages](#more-pages-of-messages).
+
+- **URL:** `/api/users/me/export`
+- **Method:** `GET`
+- **Authentication Required:** `YES`
+- **Rate limit:** 3 in a row, then one a minute per IP. Over the limit: `429` with `Retry-After`.
+
+| Query | Default | Meaning |
+|---|---|---|
+| `limit` | `1000` | How many messages in the first page, from `1` to `2000`. |
+| `include` | none | `direct_messages` adds the direct messages, sent and received. Without it, `messages` has only the group messages the person sent. |
+
+The reply has `Cache-Control: no-store`. Every list is `[]` when there is nothing in it. Times are RFC 3339; fields that may be empty in the database are `null`.
+
+```json
+{
+  "success": true,
+  "data": {
+    "app": "elephant",
+    "format": 1,
+    "exported_at": "<Timestamp>",
+    "account": {
+      "id": "<UUID>", "username": "maya.0042", "display_name": "Maya",
+      "email": null, "google_id": null, "github_id": null,
+      "created_at": "<Timestamp>", "username_changed_at": null,
+      "bio": "", "status_emoji": "", "status_text": "", "status_expires_at": null
+    },
+    "settings": { "online_status": "contacts", "read_receipts": true, "group_adds": "everyone" },
+    "two_factor": { "enabled": false, "created_at": null, "recovery_codes_left": 0 },
+    "sessions": [ { "id": "<UUID>", "device_name": "Pixel 8", "started_at": "<Timestamp>", "last_used_at": "<Timestamp>", "expires_at": "<Timestamp>" } ],
+    "devices": [ { "device_id": "1", "identity_key": "<base64>", "signed_prekey": "<base64>", "signed_prekey_signature": "<base64>", "one_time_prekeys": 42, "updated_at": "<Timestamp>" } ],
+    "push_endpoints": [ { "created_at": "<Timestamp>", "updated_at": "<Timestamp>", "failures": 0 } ],
+    "blocked_users": [ { "user_id": "<UUID>", "blocked_at": "<Timestamp>" } ],
+    "verified_contacts": [ { "user_id": "<UUID>", "is_verified": true, "updated_at": "<Timestamp>" } ],
+    "message_requests": [ { "sender_id": "<UUID>", "created_at": "<Timestamp>" } ],
+    "groups": [ { "id": "<UUID>", "name": "Trek", "description": "", "admins_only": false, "created_by": "<UUID>", "created_at": "<Timestamp>", "role": "admin", "joined_at": "<Timestamp>", "last_read_at": "<Timestamp>" } ],
+    "group_join_requests": [ { "group_id": "<UUID>", "requested_at": "<Timestamp>" } ],
+    "messages": [
+      {
+        "id": "<UUID>", "sender_id": "<UUID>", "receiver_id": "<UUID>", "group_id": null,
+        "content": "{\"type\":3,\"ciphertext\":\"<base64>\"}",
+        "created_at": "<Timestamp>", "is_read": true, "delivered_at": "<Timestamp>",
+        "edited_at": null, "deleted_at": null, "expires_at": null,
+        "reply_to_message_id": null, "silent": false, "hidden": false
+      }
+    ],
+    "messages_next": "<cursor>",
+    "messages_truncated": true,
+    "cleared_chats": [ { "peer_id": "<UUID>", "group_id": null, "cleared_at": "<Timestamp>" } ],
+    "statuses": [ { "id": "<UUID>", "created_at": "<Timestamp>", "expires_at": "<Timestamp>", "recipients": 5 } ],
+    "received_statuses": [ { "id": "<UUID>", "author_id": "<UUID>", "content": "<ciphertext>", "created_at": "<Timestamp>", "expires_at": "<Timestamp>", "viewed_at": null } ],
+    "reports": [ { "id": 7, "reported_user_id": "<UUID>", "reason": "spam", "note": "", "messages": [], "created_at": "<Timestamp>" } ]
+  }
+}
+```
+
+| Section | What it is |
+|---|---|
+| `account` | The profile row. The custom status is as stored, even if it has run out. |
+| `settings` | The [privacy settings](#12-privacy-settings), or the defaults if they were never changed. |
+| `two_factor` | Whether [two-step sign-in](#6-two-step-sign-in) is on and how many recovery codes are unused. |
+| `sessions` | Every refresh token row: one per signed-in device, including ones that ran out and wait for cleanup. |
+| `devices` | Each device's public prekey bundle, as anyone who starts a chat can fetch it, and how many one-time prekeys are left. |
+| `push_endpoints` | When each push registration was made and how many pings in a row failed. |
+| `blocked_users`, `verified_contacts` | The person's own choices about others. |
+| `message_requests` | First messages from strangers waiting for the person to accept them. |
+| `groups`, `group_join_requests` | Groups they are in, their role, and invite link requests an admin hasn't answered. |
+| `messages` | The first page of the group messages they sent, oldest first, and with `include=direct_messages` also the direct messages they sent or received. Messages they deleted for themselves or cleared are still here, because the other people still have them; `hidden` on each message and `cleared_chats` say which. A message that ran out is not. |
+| `messages_next`, `messages_truncated` | The cursor for the [next page](#more-pages-of-messages) and `true` when there are more messages than the first page, or `null` and `false` when `messages` has them all. |
+| `statuses`, `received_statuses` | Statuses they posted (how many copies were made, not who saw them) and the copies encrypted for them that they can still see, as in [List statuses](#list-statuses): not ones that ran out, nor ones from someone either of them blocked. |
+| `reports` | Reports they sent, with the messages they chose to attach. |
+
+`content` is what the sending phone uploaded. For direct messages and statuses that is Signal ciphertext, which only the phones can read. Group messages are a plaintext envelope (`type` 0), since they are not end to end encrypted yet.
+
+Left out on purpose:
+
+- **Secrets:** the password hash, refresh token hashes, the two-step secret and recovery code hashes, push endpoint URLs and group invite codes. Each would let whoever holds the file sign in as the person, push to their phone or join their groups, and none says anything the person doesn't know.
+- **Other people's data:** other members' group messages, who blocked the person, requests they sent that are still pending, who has seen their statuses, and reports about them (which would name the reporter).
+
+#### `400 Bad Request`
+
+A `limit` that isn't a whole number from `1` to `2000`, an `include` other than `direct_messages`, or an `after` (it belongs to [the next pages](#more-pages-of-messages)).
+
+```json
+{ "success": false, "error": "limit must be a whole number from 1 to 2000" }
+```
+
+#### `404 Not Found`
+
+The account was deleted while the token was still valid.
+
+```json
+{ "success": false, "error": "User profile not found" }
+```
+
+#### `500 Internal Server Error`
+
+```json
+{ "success": false, "error": "Failed to export your data" }
+```
+
+#### More pages of messages
+
+The messages after the first page of the export, so one request reads the same at most however big the account is.
+
+- **URL:** `/api/users/me/export/messages`
+- **Method:** `GET`
+- **Authentication Required:** `YES`
+- **Rate limit:** 3 in a row, then one every two seconds per IP. Over the limit: `429` with `Retry-After`.
+
+| Query | Default | Meaning |
+|---|---|---|
+| `after` | none | The `messages_next` of the export or of the page before. Without it, the first page. |
+| `limit` | `1000` | How many messages, from `1` to `2000`. |
+| `include` | none | `direct_messages`, as in the export. Send the same value on every page. |
+
+The reply has `Cache-Control: no-store`. The messages are as in the export, in the same order (`created_at`, then `id`). `messages_next` is the cursor for the page after this one, as in the export, or `null` on the last page. A cursor is opaque: pass it back as it came. Each page starts right after the last message of the one before, so a message sent or removed while paging doesn't make one skip or repeat.
+
+```json
+{
+  "success": true,
+  "data": {
+    "messages": [ { "id": "<UUID>", "sender_id": "<UUID>", "receiver_id": null, "group_id": "<UUID>", "content": "<envelope>", "created_at": "<Timestamp>", "is_read": false, "delivered_at": null, "edited_at": null, "deleted_at": null, "expires_at": null, "reply_to_message_id": null, "silent": false, "hidden": false } ],
+    "messages_next": "<cursor>"
+  }
+}
+```
+
+`400 Bad Request` for a `limit` or `include` the export would refuse, or an `after` that isn't a cursor from a page. `500` as in the export.
 
 ---
 

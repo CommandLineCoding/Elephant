@@ -75,6 +75,17 @@ type ReceivedStatus struct {
 	Viewed    bool      `json:"viewed"`
 }
 
+// statusVisibleTo is when the copy c of status s may be shown to the user in
+// $1: it is theirs, it hasn't run out, and neither of them blocked the other.
+// The list of statuses and the account export both use it, so they agree.
+const statusVisibleTo = `c.recipient_id = $1::uuid
+		  AND s.expires_at > NOW()
+		  AND NOT EXISTS (
+			SELECT 1 FROM blocked_users b
+			WHERE (b.user_id = $1::uuid AND b.blocked_user_id = s.author_id)
+			   OR (b.user_id = s.author_id AND b.blocked_user_id = $1::uuid)
+		  )`
+
 // ListFor returns the statuses posted for userID that haven't run out, newest
 // first. Statuses of someone the user blocked, or who blocked the user, are
 // left out even if they were posted before the block.
@@ -83,13 +94,7 @@ func (r *StatusRepository) ListFor(ctx context.Context, userID string, limit int
 		SELECT s.id::text, s.author_id::text, c.content, s.created_at, s.expires_at, c.viewed_at IS NOT NULL
 		FROM status_copies c
 		JOIN statuses s ON s.id = c.status_id
-		WHERE c.recipient_id = $1::uuid
-		  AND s.expires_at > NOW()
-		  AND NOT EXISTS (
-			SELECT 1 FROM blocked_users b
-			WHERE (b.user_id = $1::uuid AND b.blocked_user_id = s.author_id)
-			   OR (b.user_id = s.author_id AND b.blocked_user_id = $1::uuid)
-		  )
+		WHERE `+statusVisibleTo+`
 		ORDER BY s.created_at DESC
 		LIMIT $2`, userID, limit)
 	if err != nil {
